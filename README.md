@@ -90,6 +90,10 @@ git push origin mobile-v0.1.1
 Required GitHub secrets in this repository:
 
 ```text
+ANDROID_SIGNING_KEYSTORE_BASE64
+ANDROID_SIGNING_STORE_PASSWORD
+ANDROID_SIGNING_KEY_ALIAS
+ANDROID_SIGNING_KEY_PASSWORD
 MOBILE_RELEASE_SSH_HOST
 MOBILE_RELEASE_SSH_USER
 MOBILE_RELEASE_SSH_KEY
@@ -104,4 +108,4 @@ MOBILE_RELEASE_SSH_PORT
 
 `MOBILE_RELEASE_DIR` must point to the persistent VPS path that is mounted/read by the panel API as `MOBILE_ANDROID_RELEASES_DIR`. The workflow writes only `latest.json` and the generated APK there. Do not commit APK files, keystores, `local.properties`, `google-services.json` or release secrets.
 
-The current pipeline publishes the debug/test APK used for Mobile Assistant field testing. Before Play Store or broad production rollout, add release signing through repository secrets and switch the build step to a signed release APK.
+Main branch builds use a debug APK only for CI validation. Tag releases and manual publish runs build a signed release APK with the repository signing secrets and publish it to the VPS release directory.
