@@ -1,0 +1,135 @@
+name: Mobile Android Release
+
+"on":
+  push:
+    branches:
+      - main
+    tags:
+      - "mobile-v*"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish APK to the DlaFlow VPS release directory"
+        required: true
+        default: false
+        type: boolean
+      channel:
+        description: "Release channel written into latest.json"
+        required: true
+        default: test
+        type: choice
+        options:
+          - test
+          - production
+
+env:
+  GRADLE_VERSION: "8.13"
+  RELEASE_CHANNEL: ${{ github.event.inputs.channel || 'test' }}
+
+jobs:
+  build:
+    name: Build APK and publish release manifest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up JDK
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Gradle
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o "$RUNNER_TEMP/gradle.zip"
+          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip.sha256" -o "$RUNNER_TEMP/gradle.zip.sha256"
+          echo "$(cat "$RUNNER_TEMP/gradle.zip.sha256")  $RUNNER_TEMP/gradle.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP/gradle"
+          echo "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Gradle
+        shell: bash
+        run: gradle --version
+
+      - name: Validate mobile tag version
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#mobile-v}"
+          app_version="$(grep -E 'versionName\s*=' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')"
+          if [ "$tag_version" != "$app_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match Android versionName ${app_version}."
+            exit 1
+          fi
+
+      - name: Build debug APK
+        shell: bash
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Generate panel release manifest
+        shell: pwsh
+        run: |
+          ./scripts/generate-mobile-release-manifest.ps1 `
+            -ApkPath "app/build/outputs/apk/debug/app-debug.apk" `
+            -OutputDir "mobile-release" `
+            -Channel "${{ env.RELEASE_CHANNEL }}"
+
+      - name: Inspect release package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s mobile-release/latest.json
+          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('mobile-release/latest.json','utf8')); for (const key of ['channel','fileName','releaseNotes','releasedAt','sha256','sizeBytes','versionCode','versionName']) { if (!(key in m)) throw new Error('missing '+key); } console.log(JSON.stringify(m, null, 2));"
+          apk_file="$(node -e "console.log(require('./mobile-release/latest.json').fileName)")"
+          test -s "mobile-release/$apk_file"
+
+      - name: Publish to DlaFlow VPS
+        if: startsWith(github.ref, 'refs/tags/mobile-v') || github.event.inputs.publish == 'true'
+        shell: bash
+        env:
+          MOBILE_RELEASE_SSH_HOST: ${{ secrets.MOBILE_RELEASE_SSH_HOST }}
+          MOBILE_RELEASE_SSH_USER: ${{ secrets.MOBILE_RELEASE_SSH_USER }}
+          MOBILE_RELEASE_SSH_KEY: ${{ secrets.MOBILE_RELEASE_SSH_KEY }}
+          MOBILE_RELEASE_SSH_PORT: ${{ secrets.MOBILE_RELEASE_SSH_PORT }}
+          MOBILE_RELEASE_DIR: ${{ secrets.MOBILE_RELEASE_DIR }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in MOBILE_RELEASE_SSH_HOST MOBILE_RELEASE_SSH_USER MOBILE_RELEASE_SSH_KEY MOBILE_RELEASE_DIR; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub secret ${name} is required to publish the Android APK."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          case "$MOBILE_RELEASE_DIR" in
+            *[[:space:]]*|*"'"*)
+              echo "::error::MOBILE_RELEASE_DIR must not contain spaces or single quotes."
+              exit 1
+              ;;
+          esac
+
+          port="${MOBILE_RELEASE_SSH_PORT:-22}"
+          apk_file="$(node -e "console.log(require('./mobile-release/latest.json').fileName)")"
+          apk_sha="$(node -e "console.log(require('./mobile-release/latest.json').sha256)")"
+          remote_tmp="${MOBILE_RELEASE_DIR}/.upload-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$MOBILE_RELEASE_SSH_KEY" > "$HOME/.ssh/mobile_release_key"
+          chmod 600 "$HOME/.ssh/mobile_release_key"
+          ssh-keyscan -p "$port" -H "$MOBILE_RELEASE_SSH_HOST" >> "$HOME/.ssh/known_hosts"
+
+          ssh -p "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST" "mkdir -p '$MOBILE_RELEASE_DIR' '$remote_tmp'"
+          scp -P "$port" -i "$HOME/.ssh/mobile_release_key" "mobile-release/$apk_file" "mobile-release/latest.json" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST:$remote_tmp/"
+          ssh -p "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST" "cd '$remote_tmp' && test -s latest.json && test -s '$apk_file' && mv '$apk_file' '$MOBILE_RELEASE_DIR/$apk_file' && mv latest.json '$MOBILE_RELEASE_DIR/latest.json' && cd '$MOBILE_RELEASE_DIR' && echo '$apk_sha  $apk_file' | sha256sum -c - && rmdir '$remote_tmp'"

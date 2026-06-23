@@ -11,3 +11,5 @@ app/build/
 *.p12
 *.pem
 google-services.json
+mobile-release/
+*.apk
