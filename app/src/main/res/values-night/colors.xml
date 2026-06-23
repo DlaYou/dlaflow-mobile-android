@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="df_app_bg">#0F131D</color>
+    <color name="df_card_bg">#171C27</color>
+    <color name="df_text">#F8FAFC</color>
+    <color name="df_text_muted">#9AA7BA</color>
+    <color name="df_border">#202735</color>
+    <color name="df_primary">#9B83FF</color>
+    <color name="df_primary_dark">#7B5CF6</color>
+    <color name="df_primary_soft">#211A3A</color>
+    <color name="df_splash_bg">#0F131D</color>
+    <color name="df_success_bg">#12382F</color>
+    <color name="df_success_text">#5EEAD4</color>
+</resources>
