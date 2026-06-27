@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.URLEncoder
 import java.net.URL
 import java.util.UUID
 
@@ -27,6 +28,120 @@ data class MobilePhotoTask(
 
 data class MobilePhotoTaskDispatch(
     val pendingOpenTask: MobilePhotoTask?,
+)
+
+enum class MobileProductFilter(val queryValue: String, val label: String) {
+    ALL("", "Wszystkie"),
+    LOW_STOCK("low-stock", "Niski stan"),
+    NO_IMAGE("noImage", "Bez zdjęć"),
+    HAS_VARIANTS("hasVariants", "Warianty"),
+}
+
+data class MobileProductEditableFields(
+    val grossPrice: Boolean,
+    val stock: Boolean,
+)
+
+data class MobileProduct(
+    val id: String,
+    val name: String,
+    val sku: String,
+    val ean: String,
+    val image: String,
+    val thumbnailUrl: String,
+    val grossPrice: Double,
+    val stock: Int,
+    val status: String,
+    val currency: String,
+    val variantCount: Int,
+    val lowStock: Boolean,
+    val editableFields: MobileProductEditableFields,
+)
+
+data class MobileProductVariantEditableFields(
+    val price: Boolean,
+    val stock: Boolean,
+)
+
+data class MobileProductVariant(
+    val id: String,
+    val productId: String,
+    val name: String,
+    val sku: String,
+    val ean: String,
+    val image: String,
+    val thumbnailUrl: String,
+    val price: Double,
+    val stock: Int,
+    val status: String,
+    val editableFields: MobileProductVariantEditableFields,
+)
+
+data class MobileProductsPage(
+    val data: List<MobileProduct>,
+    val nextCursor: String?,
+    val total: Int,
+    val canEdit: Boolean,
+)
+
+enum class MobileProductQuickEditField {
+    GROSS_PRICE,
+    STOCK,
+}
+
+enum class MobileVariantQuickEditField {
+    PRICE,
+    STOCK,
+}
+
+data class MobileAssistantKpis(
+    val newOrders: Int,
+    val toShip: Int,
+    val overdueOrProblems: Int,
+    val messages: Int,
+)
+
+data class MobileAssistantNotification(
+    val title: String,
+    val description: String,
+    val tone: String,
+    val source: String,
+    val occurredAt: String,
+)
+
+data class MobileAssistantTrendPoint(
+    val date: String,
+    val orders: Int,
+    val revenue: Double,
+)
+
+data class MobileAssistantCallerIdStatus(
+    val enabled: Boolean,
+    val label: String,
+)
+
+data class MobileAssistantPhotoTask(
+    val id: String,
+    val productName: String,
+    val productSku: String,
+    val productImage: String,
+    val status: String,
+    val mediaCount: Int,
+    val maxPhotos: Int,
+    val expiresAt: String,
+)
+
+data class MobileAssistantDashboard(
+    val userName: String,
+    val tenantName: String,
+    val todayRevenue: Double,
+    val revenueChangePercent: Double,
+    val kpis: MobileAssistantKpis,
+    val notifications: List<MobileAssistantNotification>,
+    val activePhotoTask: MobileAssistantPhotoTask?,
+    val callerIdStatus: MobileAssistantCallerIdStatus,
+    val trend: List<MobileAssistantTrendPoint>,
+    val generatedAt: String,
 )
 
 data class MobileCallerIdOrder(
@@ -109,6 +224,65 @@ class MobileApiClient(private val baseUrl: String) {
         return MobilePhotoTaskDispatch(pendingOpenTask = pendingTask)
     }
 
+    fun getAssistantDashboard(token: String): MobileAssistantDashboard {
+        val data = getJson("/api/mobile/assistant/dashboard", token).getJSONObject("data")
+
+        return parseAssistantDashboard(data)
+    }
+
+    fun listProducts(token: String, search: String, filter: MobileProductFilter, cursor: String? = null): MobileProductsPage {
+        val response = getJson("/api/mobile/products?${buildMobileProductsQuery(search, filter, cursor)}", token)
+        val data = response.getJSONArray("data")
+        val products = mutableListOf<MobileProduct>()
+        for (index in 0 until data.length()) {
+            products.add(parseMobileProduct(data.getJSONObject(index)))
+        }
+        val meta = response.optJSONObject("meta") ?: JSONObject()
+
+        return MobileProductsPage(
+            data = products,
+            nextCursor = normalizeMobileProductsCursor(meta.optString("nextCursor", "")),
+            total = meta.optInt("total", products.size),
+            canEdit = meta.optBoolean("canEdit", false),
+        )
+    }
+
+    fun listProductVariants(token: String, productId: String): List<MobileProductVariant> {
+        val data = getJson("/api/mobile/products/${encodePathSegment(productId)}/variants", token).getJSONArray("data")
+        val variants = mutableListOf<MobileProductVariant>()
+        for (index in 0 until data.length()) {
+            variants.add(parseMobileProductVariant(data.getJSONObject(index)))
+        }
+
+        return variants
+    }
+
+    fun quickEditProduct(token: String, productId: String, field: MobileProductQuickEditField, value: Double): MobileProduct {
+        val body = JSONObject()
+        when (field) {
+            MobileProductQuickEditField.GROSS_PRICE -> body.put("grossPrice", quickEditValueAsBodyNumber(fieldIsStock = false, value = value))
+            MobileProductQuickEditField.STOCK -> body.put("stock", quickEditValueAsBodyNumber(fieldIsStock = true, value = value))
+        }
+        val response = patchJson("/api/mobile/products/${encodePathSegment(productId)}/quick-edit", body, token)
+
+        return parseMobileProduct(response.getJSONObject("data"))
+    }
+
+    fun quickEditProductVariant(token: String, productId: String, variantId: String, field: MobileVariantQuickEditField, value: Double): MobileProductVariant {
+        val body = JSONObject()
+        when (field) {
+            MobileVariantQuickEditField.PRICE -> body.put("price", quickEditValueAsBodyNumber(fieldIsStock = false, value = value))
+            MobileVariantQuickEditField.STOCK -> body.put("stock", quickEditValueAsBodyNumber(fieldIsStock = true, value = value))
+        }
+        val response = patchJson(
+            path = "/api/mobile/products/${encodePathSegment(productId)}/variants/${encodePathSegment(variantId)}/quick-edit",
+            body = body,
+            token = token,
+        )
+
+        return parseMobileProductVariant(response.getJSONObject("data"))
+    }
+
     fun uploadPhotoTaskMedia(token: String, taskId: String, imageBytes: ByteArray, fileName: String, mimeType: String): MobilePhotoTask {
         val response = postMultipart(
             path = "/api/mobile/photo-tasks/$taskId/media",
@@ -156,6 +330,19 @@ class MobileApiClient(private val baseUrl: String) {
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
         token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        connection.outputStream.use { stream ->
+            stream.write(body.toString().toByteArray(Charsets.UTF_8))
+        }
+
+        return readJsonResponse(connection)
+    }
+
+    private fun patchJson(path: String, body: JSONObject, token: String): JSONObject {
+        val connection = openConnection(path)
+        connection.requestMethod = "PATCH"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty("Authorization", "Bearer $token")
         connection.outputStream.use { stream ->
             stream.write(body.toString().toByteArray(Charsets.UTF_8))
         }
@@ -232,6 +419,122 @@ class MobileApiClient(private val baseUrl: String) {
         )
     }
 
+    private fun parseMobileProduct(item: JSONObject): MobileProduct {
+        val editable = item.optJSONObject("editableFields") ?: JSONObject()
+
+        return MobileProduct(
+            id = item.getString("id"),
+            name = item.optString("name", "Produkt").ifBlank { "Produkt" },
+            sku = item.optString("sku", ""),
+            ean = item.optString("ean", ""),
+            image = item.optString("image", ""),
+            thumbnailUrl = item.optString("thumbnailUrl", item.optString("image", "")),
+            grossPrice = item.getDouble("grossPrice"),
+            stock = item.getInt("stock"),
+            status = item.optString("status", ""),
+            currency = item.optString("currency", "PLN"),
+            variantCount = item.optInt("variantCount", 0),
+            lowStock = item.optBoolean("lowStock", false),
+            editableFields = MobileProductEditableFields(
+                grossPrice = editable.optBoolean("grossPrice", false),
+                stock = editable.optBoolean("stock", false),
+            ),
+        )
+    }
+
+    private fun parseMobileProductVariant(item: JSONObject): MobileProductVariant {
+        val editable = item.optJSONObject("editableFields") ?: JSONObject()
+
+        return MobileProductVariant(
+            id = item.getString("id"),
+            productId = item.getString("productId"),
+            name = item.optString("name", "Wariant").ifBlank { "Wariant" },
+            sku = item.optString("sku", ""),
+            ean = item.optString("ean", ""),
+            image = item.optString("image", ""),
+            thumbnailUrl = item.optString("thumbnailUrl", item.optString("image", "")),
+            price = item.getDouble("price"),
+            stock = item.getInt("stock"),
+            status = item.optString("status", ""),
+            editableFields = MobileProductVariantEditableFields(
+                price = editable.optBoolean("price", false),
+                stock = editable.optBoolean("stock", false),
+            ),
+        )
+    }
+
+    private fun parseAssistantDashboard(data: JSONObject): MobileAssistantDashboard {
+        val kpis = data.optJSONObject("kpis") ?: JSONObject()
+        val callerIdStatus = data.optJSONObject("callerIdStatus") ?: JSONObject()
+        val notificationsJson = data.optJSONArray("notifications")
+        val notifications = mutableListOf<MobileAssistantNotification>()
+        if (notificationsJson != null) {
+            for (index in 0 until notificationsJson.length()) {
+                val item = notificationsJson.getJSONObject(index)
+                notifications.add(
+                    MobileAssistantNotification(
+                        title = item.optString("title", ""),
+                        description = item.optString("description", ""),
+                        tone = item.optString("tone", "info"),
+                        source = item.optString("source", ""),
+                        occurredAt = item.optString("occurredAt", ""),
+                    ),
+                )
+            }
+        }
+
+        val trendJson = data.optJSONArray("trend")
+        val trend = mutableListOf<MobileAssistantTrendPoint>()
+        if (trendJson != null) {
+            for (index in 0 until trendJson.length()) {
+                val item = trendJson.getJSONObject(index)
+                trend.add(
+                    MobileAssistantTrendPoint(
+                        date = item.optString("date", ""),
+                        orders = item.optInt("orders", 0),
+                        revenue = item.optDouble("revenue", 0.0),
+                    ),
+                )
+            }
+        }
+
+        return MobileAssistantDashboard(
+            userName = data.optString("userName", ""),
+            tenantName = data.optString("tenantName", ""),
+            todayRevenue = data.optDouble("todayRevenue", 0.0),
+            revenueChangePercent = data.optDouble("revenueChangePercent", 0.0),
+            kpis = MobileAssistantKpis(
+                newOrders = kpis.optInt("newOrders", 0),
+                toShip = kpis.optInt("toShip", 0),
+                overdueOrProblems = kpis.optInt("overdueOrProblems", 0),
+                messages = kpis.optInt("messages", 0),
+            ),
+            notifications = notifications,
+            activePhotoTask = data.optJSONObject("activePhotoTask")?.let { parseAssistantPhotoTask(it) },
+            callerIdStatus = MobileAssistantCallerIdStatus(
+                enabled = callerIdStatus.optBoolean("enabled", false),
+                label = callerIdStatus.optString("label", ""),
+            ),
+            trend = trend,
+            generatedAt = data.optString("generatedAt", ""),
+        )
+    }
+
+    private fun parseAssistantPhotoTask(task: JSONObject): MobileAssistantPhotoTask {
+        val product = task.optJSONObject("product") ?: JSONObject()
+
+        return MobileAssistantPhotoTask(
+            id = task.optString("id", ""),
+            productName = product.optString("name", "Produkt").ifBlank { "Produkt" },
+            productSku = product.optString("sku", ""),
+            productImage = product.optString("image", ""),
+            status = task.optString("status", ""),
+            mediaCount = task.optInt("mediaCount", 0),
+            maxPhotos = task.optInt("maxPhotos", 0),
+            expiresAt = task.optString("expiresAt", ""),
+        )
+    }
+
     private fun parseCallerIdLookup(data: JSONObject): MobileCallerIdLookup {
         val primaryOrder = data.optJSONObject("primaryOrder")?.let { order ->
             MobileCallerIdOrder(
@@ -253,5 +556,9 @@ class MobileApiClient(private val baseUrl: String) {
             phone = data.optString("phone", ""),
             primaryOrder = primaryOrder,
         )
+    }
+
+    private fun encodePathSegment(value: String): String {
+        return URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")
     }
 }
