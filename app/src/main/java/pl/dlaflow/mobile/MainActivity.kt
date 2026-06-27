@@ -1,7 +1,6 @@
 package pl.dlaflow.mobile
 
 import android.Manifest
-import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -28,11 +27,16 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.ComponentActivity
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
 import com.google.zxing.integration.android.IntentIntegrator
 import java.io.File
 import java.text.SimpleDateFormat
@@ -40,7 +44,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private val cameraRequestCode = 4101
     private val galleryRequestCode = 4102
     private val cameraPermissionRequestCode = 4103
@@ -58,17 +62,38 @@ class MainActivity : Activity() {
     private lateinit var sessionStore: MobileSessionStore
     private lateinit var root: LinearLayout
     private lateinit var scrollView: ScrollView
+    private lateinit var contentView: View
     private lateinit var statusView: TextView
     private lateinit var baseUrlInput: EditText
     private lateinit var pairingCodeInput: EditText
     private lateinit var callerIdTestPhoneInput: EditText
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
     private var sessionTransitionStartedAt: Long = 0L
-    private var callerIdPreview: MobileCallerIdLookup? = null
+    private var callerIdPreview by mutableStateOf<MobileCallerIdLookup?>(null)
+    private var assistantDashboard by mutableStateOf<MobileAssistantDashboard?>(null)
     private var focusedPhotoTaskId: String? = null
     private var focusedPhotoTaskView: View? = null
     private var lastDispatchedPhotoTaskId: String? = null
-    private var photoTasks: List<MobilePhotoTask> = emptyList()
+    private var photoTasks by mutableStateOf<List<MobilePhotoTask>>(emptyList())
+    private var apiUrlValue by mutableStateOf("")
+    private var pairingCodeValue by mutableStateOf("")
+    private var callerIdTestPhoneValue by mutableStateOf("")
+    private var statusMessage by mutableStateOf("")
+    private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
+    private var packageScanResult by mutableStateOf<MobilePackageScanResult?>(null)
+    private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
+    private var mobileProductsNextCursor by mutableStateOf<String?>(null)
+    private var mobileProductsTotal by mutableStateOf(0)
+    private var mobileProductsLoading by mutableStateOf(false)
+    private var mobileProductsSearch by mutableStateOf("")
+    private var mobileProductsFilter by mutableStateOf(MobileProductFilter.ALL)
+    private var mobileProductVariants by mutableStateOf<Map<String, List<MobileProductVariant>>>(emptyMap())
+    private var mobileProductVariantsLoading by mutableStateOf<Set<String>>(emptySet())
+    private var mobileProductsReadOnly by mutableStateOf(false)
+    private var mobileProductsNoAccess by mutableStateOf(false)
+    private var mobileProductsRequestVersion = 0
+    private var mobileProductsStateVersion = 0
+    private var pendingQrScanMode = QrScanMode.PAIRING
     private var pendingCameraPhotoFile: File? = null
     private var pendingCameraPhotoUri: Uri? = null
     private var pendingPhotoTaskId: String? = null
@@ -76,7 +101,7 @@ class MainActivity : Activity() {
     private var pendingSmokePairingCode: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
-    private var session: MobileSession? = null
+    private var session by mutableStateOf<MobileSession?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -86,6 +111,7 @@ class MainActivity : Activity() {
         }
         super.onCreate(savedInstanceState)
         sessionStore = MobileSessionStore(this)
+        apiUrlValue = sessionStore.readBaseUrl()
         createNotificationChannel()
         handleLaunchIntent(intent)
         val hasSavedSession = sessionStore.readToken().isNotBlank()
@@ -128,7 +154,12 @@ class MainActivity : Activity() {
 
         val pairingScan = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         if (pairingScan != null) {
-            handlePairingQrResult(pairingScan.contents)
+            if (pendingQrScanMode == QrScanMode.PACKAGE) {
+                handlePackageQrResult(pairingScan.contents)
+            } else {
+                handlePairingQrResult(pairingScan.contents)
+            }
+            pendingQrScanMode = QrScanMode.PAIRING
             return
         }
 
@@ -183,23 +214,86 @@ class MainActivity : Activity() {
     private fun render() {
         val theme = mobileTheme()
         focusedPhotoTaskView = null
-        root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(18), dp(18), dp(22))
-            setBackgroundColor(theme.appBg)
-        }
-
-        scrollView = ScrollView(this).apply {
+        val composeView = ComposeView(this).apply {
             alpha = if (contentReadyForDisplay) 1f else 0f
             fitsSystemWindows = true
             setBackgroundColor(theme.appBg)
-            setOnApplyWindowInsetsListener { view, insets ->
-                @Suppress("DEPRECATION")
-                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
-                insets
+            setContent {
+                MobileAssistantScreen(
+                    session = session,
+                    dashboard = assistantDashboard,
+                    photoTasks = orderedPhotoTasks(),
+                    packageScanResult = packageScanResult,
+                    statusMessage = statusMessage,
+                    selectedTab = selectedTab,
+                    apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
+                    pairingCode = pairingCodeValue,
+                    callerIdTestPhone = callerIdTestPhoneValue,
+                    callerIdPreview = callerIdPreview,
+                    callerIdOperational = isCallerIdOperational(),
+                    callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
+                    canAutoOpenTasks = canDrawOverOtherApps(),
+                    mobileProducts = mobileProducts,
+                    mobileProductsNextCursor = mobileProductsNextCursor,
+                    mobileProductsTotal = mobileProductsTotal,
+                    mobileProductsLoading = mobileProductsLoading,
+                    mobileProductsSearch = mobileProductsSearch,
+                    mobileProductsFilter = mobileProductsFilter,
+                    mobileProductVariants = mobileProductVariants,
+                    mobileProductVariantsLoading = mobileProductVariantsLoading,
+                    mobileProductsReadOnly = mobileProductsReadOnly,
+                    mobileProductsNoAccess = mobileProductsNoAccess,
+                    onApiUrlChange = {
+                        apiUrlValue = it
+                    },
+                    onPairingCodeChange = {
+                        pairingCodeValue = it
+                    },
+                    onCallerIdTestPhoneChange = {
+                        callerIdTestPhoneValue = it
+                    },
+                    onPairDevice = { pairDevice() },
+                    onScanPairingQr = { scanPairingQr() },
+                    onRefresh = {
+                        refreshAssistantDashboard(showLoading = true)
+                        refreshPhotoTasks(showLoading = false)
+                    },
+                    onQuickAction = { handleQuickAction(it) },
+                    onSelectTab = {
+                        selectedTab = it
+                        if (it == MobileAssistantTab.PRODUCTS) {
+                            ensureMobileProductsLoaded()
+                        }
+                    },
+                    onProductsSearchChange = {
+                        if (mobileProductsSearch != it) {
+                            mobileProductsSearch = it
+                            refreshMobileProducts(reset = true, showLoading = true)
+                        }
+                    },
+                    onProductsFilterChange = {
+                        if (mobileProductsFilter != it) {
+                            mobileProductsFilter = it
+                            refreshMobileProducts(reset = true, showLoading = true)
+                        }
+                    },
+                    onLoadMoreProducts = { refreshMobileProducts(reset = false, showLoading = true) },
+                    onToggleProductVariants = { productId -> toggleMobileProductVariants(productId) },
+                    onQuickEditProduct = { product, field, value -> quickEditMobileProduct(product, field, value) },
+                    onQuickEditVariant = { variant, field, value -> quickEditMobileProductVariant(variant, field, value) },
+                    onTakePhoto = { taskId -> requestCamera(taskId) },
+                    onPickPhoto = { taskId -> openGallery(taskId) },
+                    onCompletePhotoTask = { taskId -> completePhotoTask(taskId) },
+                    onEnableCallerId = { requestCallerIdRole() },
+                    onTestCallerId = { testCallerIdLookup() },
+                    onShowCallerIdPreview = {
+                        callerIdPreview?.let { startActivity(CallerIdActivity.createIntent(this@MainActivity, it)) }
+                    },
+                    onDisconnect = { disconnectLocalPhone() },
+                )
             }
-            addView(root)
         }
+        contentView = composeView
 
         window.statusBarColor = theme.appBg
         window.navigationBarColor = theme.appBg
@@ -208,27 +302,13 @@ class MainActivity : Activity() {
         }
 
         val screen = FrameLayout(this).apply {
-            addView(scrollView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+            addView(composeView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             sessionTransitionOverlay = DlaFlowSessionTransitionOverlay(this@MainActivity).also { overlay ->
                 addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             }
         }
 
         setContentView(screen)
-        renderHeader()
-        statusView = label("", size = 12f, color = theme.muted, top = 12)
-        root.addView(statusView)
-        if (session == null) {
-            renderPairingCard()
-            renderCallerIdCard()
-        } else {
-            renderPhotoTaskHero()
-            renderPhotoTasksCard()
-            renderQuickStatusGrid()
-            renderCallerIdCard()
-            renderConnectedCard()
-        }
-        scrollFocusedPhotoTaskIntoView()
     }
 
     private fun renderHeader() {
@@ -448,6 +528,9 @@ class MainActivity : Activity() {
                 MobileApiClient(baseUrl).verifySession(token)
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
+                    if (session?.token != verifiedSession.token) {
+                        clearMobileProductsState()
+                    }
                     session = verifiedSession
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
@@ -455,6 +538,7 @@ class MainActivity : Activity() {
                     completeSessionTransition {
                         requestNotificationPermissionIfNeeded()
                         startPhotoTaskDispatchPolling()
+                        refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
                     }
                 }
@@ -469,8 +553,8 @@ class MainActivity : Activity() {
     }
 
     private fun pairDevice() {
-        val baseUrl = baseUrlInput.text.toString().trim()
-        val code = pairingCodeInput.text.toString().trim()
+        val baseUrl = apiUrlValue.trim()
+        val code = pairingCodeValue.trim()
 
         if (baseUrl.isBlank() || code.isBlank()) {
             setStatus("Wpisz adres API i kod parowania.")
@@ -487,6 +571,7 @@ class MainActivity : Activity() {
                 sessionStore.saveSession(baseUrl, nextSession)
                 runOnUiThread {
                     updateSessionTransition(activeStepIndex = 1, progress = 46)
+                    clearMobileProductsState()
                     session = nextSession
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
@@ -494,6 +579,7 @@ class MainActivity : Activity() {
                     completeSessionTransition {
                         requestNotificationPermissionIfNeeded()
                         startPhotoTaskDispatchPolling()
+                        refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
                     }
                 }
@@ -507,12 +593,70 @@ class MainActivity : Activity() {
     }
 
     private fun scanPairingQr() {
+        pendingQrScanMode = QrScanMode.PAIRING
         IntentIntegrator(this).apply {
             setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
             setPrompt("Zeskanuj kod QR z panelu DlaFlow")
             setBeepEnabled(false)
             setOrientationLocked(false)
             initiateScan()
+        }
+    }
+
+    private fun scanPackageCode() {
+        pendingQrScanMode = QrScanMode.PACKAGE
+        IntentIntegrator(this).apply {
+            setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
+            setPrompt("Zeskanuj kod paczki")
+            setBeepEnabled(false)
+            setOrientationLocked(false)
+            initiateScan()
+        }
+    }
+
+    private fun handlePackageQrResult(rawValue: String?) {
+        val code = rawValue?.trim().orEmpty()
+        if (code.isBlank()) {
+            setStatus("Nie odczytano kodu paczki.")
+            return
+        }
+
+        selectedTab = MobileAssistantTab.ORDERS
+        packageScanResult = MobilePackageScanResult(
+            code = code,
+            scannedAtLabel = "Przed chwilą",
+        )
+        setStatus("Kod paczki odczytany. Szczegóły przesyłki będą dostępne po podpięciu modułu wysyłek.")
+    }
+
+    private fun handleQuickAction(action: MobileAssistantQuickAction) {
+        when (action) {
+            MobileAssistantQuickAction.SCAN_PACKAGE -> scanPackageCode()
+            MobileAssistantQuickAction.ADD_PRODUCT -> {
+                val decision = chooseProductPhotoTaskAction(
+                    activeTaskIds = orderedPhotoTasks().map { it.id },
+                    dashboardActiveTaskId = assistantDashboard?.activePhotoTask?.id,
+                )
+                focusedPhotoTaskId = decision.focusedTaskId
+                selectedTab = MobileAssistantTab.PRODUCTS
+                setStatus(decision.statusMessage)
+                if (decision.shouldRefreshTasks) {
+                    refreshAssistantDashboard(showLoading = false)
+                    refreshPhotoTasks(showLoading = true)
+                }
+                if (decision.focusedTaskId == null) {
+                    ensureMobileProductsLoaded()
+                }
+            }
+            MobileAssistantQuickAction.STATS -> {
+                selectedTab = MobileAssistantTab.ORDERS
+                setStatus("Pokazuję szybkie statystyki z dzisiejszego dashboardu.")
+            }
+            MobileAssistantQuickAction.PRODUCTS -> {
+                selectedTab = MobileAssistantTab.PRODUCTS
+                setStatus("Pokazuję produkty.")
+                ensureMobileProductsLoaded()
+            }
         }
     }
 
@@ -528,8 +672,8 @@ class MainActivity : Activity() {
             return
         }
 
-        pairingCodeInput.setText(code)
-        if (baseUrlInput.text.toString().trim().isBlank()) {
+        pairingCodeValue = code
+        if (apiUrlValue.trim().isBlank()) {
             setStatus("Kod QR odczytany. Wpisz adres API i sparuj telefon.")
             return
         }
@@ -560,13 +704,220 @@ class MainActivity : Activity() {
                 MobileApiClient(sessionStore.readBaseUrl()).listActivePhotoTasks(currentSession.token)
             }.onSuccess { tasks ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     photoTasks = tasks
-                    render()
                     setStatus(if (tasks.isEmpty()) "Brak aktywnych zadań." else "Zadania gotowe.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     handleMobileApiFailure(error, "Nie udało się pobrać zadań.")
+                }
+            }
+        }
+    }
+
+    private fun refreshMobileProducts(reset: Boolean = true, showLoading: Boolean = true) {
+        val currentSession = session ?: return
+        if (mobileProductsLoading && !reset) {
+            return
+        }
+        if (!reset && mobileProductsNextCursor.isNullOrBlank()) {
+            return
+        }
+
+        val cursor = if (reset) null else mobileProductsNextCursor
+        val search = mobileProductsSearch
+        val filter = mobileProductsFilter
+        val requestVersion = ++mobileProductsRequestVersion
+        mobileProductsLoading = true
+        if (showLoading) {
+            setStatus("Odświeżam produkty...")
+        }
+
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).listProducts(
+                    token = currentSession.token,
+                    search = search,
+                    filter = filter,
+                    cursor = cursor,
+                )
+            }.onSuccess { page ->
+                runOnUiThread {
+                    if (requestVersion != mobileProductsRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProducts = if (reset) page.data else mobileProducts + page.data
+                    mobileProductsNextCursor = page.nextCursor
+                    mobileProductsTotal = page.total
+                    mobileProductsLoading = false
+                    mobileProductsReadOnly = !page.canEdit
+                    mobileProductsNoAccess = false
+                    setStatus(if (reset && page.data.isEmpty()) "Brak produktów dla wybranego filtra." else "Produkty gotowe.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (requestVersion != mobileProductsRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProductsLoading = false
+                    if (error is MobileApiException && error.statusCode == 403) {
+                        clearMobileProductsData(invalidateCallbacks = true)
+                        mobileProductsReadOnly = false
+                        mobileProductsNoAccess = true
+                    }
+                    handleMobileApiFailure(error, "Nie udało się odświeżyć produktów.")
+                }
+            }
+        }
+    }
+
+    private fun ensureMobileProductsLoaded() {
+        if (session != null && mobileProducts.isEmpty() && !mobileProductsLoading) {
+            refreshMobileProducts(reset = true)
+        }
+    }
+
+    private fun toggleMobileProductVariants(productId: String) {
+        val currentSession = session ?: return
+        if (mobileProductVariants.containsKey(productId)) {
+            mobileProductVariants = mobileProductVariants - productId
+            return
+        }
+        if (productId in mobileProductVariantsLoading) {
+            return
+        }
+
+        val stateVersion = mobileProductsStateVersion
+        mobileProductVariantsLoading = mobileProductVariantsLoading + productId
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).listProductVariants(currentSession.token, productId)
+            }.onSuccess { variants ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProductVariants = mobileProductVariants + (productId to variants)
+                    mobileProductVariantsLoading = mobileProductVariantsLoading - productId
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProductVariantsLoading = mobileProductVariantsLoading - productId
+                    handleMobileApiFailure(error, "Nie udało się pobrać wariantów.")
+                }
+            }
+        }
+    }
+
+    private fun quickEditMobileProduct(product: MobileProduct, field: MobileProductQuickEditField, value: Double) {
+        val currentSession = session ?: return
+        val decision = canQuickEditProduct(product, field)
+        if (!decision.allowed) {
+            setStatus(decision.reason)
+            return
+        }
+
+        val stateVersion = mobileProductsStateVersion
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).quickEditProduct(currentSession.token, product.id, field, value)
+            }.onSuccess { updated ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProducts = replaceMobileProduct(mobileProducts, updated)
+                    mobileProductsReadOnly = false
+                    mobileProductsNoAccess = false
+                    setStatus("Produkt zaktualizowany.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    if (error is MobileApiException && error.statusCode == 403) {
+                        mobileProductsReadOnly = true
+                        mobileProductsNoAccess = false
+                    }
+                    handleMobileApiFailure(error, "Nie udało się zaktualizować produktu.")
+                }
+            }
+        }
+    }
+
+    private fun quickEditMobileProductVariant(variant: MobileProductVariant, field: MobileVariantQuickEditField, value: Double) {
+        val currentSession = session ?: return
+
+        val stateVersion = mobileProductsStateVersion
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).quickEditProductVariant(
+                    token = currentSession.token,
+                    productId = variant.productId,
+                    variantId = variant.id,
+                    field = field,
+                    value = value,
+                )
+            }.onSuccess { updated ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileProductVariants = replaceMobileVariant(mobileProductVariants, updated)
+                    mobileProductsReadOnly = false
+                    mobileProductsNoAccess = false
+                    refreshMobileProducts(reset = true, showLoading = false)
+                    setStatus("Wariant zaktualizowany.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    if (error is MobileApiException && error.statusCode == 403) {
+                        mobileProductsReadOnly = true
+                        mobileProductsNoAccess = false
+                    }
+                    handleMobileApiFailure(error, "Nie udało się zaktualizować wariantu.")
+                }
+            }
+        }
+    }
+
+    private fun refreshAssistantDashboard(showLoading: Boolean = false) {
+        val currentSession = session ?: return
+        if (showLoading) {
+            setStatus("Odświeżam pulpit asystenta...")
+        }
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).getAssistantDashboard(currentSession.token)
+            }.onSuccess { dashboard ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    assistantDashboard = dashboard
+                    if (showLoading) {
+                        setStatus("Pulpit odświeżony.")
+                    }
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    handleMobileApiFailure(error, "Nie udało się pobrać pulpitu.", showNonAuthStatus = showLoading)
                 }
             }
         }
@@ -588,19 +939,26 @@ class MainActivity : Activity() {
                 MobileApiClient(sessionStore.readBaseUrl()).getPhotoTaskDispatch(currentSession.token)
             }.onSuccess { dispatch ->
                 val task = dispatch.pendingOpenTask ?: return@onSuccess
-                if (task.id == lastDispatchedPhotoTaskId) {
-                    return@onSuccess
-                }
-
-                lastDispatchedPhotoTaskId = task.id
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    if (task.id == lastDispatchedPhotoTaskId) {
+                        return@runOnUiThread
+                    }
+                    lastDispatchedPhotoTaskId = task.id
                     focusedPhotoTaskId = task.id
+                    selectedTab = MobileAssistantTab.PRODUCTS
                     showPhotoTaskNotification(task)
                     openPhotoTaskIfAllowed(task)
+                    refreshAssistantDashboard(showLoading = false)
                     refreshPhotoTasks(showLoading = false)
                 }
             }.onFailure { error ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     handleMobileApiFailure(error, "Nie udało się sprawdzić zadań z panelu.", showNonAuthStatus = false)
                 }
             }
@@ -646,6 +1004,17 @@ class MainActivity : Activity() {
         if (taskId.isNotBlank()) {
             focusedPhotoTaskId = taskId
             lastDispatchedPhotoTaskId = taskId
+            selectedTab = MobileAssistantTab.PRODUCTS
+            statusMessage = "Otwieram zadanie zdjęciowe z panelu."
+        }
+        val packageCode = intent?.getStringExtra(extraSmokePackageCode).orEmpty()
+        if (packageCode.isNotBlank()) {
+            packageScanResult = MobilePackageScanResult(
+                code = packageCode.trim(),
+                scannedAtLabel = "Smoke ADB",
+            )
+            selectedTab = MobileAssistantTab.ORDERS
+            statusMessage = "Kod paczki odczytany. Szczegóły przesyłki będą dostępne po podpięciu modułu wysyłek."
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()
@@ -658,14 +1027,14 @@ class MainActivity : Activity() {
     private fun consumeSmokePairingIntent(): Boolean {
         val apiUrl = pendingSmokeApiUrl?.trim().orEmpty()
         val pairingCode = pendingSmokePairingCode?.trim().orEmpty()
-        if (apiUrl.isBlank() || pairingCode.isBlank() || !::baseUrlInput.isInitialized || !::pairingCodeInput.isInitialized) {
+        if (apiUrl.isBlank() || pairingCode.isBlank()) {
             return false
         }
 
         pendingSmokeApiUrl = null
         pendingSmokePairingCode = null
-        baseUrlInput.setText(apiUrl)
-        pairingCodeInput.setText(pairingCode)
+        apiUrlValue = apiUrl
+        pairingCodeValue = pairingCode
         pairDevice()
 
         return true
@@ -793,12 +1162,19 @@ class MainActivity : Activity() {
                 )
             }.onSuccess {
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     clearPendingCameraPhoto()
                     setStatus("Zdjęcie dodane do produktu.")
+                    refreshAssistantDashboard(showLoading = false)
                     refreshPhotoTasks()
                 }
             }.onFailure { error ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     clearPendingCameraPhoto()
                     handleMobileApiFailure(error, "Nie udało się wysłać zdjęcia.")
                 }
@@ -828,12 +1204,18 @@ class MainActivity : Activity() {
                 MobileApiClient(sessionStore.readBaseUrl()).completePhotoTask(currentSession.token, taskId)
             }.onSuccess {
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     photoTasks = photoTasks.filterNot { it.id == taskId }
-                    render()
+                    refreshAssistantDashboard(showLoading = false)
                     setStatus("Zadanie zakończone.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     handleMobileApiFailure(error, "Nie udało się zakończyć zadania.")
                 }
             }
@@ -905,7 +1287,7 @@ class MainActivity : Activity() {
 
     private fun testCallerIdLookup() {
         val currentSession = session ?: return
-        val phone = callerIdTestPhoneInput.text.toString().trim()
+        val phone = callerIdTestPhoneValue.trim()
         if (phone.isBlank()) {
             setStatus("Wpisz numer do testu Caller ID.")
             return
@@ -917,12 +1299,18 @@ class MainActivity : Activity() {
                 MobileApiClient(sessionStore.readBaseUrl()).lookupCallerId(currentSession.token, phone)
             }.onSuccess { lookup ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     callerIdPreview = lookup
                     render()
                     setStatus(if (lookup.primaryOrder == null) "Brak zamówienia dla numeru." else "Znaleziono zamówienie.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
                     handleMobileApiFailure(error, "Nie udało się sprawdzić numeru.")
                 }
             }
@@ -936,14 +1324,54 @@ class MainActivity : Activity() {
         }
 
         if (showNonAuthStatus) {
-            setStatus(error.message ?: fallbackMessage)
+            setStatus(mobileApiBusinessMessage(error, fallbackMessage))
         }
 
         return false
     }
 
+    private fun mobileApiBusinessMessage(error: Throwable, fallbackMessage: String): String {
+        if (error !is MobileApiException) {
+            return error.message ?: fallbackMessage
+        }
+
+        return when (error.statusCode) {
+            400 -> "Sprawdź dane i spróbuj ponownie."
+            403 -> "Brak uprawnień do tej akcji."
+            404 -> "Nie znaleziono danych dla tej akcji."
+            409 -> "Ta akcja nie jest dostępna dla tego elementu."
+            410 -> "Ta akcja wygasła. Odśwież dane."
+            else -> fallbackMessage
+        }
+    }
+
     private fun isMobileSessionRevoked(error: Throwable): Boolean {
         return error is MobileApiException && (error.statusCode == 401 || error.code == "AUTH_REQUIRED")
+    }
+
+    private fun isCurrentSessionToken(token: String): Boolean {
+        return session?.token == token
+    }
+
+    private fun clearMobileProductsData(invalidateCallbacks: Boolean = false) {
+        if (invalidateCallbacks) {
+            mobileProductsStateVersion += 1
+        }
+        mobileProducts = emptyList()
+        mobileProductsNextCursor = null
+        mobileProductsTotal = 0
+        mobileProductsLoading = false
+        mobileProductVariants = emptyMap()
+        mobileProductVariantsLoading = emptySet()
+    }
+
+    private fun clearMobileProductsState() {
+        mobileProductsRequestVersion += 1
+        clearMobileProductsData(invalidateCallbacks = true)
+        mobileProductsSearch = ""
+        mobileProductsFilter = MobileProductFilter.ALL
+        mobileProductsReadOnly = false
+        mobileProductsNoAccess = false
     }
 
     private fun clearRevokedSession() {
@@ -951,14 +1379,38 @@ class MainActivity : Activity() {
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
+        assistantDashboard = null
         photoTasks = emptyList()
         callerIdPreview = null
         focusedPhotoTaskId = null
         focusedPhotoTaskView = null
         lastDispatchedPhotoTaskId = null
+        packageScanResult = null
+        clearMobileProductsState()
+        selectedTab = MobileAssistantTab.DASHBOARD
+        pairingCodeValue = ""
         contentReadyForDisplay = true
         render()
         setStatus("Telefon został odłączony w panelu. Sparuj go ponownie.")
+    }
+
+    private fun disconnectLocalPhone() {
+        sessionStore.clearSession()
+        stopPhotoTaskDispatchPolling()
+        clearPendingCameraPhoto()
+        session = null
+        assistantDashboard = null
+        photoTasks = emptyList()
+        callerIdPreview = null
+        focusedPhotoTaskId = null
+        focusedPhotoTaskView = null
+        lastDispatchedPhotoTaskId = null
+        packageScanResult = null
+        clearMobileProductsState()
+        selectedTab = MobileAssistantTab.DASHBOARD
+        pairingCodeValue = ""
+        contentReadyForDisplay = true
+        setStatus("Telefon odłączony lokalnie. Sparuj go ponownie w panelu.")
     }
 
     private fun isCallerIdRoleAvailable(): Boolean {
@@ -986,6 +1438,7 @@ class MainActivity : Activity() {
     }
 
     private fun setStatus(value: String) {
+        statusMessage = value
         if (::statusView.isInitialized) {
             statusView.text = value
         }
@@ -1025,9 +1478,9 @@ class MainActivity : Activity() {
 
     private fun revealContent() {
         contentReadyForDisplay = true
-        if (::scrollView.isInitialized) {
-            scrollView.animate().cancel()
-            scrollView.animate().alpha(1f).setDuration(220L).start()
+        if (::contentView.isInitialized) {
+            contentView.animate().cancel()
+            contentView.animate().alpha(1f).setDuration(220L).start()
         }
     }
 
@@ -1290,9 +1743,15 @@ class MainActivity : Activity() {
         val warningBg: Int,
     )
 
+    private enum class QrScanMode {
+        PAIRING,
+        PACKAGE,
+    }
+
     companion object {
         private const val dispatchPollIntervalMs = 5_000L
         private const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
+        private const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
         private const val extraSmokeApiUrl = "pl.dlaflow.mobile.SMOKE_API_URL"
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
         private const val photoTaskChannelId = "product-photo-tasks"

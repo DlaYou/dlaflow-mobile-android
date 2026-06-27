@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -11,8 +12,8 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
     }
 
     val releaseStoreFile = System.getenv("ANDROID_SIGNING_STORE_FILE")
@@ -34,7 +35,9 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -45,6 +48,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    buildFeatures {
+        compose = true
+    }
 }
 
 kotlin {
@@ -52,7 +59,19 @@ kotlin {
 }
 
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
+
+    implementation("androidx.activity:activity:1.8.2")
     implementation("androidx.core:core:1.13.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation(composeBom)
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    testImplementation("junit:junit:4.13.2")
+    debugImplementation(composeBom)
+    debugImplementation("androidx.compose.ui:ui-tooling")
 }
