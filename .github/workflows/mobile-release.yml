@@ -6,6 +6,9 @@ name: Mobile Android Release
       - main
     tags:
       - "mobile-v*"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       publish:
