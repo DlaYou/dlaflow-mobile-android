@@ -3,7 +3,11 @@ param(
   [string] $ApkPath = "app/build/outputs/apk/debug/app-debug.apk",
   [string] $AndroidBuildFile = "app/build.gradle.kts",
   [string] $OutputDir = "mobile-release",
-  [string] $Channel = "test"
+  [string] $Channel = "test",
+  [int] $MinSupportedVersionCode = 1,
+  [ValidateSet("normal", "important", "required")]
+  [string] $UpdatePriority = "normal",
+  [string] $ReleaseTitle = "Nowa wersja DlaFlow"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +22,14 @@ function Resolve-ProjectPath([string] $PathValue) {
 
 if ($Channel -notmatch "^[A-Za-z0-9._-]{1,40}$") {
   throw "Channel must contain only letters, numbers, dot, underscore or dash."
+}
+
+if ($MinSupportedVersionCode -lt 1) {
+  throw "MinSupportedVersionCode must be greater than zero."
+}
+
+if ([string]::IsNullOrWhiteSpace($ReleaseTitle) -or $ReleaseTitle.Length -gt 80) {
+  throw "ReleaseTitle must be non-empty and at most 80 characters."
 }
 
 $apkFullPath = Resolve-ProjectPath $ApkPath
@@ -75,6 +87,8 @@ $apkInfo = Get-Item -LiteralPath $targetApkPath
 $manifest = [ordered] @{
   channel = $Channel
   fileName = $targetFileName
+  minSupportedVersionCode = $MinSupportedVersionCode
+  releaseTitle = $ReleaseTitle
   releaseNotes = @(
     "Automatyczny build Android Mobile Assistant.",
     "Kanal: $Channel."
@@ -82,12 +96,15 @@ $manifest = [ordered] @{
   releasedAt = (Get-Date).ToUniversalTime().ToString("o")
   sha256 = $sha256
   sizeBytes = [int64] $apkInfo.Length
+  updatePriority = $UpdatePriority
   versionCode = $versionCode
   versionName = $versionName
 }
 
 $manifestPath = Join-Path $outputFullPath "latest.json"
-$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+$manifestJson = $manifest | ConvertTo-Json -Depth 4
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, $utf8NoBom)
 
 Write-Host "Generated Android release package:"
 Write-Host "  APK: $targetApkPath"

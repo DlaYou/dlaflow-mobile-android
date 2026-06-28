@@ -49,6 +49,20 @@ class MobileSessionStore(context: Context) {
             .apply()
     }
 
+    fun readUpdateDismissalState(): MobileAppUpdateDismissalState {
+        return MobileAppUpdateDismissalState(
+            versionCode = preferences.getInt("app_update_dismissed_version_code", 0),
+            count = preferences.getInt("app_update_dismiss_count", 0),
+        )
+    }
+
+    fun saveUpdateDismissalState(state: MobileAppUpdateDismissalState) {
+        preferences.edit()
+            .putInt("app_update_dismissed_version_code", state.versionCode)
+            .putInt("app_update_dismiss_count", state.count)
+            .apply()
+    }
+
     fun clear() {
         preferences.edit().clear().apply()
     }
