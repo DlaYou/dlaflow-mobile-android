@@ -171,6 +171,24 @@ fun MobileAssistantScreen(
     callerIdOperational: Boolean,
     callerIdAvailable: Boolean,
     canAutoOpenTasks: Boolean,
+    appVersionName: String,
+    appUpdate: MobileAppUpdate? = null,
+    appUpdateDialogVisible: Boolean = false,
+    appUpdateBlocking: Boolean = false,
+    appUpdateDismissalsRemaining: Int = 0,
+    appUpdateChecking: Boolean = false,
+    appUpdateDownloading: Boolean = false,
+    appUpdateDownloadProgress: Int = 0,
+    appUpdateError: String = "",
+    mobileOrders: List<MobileOrderListItem> = emptyList(),
+    mobileOrdersNextOffset: Int? = null,
+    mobileOrdersTotal: Int = 0,
+    mobileOrdersLoading: Boolean = false,
+    mobileOrdersSearch: String = "",
+    mobileOrdersFilter: MobileOrderFilter = MobileOrderFilter.ALL,
+    mobileOrdersNoAccess: Boolean = false,
+    selectedMobileOrder: MobileOrderDetail? = null,
+    selectedMobileOrderLoading: Boolean = false,
     mobileProducts: List<MobileProduct> = emptyList(),
     mobileProductsNextCursor: String? = null,
     mobileProductsTotal: Int = 0,
@@ -189,6 +207,11 @@ fun MobileAssistantScreen(
     onRefresh: () -> Unit,
     onQuickAction: (MobileAssistantQuickAction) -> Unit,
     onSelectTab: (MobileAssistantTab) -> Unit,
+    onOrdersSearchChange: (String) -> Unit = {},
+    onOrdersFilterChange: (MobileOrderFilter) -> Unit = {},
+    onLoadMoreOrders: () -> Unit = {},
+    onSelectOrder: (MobileOrderListItem) -> Unit = {},
+    onCloseOrderDetail: () -> Unit = {},
     onProductsSearchChange: (String) -> Unit = {},
     onProductsFilterChange: (MobileProductFilter) -> Unit = {},
     onLoadMoreProducts: () -> Unit = {},
@@ -201,6 +224,9 @@ fun MobileAssistantScreen(
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
+    onCheckAppUpdate: () -> Unit,
+    onInstallAppUpdate: () -> Unit,
+    onDismissAppUpdate: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
@@ -278,9 +304,29 @@ fun MobileAssistantScreen(
                         callerIdOperational = callerIdOperational,
                         callerIdAvailable = callerIdAvailable,
                         canAutoOpenTasks = canAutoOpenTasks,
+                        appVersionName = appVersionName,
+                        appUpdate = appUpdate,
+                        appUpdateChecking = appUpdateChecking,
+                        appUpdateDownloading = appUpdateDownloading,
+                        appUpdateDownloadProgress = appUpdateDownloadProgress,
+                        appUpdateError = appUpdateError,
+                        mobileOrders = mobileOrders,
+                        mobileOrdersNextOffset = mobileOrdersNextOffset,
+                        mobileOrdersTotal = mobileOrdersTotal,
+                        mobileOrdersLoading = mobileOrdersLoading,
+                        mobileOrdersSearch = mobileOrdersSearch,
+                        mobileOrdersFilter = mobileOrdersFilter,
+                        mobileOrdersNoAccess = mobileOrdersNoAccess,
+                        selectedMobileOrder = selectedMobileOrder,
+                        selectedMobileOrderLoading = selectedMobileOrderLoading,
                         onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
                         onRefresh = onRefresh,
                         onQuickAction = onQuickAction,
+                        onOrdersSearchChange = onOrdersSearchChange,
+                        onOrdersFilterChange = onOrdersFilterChange,
+                        onLoadMoreOrders = onLoadMoreOrders,
+                        onSelectOrder = onSelectOrder,
+                        onCloseOrderDetail = onCloseOrderDetail,
                         onProductsSearchChange = onProductsSearchChange,
                         onProductsFilterChange = onProductsFilterChange,
                         onLoadMoreProducts = onLoadMoreProducts,
@@ -293,10 +339,25 @@ fun MobileAssistantScreen(
                         onEnableCallerId = onEnableCallerId,
                         onTestCallerId = onTestCallerId,
                         onShowCallerIdPreview = onShowCallerIdPreview,
+                        onCheckAppUpdate = onCheckAppUpdate,
+                        onInstallAppUpdate = onInstallAppUpdate,
                         onDisconnect = onDisconnect,
                     )
                 }
             }
+        }
+        if (session != null && appUpdateDialogVisible && appUpdate != null) {
+            MobileAppUpdateDialog(
+                colors = colors,
+                update = appUpdate,
+                blocking = appUpdateBlocking,
+                dismissalsRemaining = appUpdateDismissalsRemaining,
+                downloading = appUpdateDownloading,
+                downloadProgress = appUpdateDownloadProgress,
+                error = appUpdateError,
+                onInstall = onInstallAppUpdate,
+                onDismiss = onDismissAppUpdate,
+            )
         }
     }
 }
@@ -382,9 +443,29 @@ private fun AssistantContent(
     callerIdOperational: Boolean,
     callerIdAvailable: Boolean,
     canAutoOpenTasks: Boolean,
+    appVersionName: String,
+    appUpdate: MobileAppUpdate?,
+    appUpdateChecking: Boolean,
+    appUpdateDownloading: Boolean,
+    appUpdateDownloadProgress: Int,
+    appUpdateError: String,
+    mobileOrders: List<MobileOrderListItem>,
+    mobileOrdersNextOffset: Int?,
+    mobileOrdersTotal: Int,
+    mobileOrdersLoading: Boolean,
+    mobileOrdersSearch: String,
+    mobileOrdersFilter: MobileOrderFilter,
+    mobileOrdersNoAccess: Boolean,
+    selectedMobileOrder: MobileOrderDetail?,
+    selectedMobileOrderLoading: Boolean,
     onCallerIdTestPhoneChange: (String) -> Unit,
     onRefresh: () -> Unit,
     onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onOrdersSearchChange: (String) -> Unit,
+    onOrdersFilterChange: (MobileOrderFilter) -> Unit,
+    onLoadMoreOrders: () -> Unit,
+    onSelectOrder: (MobileOrderListItem) -> Unit,
+    onCloseOrderDetail: () -> Unit,
     onProductsSearchChange: (String) -> Unit,
     onProductsFilterChange: (MobileProductFilter) -> Unit,
     onLoadMoreProducts: () -> Unit,
@@ -397,6 +478,8 @@ private fun AssistantContent(
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
+    onCheckAppUpdate: () -> Unit,
+    onInstallAppUpdate: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     Column(
@@ -409,7 +492,28 @@ private fun AssistantContent(
         AppHeader(colors = colors, status = "Połączono")
         when (selectedTab) {
             MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onTakePhoto, onPickPhoto, onCompletePhotoTask)
-            MobileAssistantTab.ORDERS -> OrdersTab(colors, dashboard, packageScanResult, onQuickAction)
+            MobileAssistantTab.ORDERS -> OrdersTab(
+                colors = colors,
+                apiUrl = apiUrl,
+                mobileToken = session.token,
+                dashboard = dashboard,
+                packageScanResult = packageScanResult,
+                mobileOrders = mobileOrders,
+                mobileOrdersNextOffset = mobileOrdersNextOffset,
+                mobileOrdersTotal = mobileOrdersTotal,
+                mobileOrdersLoading = mobileOrdersLoading,
+                mobileOrdersSearch = mobileOrdersSearch,
+                mobileOrdersFilter = mobileOrdersFilter,
+                mobileOrdersNoAccess = mobileOrdersNoAccess,
+                selectedMobileOrder = selectedMobileOrder,
+                selectedMobileOrderLoading = selectedMobileOrderLoading,
+                onQuickAction = onQuickAction,
+                onOrdersSearchChange = onOrdersSearchChange,
+                onOrdersFilterChange = onOrdersFilterChange,
+                onLoadMoreOrders = onLoadMoreOrders,
+                onSelectOrder = onSelectOrder,
+                onCloseOrderDetail = onCloseOrderDetail,
+            )
             MobileAssistantTab.PRODUCTS -> ProductsTab(
                 colors = colors,
                 apiUrl = apiUrl,
@@ -448,10 +552,18 @@ private fun AssistantContent(
                 callerIdOperational = callerIdOperational,
                 callerIdAvailable = callerIdAvailable,
                 canAutoOpenTasks = canAutoOpenTasks,
+                appVersionName = appVersionName,
+                appUpdate = appUpdate,
+                appUpdateChecking = appUpdateChecking,
+                appUpdateDownloading = appUpdateDownloading,
+                appUpdateDownloadProgress = appUpdateDownloadProgress,
+                appUpdateError = appUpdateError,
                 onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
                 onEnableCallerId = onEnableCallerId,
                 onTestCallerId = onTestCallerId,
                 onShowCallerIdPreview = onShowCallerIdPreview,
+                onCheckAppUpdate = onCheckAppUpdate,
+                onInstallAppUpdate = onInstallAppUpdate,
                 onDisconnect = onDisconnect,
             )
         }
@@ -516,22 +628,459 @@ private fun DashboardTab(
 @Composable
 private fun OrdersTab(
     colors: DlaFlowComposeColors,
+    apiUrl: String,
+    mobileToken: String,
     dashboard: MobileAssistantDashboard?,
     packageScanResult: MobilePackageScanResult?,
+    mobileOrders: List<MobileOrderListItem>,
+    mobileOrdersNextOffset: Int?,
+    mobileOrdersTotal: Int,
+    mobileOrdersLoading: Boolean,
+    mobileOrdersSearch: String,
+    mobileOrdersFilter: MobileOrderFilter,
+    mobileOrdersNoAccess: Boolean,
+    selectedMobileOrder: MobileOrderDetail?,
+    selectedMobileOrderLoading: Boolean,
     onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onOrdersSearchChange: (String) -> Unit,
+    onOrdersFilterChange: (MobileOrderFilter) -> Unit,
+    onLoadMoreOrders: () -> Unit,
+    onSelectOrder: (MobileOrderListItem) -> Unit,
+    onCloseOrderDetail: () -> Unit,
 ) {
-    SectionTitle(colors, "Zamówienia", "Najważniejsze liczby na teraz")
-    KpiGrid(colors, dashboard)
+    SectionTitle(colors, "Zamówienia", ordersSummary(mobileOrdersTotal, mobileOrders.size, mobileOrdersLoading, mobileOrdersNoAccess))
+    OrderSearchField(colors, mobileOrdersSearch, onOrdersSearchChange)
+    OrderFilterChips(colors, mobileOrdersFilter, onOrdersFilterChange)
+
+    if (selectedMobileOrder != null || selectedMobileOrderLoading) {
+        MobileOrderDetailPanel(
+            colors = colors,
+            order = selectedMobileOrder,
+            loading = selectedMobileOrderLoading,
+            onClose = onCloseOrderDetail,
+        )
+        return
+    }
+
+    if (mobileOrdersNoAccess) {
+        ProductStateCard(
+            colors = colors,
+            icon = Icons.Rounded.Warning,
+            iconColor = colors.danger,
+            title = "Brak dostępu",
+            description = "To konto nie ma dostępu do zamówień w telefonie.",
+        )
+        return
+    }
+
     PackageScannerCard(colors, packageScanResult) {
         onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE)
     }
-    PanelCard(colors) {
-        Text(
-            "Pełna obsługa zamówień zostaje w panelu. Telefon ma tu szybko pokazać, co wymaga reakcji.",
-            color = colors.textMuted,
-            fontSize = 13.sp,
-            lineHeight = 19.sp,
+    KpiGrid(colors, dashboard)
+
+    when {
+        mobileOrdersLoading && mobileOrders.isEmpty() -> OrderListSkeleton(colors)
+        mobileOrders.isEmpty() -> ProductStateCard(
+            colors = colors,
+            icon = Icons.Rounded.Search,
+            iconColor = colors.textMuted,
+            title = "Brak zamówień",
+            description = "Zmień wyszukiwanie lub filtr, a potem odśwież listę.",
         )
+        else -> Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            mobileOrders.forEach { order ->
+                MobileOrderCard(
+                    colors = colors,
+                    apiUrl = apiUrl,
+                    mobileToken = mobileToken,
+                    order = order,
+                    onClick = { onSelectOrder(order) },
+                )
+            }
+        }
+    }
+
+    if (mobileOrdersLoading && mobileOrders.isNotEmpty()) {
+        ProductStateCard(
+            colors = colors,
+            icon = Icons.Rounded.Refresh,
+            iconColor = colors.primary,
+            title = "Odświeżam zamówienia",
+            description = "Możesz dalej przeglądać widoczną listę.",
+        )
+    }
+    if (mobileOrdersNextOffset != null && mobileOrders.isNotEmpty()) {
+        SecondaryActionButton(
+            colors = colors,
+            icon = Icons.Rounded.Refresh,
+            text = if (mobileOrdersLoading) "Pobieram..." else "Pokaż więcej",
+            onClick = {
+                if (!mobileOrdersLoading) {
+                    onLoadMoreOrders()
+                }
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OrderSearchField(
+    colors: DlaFlowComposeColors,
+    value: String,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = colors.textMuted,
+                modifier = Modifier.size(19.dp),
+            )
+        },
+        placeholder = {
+            Text("Szukaj po numerze, kliencie, telefonie lub produkcie", color = colors.textMuted, fontSize = 12.sp)
+        },
+        shape = RoundedCornerShape(8.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.primary,
+            unfocusedBorderColor = colors.border,
+            focusedLabelColor = colors.primary,
+            cursorColor = colors.primary,
+            focusedTextColor = colors.textStrong,
+            unfocusedTextColor = colors.textStrong,
+            focusedContainerColor = colors.surfaceSubtle,
+            unfocusedContainerColor = colors.surfaceSubtle,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun OrderFilterChips(
+    colors: DlaFlowComposeColors,
+    selected: MobileOrderFilter,
+    onFilterChange: (MobileOrderFilter) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        MobileOrderFilter.entries.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                row.forEach { filter ->
+                    ProductFilterChip(
+                        colors = colors,
+                        label = filter.label,
+                        selected = filter == selected,
+                        modifier = Modifier.weight(1f),
+                        onClick = { onFilterChange(filter) },
+                    )
+                }
+                repeat(3 - row.size) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderListSkeleton(colors: DlaFlowComposeColors) {
+    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        repeat(4) {
+            PanelCard(colors) {
+                Row(verticalAlignment = Alignment.Top) {
+                    ProductSkeletonBlock(colors, Modifier.size(38.dp), radius = 8.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        ProductSkeletonBlock(colors, Modifier.fillMaxWidth(0.68f).height(15.dp))
+                        Spacer(Modifier.height(7.dp))
+                        ProductSkeletonBlock(colors, Modifier.fillMaxWidth(0.44f).height(10.dp))
+                        Spacer(Modifier.height(7.dp))
+                        ProductSkeletonBlock(colors, Modifier.fillMaxWidth(0.88f).height(10.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileOrderCard(
+    colors: DlaFlowComposeColors,
+    apiUrl: String,
+    mobileToken: String,
+    order: MobileOrderListItem,
+    onClick: () -> Unit,
+) {
+    val statusColor = orderToneColor(colors, order.statusTone)
+    Box(modifier = Modifier.clickable(onClick = onClick)) {
+        PanelCard(colors, accent = mobileOrderUiTone(order.statusTone) == MobileOrderUiTone.WARNING) {
+            Row(verticalAlignment = Alignment.Top) {
+                if (order.thumbnailUrl.isNotBlank()) {
+                    ProductThumbTile(
+                        colors = colors,
+                        apiUrl = apiUrl,
+                        mobileToken = mobileToken,
+                        thumbnailUrl = order.thumbnailUrl,
+                    )
+                } else {
+                    DlaIcon(orderIcon(order), statusColor, modifier = Modifier.size(38.dp))
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                order.customer,
+                                color = colors.textStrong,
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                lineHeight = 18.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "#${order.orderNumber} · ${order.channel.ifBlank { "Panel" }}",
+                                color = colors.textMuted,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            formatMoney(order.amount),
+                            color = colors.textStrong,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                        )
+                    }
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        order.productSummary.ifBlank { "${order.itemCount} produktów" },
+                        color = colors.text,
+                        fontSize = 10.8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 13.5.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OrderTinyPill(colors, mobileOrderStatusLabel(order.status), statusColor)
+                        OrderTinyPill(colors, order.paymentStatus.ifBlank { "Płatność" }, orderToneColor(colors, order.paymentTone))
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            orderQuickInfo(order),
+                            color = colors.textMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            orderBadgeSummary(order),
+                            color = colors.textMuted,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderTinyPill(
+    colors: DlaFlowComposeColors,
+    text: String,
+    tone: Color,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        color = tone,
+        fontSize = 8.8.sp,
+        fontWeight = FontWeight.ExtraBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(tone.copy(alpha = 0.12f))
+            .border(1.dp, tone.copy(alpha = 0.2f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 6.dp, vertical = 3.dp),
+    )
+}
+
+@Composable
+private fun MobileOrderDetailPanel(
+    colors: DlaFlowComposeColors,
+    order: MobileOrderDetail?,
+    loading: Boolean,
+    onClose: () -> Unit,
+) {
+    PanelCard(colors, accent = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Szczegóły zamówienia",
+                color = colors.textStrong,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onClose) {
+                Text("Wróć", color = colors.primary, fontWeight = FontWeight.ExtraBold)
+            }
+        }
+        if (loading && order == null) {
+            Spacer(Modifier.height(10.dp))
+            OrderListSkeleton(colors)
+            return@PanelCard
+        }
+        if (order == null) {
+            Text("Nie udało się pobrać zamówienia.", color = colors.textMuted, fontSize = 12.sp)
+            return@PanelCard
+        }
+
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "#${order.orderNumber}",
+            color = colors.primary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Text(
+            order.customer.name,
+            color = colors.textStrong,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.ExtraBold,
+            lineHeight = 24.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ProductMetricBox(
+                colors = colors,
+                label = "Wartość",
+                value = formatMoney(order.amount),
+                editable = false,
+                modifier = Modifier.weight(1f),
+                onEdit = {},
+            )
+            ProductMetricBox(
+                colors = colors,
+                label = "Status",
+                value = mobileOrderStatusLabel(order.status),
+                editable = false,
+                modifier = Modifier.weight(1f),
+                onEdit = {},
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        MobileOrderDetailSection(colors, "Klient") {
+            KeyValue(colors, "Telefon", order.customer.phone.ifBlank { "Brak" })
+            KeyValue(colors, "E-mail", order.customer.email.ifBlank { "Brak" })
+            KeyValue(colors, "Login", order.customer.nick.ifBlank { "Brak" })
+        }
+        MobileOrderDetailSection(colors, "Płatność") {
+            KeyValue(colors, "Status", order.payment.status.ifBlank { "Do sprawdzenia" })
+            KeyValue(colors, "Metoda", order.payment.method.ifBlank { "Brak" })
+            KeyValue(colors, "Zapłacono", formatMoney(order.payment.paidAmount))
+        }
+        MobileOrderDetailSection(colors, "Dostawa") {
+            KeyValue(colors, "Metoda", order.delivery.method.ifBlank { "Dostawa" })
+            Text(orderAddressLabel(order.delivery.address), color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp)
+        }
+        MobileOrderDetailSection(colors, "Produkty") {
+            order.items.ifEmpty {
+                listOf(MobileOrderItem("", "", "", "", 0.0, order.productSummary.ifBlank { "Produkt" }, "", "", order.itemCount, "", order.amount, ""))
+            }.forEach { item ->
+                MobileOrderDetailListRow(
+                    colors = colors,
+                    title = item.name,
+                    subtitle = listOfNotNull(
+                        item.sku.takeIf { it.isNotBlank() }?.let { "SKU: $it" },
+                        "${item.quantity} szt.",
+                    ).joinToString(" · "),
+                    value = formatMoney(item.lineTotal.takeIf { it > 0.0 } ?: (item.unitPrice * item.quantity.coerceAtLeast(1))),
+                )
+            }
+        }
+        if (order.shipments.isNotEmpty()) {
+            MobileOrderDetailSection(colors, "Przesyłki") {
+                order.shipments.forEach { shipment ->
+                    MobileOrderDetailListRow(
+                        colors = colors,
+                        title = shipment.carrier.ifBlank { "Przesyłka" },
+                        subtitle = shipment.trackingNumber.ifBlank { shipment.status },
+                        value = if (shipment.labelReady) "Etykieta" else shipment.status,
+                    )
+                }
+            }
+        }
+        if (order.messages.isNotEmpty()) {
+            MobileOrderDetailSection(colors, "Wiadomości") {
+                order.messages.take(3).forEach { message ->
+                    MobileOrderDetailListRow(
+                        colors = colors,
+                        title = message.author.ifBlank { "Klient" },
+                        subtitle = message.body,
+                        value = relativeTime(message.messageAt),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileOrderDetailSection(
+    colors: DlaFlowComposeColors,
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Spacer(Modifier.height(10.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.surfaceSubtle)
+            .border(1.dp, colors.borderSubtle, RoundedCornerShape(8.dp))
+            .padding(horizontal = 12.dp, vertical = 13.dp),
+    ) {
+        Text(title, color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 16.sp)
+        Spacer(Modifier.height(7.dp))
+        content()
+    }
+}
+
+@Composable
+private fun MobileOrderDetailListRow(
+    colors: DlaFlowComposeColors,
+    title: String,
+    subtitle: String,
+    value: String,
+) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank()) {
+                Text(subtitle, color = colors.textMuted, fontSize = 10.5.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis, lineHeight = 14.sp)
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(value, color = colors.textStrong, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
     }
 }
 
@@ -1447,6 +1996,80 @@ private fun productsSummary(total: Int, visible: Int, loading: Boolean, readOnly
     }
 }
 
+private fun ordersSummary(total: Int, visible: Int, loading: Boolean, noAccess: Boolean): String {
+    val count = total.coerceAtLeast(visible)
+    val base = when {
+        loading && visible == 0 -> "ładowanie listy"
+        count == 1 -> "1 zamówienie"
+        count % 10 in 2..4 && count % 100 !in 12..14 -> "$count zamówienia"
+        count > 1 -> "$count zamówień"
+        else -> "lista zamówień"
+    }
+
+    return when {
+        noAccess -> "$base · brak dostępu"
+        loading && visible > 0 -> "$base · odświeżam"
+        else -> "$base · podgląd"
+    }
+}
+
+private fun orderBadgeSummary(order: MobileOrderListItem): String {
+    val parts = mutableListOf<String>()
+    if (order.badges.messages > 0) {
+        parts.add("${order.badges.messages} wiad.")
+    }
+    if (order.badges.shipments > 0) {
+        parts.add("${order.badges.shipments} pacz.")
+    }
+    if (order.badges.documents > 0) {
+        parts.add("${order.badges.documents} dok.")
+    }
+
+    return parts.ifEmpty { listOf(shortTime(order.createdAt).ifBlank { "Szczegóły" }) }.joinToString(" · ")
+}
+
+private fun orderQuickInfo(order: MobileOrderListItem): String {
+    val parts = mutableListOf<String>()
+    if (order.shippingMethod.isNotBlank()) {
+        parts.add(order.shippingMethod)
+    }
+    if (order.phone.isNotBlank()) {
+        parts.add("tel. ${order.phone}")
+    }
+
+    return parts.ifEmpty { listOf("${order.itemCount.coerceAtLeast(1)} prod.") }.joinToString(" · ")
+}
+
+private fun orderAddressLabel(address: MobileOrderAddress): String {
+    return listOf(
+        address.name,
+        address.company,
+        address.pointName,
+        address.street,
+        listOf(address.postalCode, address.city).filter { it.isNotBlank() }.joinToString(" "),
+        address.country,
+    ).filter { it.isNotBlank() }.joinToString("\n").ifBlank { "Brak adresu" }
+}
+
+private fun orderIcon(order: MobileOrderListItem): ImageVector {
+    return when {
+        mobileOrderUiTone(order.statusTone) == MobileOrderUiTone.WARNING -> Icons.Rounded.Warning
+        order.badges.messages > 0 -> Icons.Rounded.ChatBubbleOutline
+        order.badges.shipments > 0 -> Icons.Rounded.LocalShipping
+        else -> Icons.AutoMirrored.Rounded.ReceiptLong
+    }
+}
+
+private fun orderToneColor(colors: DlaFlowComposeColors, tone: String): Color {
+    return when (mobileOrderUiTone(tone)) {
+        MobileOrderUiTone.BRAND -> colors.primary
+        MobileOrderUiTone.INFO -> colors.info
+        MobileOrderUiTone.SUCCESS -> colors.success
+        MobileOrderUiTone.WARNING -> colors.orange
+        MobileOrderUiTone.NEUTRAL -> colors.textMuted
+    }
+}
+
 private fun productReference(sku: String, ean: String): String {
     val parts = mutableListOf<String>()
     if (sku.isNotBlank()) {
@@ -1682,6 +2305,61 @@ private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: MobileAssistant
 }
 
 @Composable
+private fun AppUpdateSection(
+    colors: DlaFlowComposeColors,
+    appVersionName: String,
+    update: MobileAppUpdate?,
+    checking: Boolean,
+    downloading: Boolean,
+    downloadProgress: Int,
+    error: String,
+    onCheck: () -> Unit,
+    onInstall: () -> Unit,
+) {
+    PanelCard(colors, accent = update != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            DlaIcon(Icons.Rounded.PhoneAndroid, colors.primary, modifier = Modifier.size(40.dp))
+            Spacer(Modifier.width(11.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Aplikacja", color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                Text("Wersja $appVersionName", color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+            TextButton(onClick = onCheck, enabled = !checking && !downloading, colors = ButtonDefaults.textButtonColors(contentColor = colors.primary)) {
+                Text(if (checking) "Sprawdzam" else "Sprawdź", fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (update == null) {
+            Text(
+                text = if (checking) "Sprawdzamy, czy jest nowsza wersja." else "Masz aktualną wersję aplikacji.",
+                color = colors.textMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        } else {
+            Text(update.releaseTitle, color = colors.textStrong, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                "Dostępna wersja ${update.latestVersionName} · ${formatMobileUpdateBytes(update.sizeBytes)}",
+                color = colors.textMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (downloading) {
+                Spacer(Modifier.height(10.dp))
+                MobileUpdateProgress(colors, downloadProgress)
+            } else {
+                Spacer(Modifier.height(10.dp))
+                PrimaryActionButton(colors, Icons.Rounded.Refresh, "Zaktualizuj", onClick = onInstall)
+            }
+        }
+        if (error.isNotBlank()) {
+            Spacer(Modifier.height(9.dp))
+            Text(error, color = colors.danger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
+        }
+    }
+}
+
+@Composable
 private fun MoreTab(
     colors: DlaFlowComposeColors,
     session: MobileSession,
@@ -1692,13 +2370,32 @@ private fun MoreTab(
     callerIdOperational: Boolean,
     callerIdAvailable: Boolean,
     canAutoOpenTasks: Boolean,
+    appVersionName: String,
+    appUpdate: MobileAppUpdate?,
+    appUpdateChecking: Boolean,
+    appUpdateDownloading: Boolean,
+    appUpdateDownloadProgress: Int,
+    appUpdateError: String,
     onCallerIdTestPhoneChange: (String) -> Unit,
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
+    onCheckAppUpdate: () -> Unit,
+    onInstallAppUpdate: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
     SectionTitle(colors, "Więcej", "Telefon, Caller ID i połączenie")
+    AppUpdateSection(
+        colors = colors,
+        appVersionName = appVersionName,
+        update = appUpdate,
+        checking = appUpdateChecking,
+        downloading = appUpdateDownloading,
+        downloadProgress = appUpdateDownloadProgress,
+        error = appUpdateError,
+        onCheck = onCheckAppUpdate,
+        onInstall = onInstallAppUpdate,
+    )
     PanelCard(colors) {
         KeyValue(colors, "Telefon", session.deviceName)
         KeyValue(colors, "Firma", session.tenantName.ifBlank { "DlaFlow" })
@@ -1743,6 +2440,134 @@ private fun MoreTab(
 }
 
 @Composable
+private fun MobileAppUpdateDialog(
+    colors: DlaFlowComposeColors,
+    update: MobileAppUpdate,
+    blocking: Boolean,
+    dismissalsRemaining: Int,
+    downloading: Boolean,
+    downloadProgress: Int,
+    error: String,
+    onInstall: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = { if (!blocking && !downloading) onDismiss() }) {
+        Surface(
+            color = colors.surface,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, colors.primarySoftBorder),
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DlaIcon(Icons.Rounded.PhoneAndroid, colors.primary, modifier = Modifier.size(44.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            if (blocking) "Wymagana aktualizacja" else "Dostępna aktualizacja",
+                            color = colors.textStrong,
+                            fontSize = 19.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            lineHeight = 22.sp,
+                        )
+                        Text(
+                            "Wersja ${update.latestVersionName} · ${formatMobileUpdateBytes(update.sizeBytes)}",
+                            color = colors.textMuted,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                Text(update.releaseTitle, color = colors.textStrong, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    update.releaseNotes.take(3).forEach { note ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 6.dp)
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.primary),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(note, color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp)
+                        }
+                    }
+                }
+                Text(
+                    text = when {
+                        blocking -> "Ta wersja jest potrzebna do dalszej pracy w aplikacji."
+                        dismissalsRemaining == 1 -> "Możesz odłożyć aktualizację jeszcze 1 raz."
+                        else -> "Możesz odłożyć aktualizację jeszcze $dismissalsRemaining razy."
+                    },
+                    color = if (blocking) colors.warning else colors.textMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 16.sp,
+                )
+                if (downloading) {
+                    MobileUpdateProgress(colors, downloadProgress)
+                }
+                if (error.isNotBlank()) {
+                    Text(error, color = colors.danger, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!blocking) {
+                        SecondaryActionButton(
+                            colors = colors,
+                            icon = Icons.Rounded.Close,
+                            text = "Później",
+                            modifier = Modifier.weight(1f),
+                            onClick = onDismiss,
+                        )
+                    }
+                    PrimaryActionButton(
+                        colors = colors,
+                        icon = Icons.Rounded.Refresh,
+                        text = if (downloading) "Pobieram" else "Zaktualizuj",
+                        modifier = Modifier.weight(1f),
+                        onClick = onInstall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MobileUpdateProgress(colors: DlaFlowComposeColors, progress: Int) {
+    val bounded = progress.coerceIn(0, 100)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Pobieranie $bounded%", color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(7.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(colors.borderSubtle),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(bounded / 100f)
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(colors.primary),
+            )
+        }
+    }
+}
+
+private fun formatMobileUpdateBytes(bytes: Int): String {
+    return if (bytes >= 1024 * 1024) {
+        String.format(Locale.US, "%.1f MB", bytes.toDouble() / 1024.0 / 1024.0)
+    } else {
+        "${(bytes / 1024).coerceAtLeast(1)} KB"
+    }
+}
+
+@Composable
 private fun AppHeader(colors: DlaFlowComposeColors, status: String) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Image(
@@ -1763,27 +2588,11 @@ private fun AppHeader(colors: DlaFlowComposeColors, status: String) {
 
 @Composable
 private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefresh: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Dzień dobry, ${displayFirstName(userName)}! 👋",
-            color = colors.textStrong,
-            fontSize = 16.5.sp,
-            fontFamily = DlaFlowInter,
-            fontWeight = FontWeight.ExtraBold,
-            lineHeight = 20.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "Oto co dzieje się w Twoim sklepie",
-            color = colors.textMuted,
-            fontSize = 10.5.sp,
-            fontFamily = DlaFlowInter,
-            fontWeight = FontWeight.Medium,
-            lineHeight = 14.sp,
-        )
-    }
+    ScreenHeader(
+        colors = colors,
+        title = "Dzień dobry, ${displayFirstName(userName)}! 👋",
+        subtitle = "Oto co dzieje się w Twoim sklepie",
+    )
 }
 
 @Composable
@@ -2277,10 +3086,36 @@ private fun NotificationEmptyRow(colors: DlaFlowComposeColors) {
 
 @Composable
 private fun SectionTitle(colors: DlaFlowComposeColors, title: String, subtitle: String) {
-    Column {
-        Text(title, color = colors.textStrong, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+    ScreenHeader(colors, title, subtitle)
+}
+
+@Composable
+private fun ScreenHeader(colors: DlaFlowComposeColors, title: String, subtitle: String) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = title,
+            color = colors.textStrong,
+            fontSize = 16.5.sp,
+            fontFamily = DlaFlowInter,
+            fontWeight = FontWeight.ExtraBold,
+            letterSpacing = 0.sp,
+            lineHeight = 20.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (subtitle.isNotBlank()) {
-            Text(subtitle, color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = colors.textMuted,
+                fontSize = 10.5.sp,
+                fontFamily = DlaFlowInter,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.sp,
+                lineHeight = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -2420,7 +3255,7 @@ private fun StatusStrip(colors: DlaFlowComposeColors, message: String) {
 
 @Composable
 private fun KeyValue(colors: DlaFlowComposeColors, label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
         Text(value, color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
@@ -2433,49 +3268,59 @@ private fun BottomNavigation(
     dashboard: MobileAssistantDashboard?,
     onSelectTab: (MobileAssistantTab) -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface)
-            .border(1.dp, colors.borderSubtle)
-            .navigationBarsPadding()
-            .padding(horizontal = 9.dp, vertical = 5.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .background(colors.surface),
     ) {
-        MobileAssistantTab.entries.forEach { tab ->
-            val selected = selectedTab == tab
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onSelectTab(tab) }
-                    .padding(vertical = 1.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Box(
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(colors.borderSubtle),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 7.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MobileAssistantTab.entries.forEach { tab ->
+                val selected = selectedTab == tab
+                Column(
                     modifier = Modifier
-                        .height(27.dp)
-                        .width(32.dp),
-                    contentAlignment = Alignment.Center,
+                        .weight(1f)
+                        .height(58.dp)
+                        .clickable { onSelectTab(tab) }
+                        .padding(top = 2.dp, bottom = 1.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    NavIcon(
-                        colors = colors,
-                        tab = tab,
-                        selected = selected,
-                        badge = navBadge(tab, dashboard),
+                    Box(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .width(58.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        NavIcon(
+                            colors = colors,
+                            tab = tab,
+                            selected = selected,
+                            badge = navBadge(tab, dashboard),
+                        )
+                    }
+                    Text(
+                        text = tab.label,
+                        color = if (selected) colors.primary else colors.textMuted,
+                        fontSize = 9.4.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                        lineHeight = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = tab.label,
-                    color = if (selected) colors.primary else colors.textMuted,
-                    fontSize = 7.9.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 9.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
             }
         }
     }
@@ -2484,19 +3329,19 @@ private fun BottomNavigation(
 @Composable
 private fun NavIcon(colors: DlaFlowComposeColors, tab: MobileAssistantTab, selected: Boolean, badge: Int) {
     val tint = if (selected) colors.primary else colors.textMuted
-    Box(modifier = Modifier.size(27.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
         Icon(
             imageVector = tabIcon(tab),
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(if (selected) 23.dp else 21.dp),
+            modifier = Modifier.size(if (selected) 27.dp else 24.dp),
         )
         if (badge > 0) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = 6.dp, y = (-5).dp)
-                    .size(15.dp)
+                    .offset(x = 7.dp, y = (-6).dp)
+                    .size(17.dp)
                     .clip(CircleShape)
                     .background(colors.primary),
                 contentAlignment = Alignment.Center,
@@ -2504,9 +3349,9 @@ private fun NavIcon(colors: DlaFlowComposeColors, tab: MobileAssistantTab, selec
                 Text(
                     text = badge.coerceAtMost(99).toString(),
                     color = Color.White,
-                    fontSize = 7.sp,
+                    fontSize = 8.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 7.sp,
+                    lineHeight = 8.sp,
                     textAlign = TextAlign.Center,
                 )
             }

@@ -6,6 +6,9 @@ name: Mobile Android Release
       - main
     tags:
       - "mobile-v*"
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       publish:
@@ -21,10 +24,32 @@ name: Mobile Android Release
         options:
           - test
           - production
+      update_priority:
+        description: "Mobile update priority"
+        required: true
+        default: normal
+        type: choice
+        options:
+          - normal
+          - important
+          - required
+      min_supported_version_code:
+        description: "Lowest app versionCode allowed before update becomes required"
+        required: true
+        default: "1"
+        type: string
+      release_title:
+        description: "Business title shown in the Android update popup"
+        required: true
+        default: "Nowa wersja DlaFlow"
+        type: string
 
 env:
   GRADLE_VERSION: "8.13"
   RELEASE_CHANNEL: ${{ github.event.inputs.channel || (startsWith(github.ref, 'refs/tags/mobile-v') && 'production') || 'test' }}
+  UPDATE_PRIORITY: ${{ github.event.inputs.update_priority || 'normal' }}
+  MIN_SUPPORTED_VERSION_CODE: ${{ github.event.inputs.min_supported_version_code || '1' }}
+  RELEASE_TITLE: ${{ github.event.inputs.release_title || 'Nowa wersja DlaFlow' }}
 
 jobs:
   build:
@@ -117,14 +142,17 @@ jobs:
           ./scripts/generate-mobile-release-manifest.ps1 `
             -ApkPath "$env:DLAFLOW_APK_PATH" `
             -OutputDir "mobile-release" `
-            -Channel "${{ env.RELEASE_CHANNEL }}"
+            -Channel "${{ env.RELEASE_CHANNEL }}" `
+            -UpdatePriority "${{ env.UPDATE_PRIORITY }}" `
+            -MinSupportedVersionCode ${{ env.MIN_SUPPORTED_VERSION_CODE }} `
+            -ReleaseTitle "${{ env.RELEASE_TITLE }}"
 
       - name: Inspect release package
         shell: bash
         run: |
           set -euo pipefail
           test -s mobile-release/latest.json
-          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('mobile-release/latest.json','utf8')); for (const key of ['channel','fileName','releaseNotes','releasedAt','sha256','sizeBytes','versionCode','versionName']) { if (!(key in m)) throw new Error('missing '+key); } console.log(JSON.stringify(m, null, 2));"
+          node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('mobile-release/latest.json','utf8')); for (const key of ['channel','fileName','minSupportedVersionCode','releaseNotes','releaseTitle','releasedAt','sha256','sizeBytes','updatePriority','versionCode','versionName']) { if (!(key in m)) throw new Error('missing '+key); } console.log(JSON.stringify(m, null, 2));"
           apk_file="$(node -e "console.log(require('./mobile-release/latest.json').fileName)")"
           test -s "mobile-release/$apk_file"
 

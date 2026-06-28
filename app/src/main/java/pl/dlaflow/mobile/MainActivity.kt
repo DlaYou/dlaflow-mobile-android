@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -39,6 +40,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import com.google.zxing.integration.android.IntentIntegrator
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,6 +86,15 @@ class MainActivity : ComponentActivity() {
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
     private var packageScanResult by mutableStateOf<MobilePackageScanResult?>(null)
+    private var mobileOrders by mutableStateOf<List<MobileOrderListItem>>(emptyList())
+    private var mobileOrdersNextOffset by mutableStateOf<Int?>(null)
+    private var mobileOrdersTotal by mutableStateOf(0)
+    private var mobileOrdersLoading by mutableStateOf(false)
+    private var mobileOrdersSearch by mutableStateOf("")
+    private var mobileOrdersFilter by mutableStateOf(MobileOrderFilter.ALL)
+    private var mobileOrdersNoAccess by mutableStateOf(false)
+    private var selectedMobileOrder by mutableStateOf<MobileOrderDetail?>(null)
+    private var selectedMobileOrderLoading by mutableStateOf(false)
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -91,8 +105,21 @@ class MainActivity : ComponentActivity() {
     private var mobileProductVariantsLoading by mutableStateOf<Set<String>>(emptySet())
     private var mobileProductsReadOnly by mutableStateOf(false)
     private var mobileProductsNoAccess by mutableStateOf(false)
+    private var appUpdate by mutableStateOf<MobileAppUpdate?>(null)
+    private var appUpdateDismissalState by mutableStateOf(MobileAppUpdateDismissalState())
+    private var appUpdateDialogVisible by mutableStateOf(false)
+    private var appUpdateChecking by mutableStateOf(false)
+    private var appUpdateDownloading by mutableStateOf(false)
+    private var appUpdateDownloadProgress by mutableStateOf(0)
+    private var appUpdateError by mutableStateOf("")
+    private var dismissedAppUpdateVersionInRuntime: Int? = null
+    private var pendingInstallApkFile: File? = null
+    private var pendingInstallUpdate: MobileAppUpdate? = null
     private var mobileProductsRequestVersion = 0
+    private var mobileOrdersRequestVersion = 0
+    private var mobileOrderDetailRequestVersion = 0
     private var mobileProductsStateVersion = 0
+    private var mobileOrdersStateVersion = 0
     private var pendingQrScanMode = QrScanMode.PAIRING
     private var pendingCameraPhotoFile: File? = null
     private var pendingCameraPhotoUri: Uri? = null
@@ -141,12 +168,26 @@ class MainActivity : ComponentActivity() {
             return
         }
         refreshPhotoTasks(showLoading = false)
+        if (selectedTab == MobileAssistantTab.ORDERS) {
+            ensureMobileOrdersLoaded()
+        }
     }
 
     override fun onDestroy() {
         stopPhotoTaskDispatchPolling()
         executor.shutdownNow()
         super.onDestroy()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val pendingFile = pendingInstallApkFile
+        val pendingUpdate = pendingInstallUpdate
+        if (pendingFile != null && pendingUpdate != null && canInstallMobileUpdates()) {
+            pendingInstallApkFile = null
+            pendingInstallUpdate = null
+            openMobileUpdateInstaller(pendingFile, pendingUpdate)
+        }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -233,6 +274,24 @@ class MainActivity : ComponentActivity() {
                     callerIdOperational = isCallerIdOperational(),
                     callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
                     canAutoOpenTasks = canDrawOverOtherApps(),
+                    appVersionName = currentAppVersionName(),
+                    appUpdate = appUpdate,
+                    appUpdateDialogVisible = appUpdateDialogVisible,
+                    appUpdateBlocking = mobileAppUpdateIsBlocking(appUpdate, appUpdateDismissalState),
+                    appUpdateDismissalsRemaining = mobileAppUpdateDismissalsRemaining(appUpdate, appUpdateDismissalState),
+                    appUpdateChecking = appUpdateChecking,
+                    appUpdateDownloading = appUpdateDownloading,
+                    appUpdateDownloadProgress = appUpdateDownloadProgress,
+                    appUpdateError = appUpdateError,
+                    mobileOrders = mobileOrders,
+                    mobileOrdersNextOffset = mobileOrdersNextOffset,
+                    mobileOrdersTotal = mobileOrdersTotal,
+                    mobileOrdersLoading = mobileOrdersLoading,
+                    mobileOrdersSearch = mobileOrdersSearch,
+                    mobileOrdersFilter = mobileOrdersFilter,
+                    mobileOrdersNoAccess = mobileOrdersNoAccess,
+                    selectedMobileOrder = selectedMobileOrder,
+                    selectedMobileOrderLoading = selectedMobileOrderLoading,
                     mobileProducts = mobileProducts,
                     mobileProductsNextCursor = mobileProductsNextCursor,
                     mobileProductsTotal = mobileProductsTotal,
@@ -257,14 +316,36 @@ class MainActivity : ComponentActivity() {
                     onRefresh = {
                         refreshAssistantDashboard(showLoading = true)
                         refreshPhotoTasks(showLoading = false)
+                        if (selectedTab == MobileAssistantTab.ORDERS) {
+                            refreshMobileOrders(reset = true, showLoading = false)
+                        }
+                        refreshAppUpdate(showStatus = false)
                     },
                     onQuickAction = { handleQuickAction(it) },
                     onSelectTab = {
                         selectedTab = it
+                        if (it == MobileAssistantTab.ORDERS) {
+                            ensureMobileOrdersLoaded()
+                        }
                         if (it == MobileAssistantTab.PRODUCTS) {
                             ensureMobileProductsLoaded()
                         }
                     },
+                    onOrdersSearchChange = {
+                        if (mobileOrdersSearch != it) {
+                            mobileOrdersSearch = it
+                            refreshMobileOrders(reset = true, showLoading = true)
+                        }
+                    },
+                    onOrdersFilterChange = {
+                        if (mobileOrdersFilter != it) {
+                            mobileOrdersFilter = it
+                            refreshMobileOrders(reset = true, showLoading = true)
+                        }
+                    },
+                    onLoadMoreOrders = { refreshMobileOrders(reset = false, showLoading = true) },
+                    onSelectOrder = { order -> loadMobileOrderDetail(order.orderNumber) },
+                    onCloseOrderDetail = { selectedMobileOrder = null },
                     onProductsSearchChange = {
                         if (mobileProductsSearch != it) {
                             mobileProductsSearch = it
@@ -289,6 +370,9 @@ class MainActivity : ComponentActivity() {
                     onShowCallerIdPreview = {
                         callerIdPreview?.let { startActivity(CallerIdActivity.createIntent(this@MainActivity, it)) }
                     },
+                    onCheckAppUpdate = { refreshAppUpdate(showStatus = true) },
+                    onInstallAppUpdate = { installAppUpdate() },
+                    onDismissAppUpdate = { dismissAppUpdate() },
                     onDisconnect = { disconnectLocalPhone() },
                 )
             }
@@ -529,6 +613,7 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
+                        clearMobileOrdersState()
                         clearMobileProductsState()
                     }
                     session = verifiedSession
@@ -540,6 +625,10 @@ class MainActivity : ComponentActivity() {
                         startPhotoTaskDispatchPolling()
                         refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
+                        refreshAppUpdate(showStatus = false)
+                        if (selectedTab == MobileAssistantTab.ORDERS) {
+                            ensureMobileOrdersLoaded()
+                        }
                     }
                 }
             }.onFailure {
@@ -571,6 +660,7 @@ class MainActivity : ComponentActivity() {
                 sessionStore.saveSession(baseUrl, nextSession)
                 runOnUiThread {
                     updateSessionTransition(activeStepIndex = 1, progress = 46)
+                    clearMobileOrdersState()
                     clearMobileProductsState()
                     session = nextSession
                     render()
@@ -581,6 +671,10 @@ class MainActivity : ComponentActivity() {
                         startPhotoTaskDispatchPolling()
                         refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
+                        refreshAppUpdate(showStatus = false)
+                        if (selectedTab == MobileAssistantTab.ORDERS) {
+                            ensureMobileOrdersLoaded()
+                        }
                     }
                 }
             }.onFailure { error ->
@@ -650,6 +744,7 @@ class MainActivity : ComponentActivity() {
             }
             MobileAssistantQuickAction.STATS -> {
                 selectedTab = MobileAssistantTab.ORDERS
+                ensureMobileOrdersLoaded()
                 setStatus("Pokazuję szybkie statystyki z dzisiejszego dashboardu.")
             }
             MobileAssistantQuickAction.PRODUCTS -> {
@@ -716,6 +811,106 @@ class MainActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     handleMobileApiFailure(error, "Nie udało się pobrać zadań.")
+                }
+            }
+        }
+    }
+
+    private fun refreshMobileOrders(reset: Boolean = true, showLoading: Boolean = true) {
+        val currentSession = session ?: return
+        if (mobileOrdersLoading && !reset) {
+            return
+        }
+        if (!reset && mobileOrdersNextOffset == null) {
+            return
+        }
+
+        val offset = if (reset) 0 else mobileOrdersNextOffset ?: return
+        val search = mobileOrdersSearch
+        val filter = mobileOrdersFilter
+        val requestVersion = ++mobileOrdersRequestVersion
+        mobileOrdersLoading = true
+        if (reset) {
+            selectedMobileOrder = null
+            selectedMobileOrderLoading = false
+        }
+        if (showLoading) {
+            setStatus("Odświeżam zamówienia...")
+        }
+
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).listOrders(
+                    token = currentSession.token,
+                    search = search,
+                    filter = filter,
+                    offset = offset,
+                )
+            }.onSuccess { page ->
+                runOnUiThread {
+                    if (requestVersion != mobileOrdersRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileOrders = if (reset) page.data else mobileOrders + page.data
+                    mobileOrdersNextOffset = page.nextOffset
+                    mobileOrdersTotal = page.total
+                    mobileOrdersLoading = false
+                    mobileOrdersNoAccess = false
+                    setStatus(if (reset && page.data.isEmpty()) "Brak zamówień dla wybranego filtra." else "Zamówienia gotowe.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (requestVersion != mobileOrdersRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    mobileOrdersLoading = false
+                    if (error is MobileApiException && error.statusCode == 403) {
+                        clearMobileOrdersData(invalidateCallbacks = true)
+                        mobileOrdersNoAccess = true
+                    }
+                    handleMobileApiFailure(error, "Nie udało się odświeżyć zamówień.")
+                }
+            }
+        }
+    }
+
+    private fun ensureMobileOrdersLoaded() {
+        if (session != null && mobileOrders.isEmpty() && !mobileOrdersLoading && !mobileOrdersNoAccess) {
+            refreshMobileOrders(reset = true)
+        }
+    }
+
+    private fun loadMobileOrderDetail(orderId: String) {
+        val currentSession = session ?: return
+        val requestVersion = ++mobileOrderDetailRequestVersion
+        selectedMobileOrder = null
+        selectedMobileOrderLoading = true
+        setStatus("Pobieram zamówienie...")
+
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).getOrder(currentSession.token, orderId)
+            }.onSuccess { order ->
+                runOnUiThread {
+                    if (requestVersion != mobileOrderDetailRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    selectedMobileOrder = order
+                    selectedMobileOrderLoading = false
+                    mobileOrdersNoAccess = false
+                    setStatus("Zamówienie gotowe.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (requestVersion != mobileOrderDetailRequestVersion || !isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    selectedMobileOrderLoading = false
+                    if (error is MobileApiException && error.statusCode == 403) {
+                        clearMobileOrdersData(invalidateCallbacks = true)
+                        mobileOrdersNoAccess = true
+                    }
+                    handleMobileApiFailure(error, "Nie udało się pobrać zamówienia.")
                 }
             }
         }
@@ -920,6 +1115,240 @@ class MainActivity : ComponentActivity() {
                     handleMobileApiFailure(error, "Nie udało się pobrać pulpitu.", showNonAuthStatus = showLoading)
                 }
             }
+        }
+    }
+
+    private fun refreshAppUpdate(showStatus: Boolean = false) {
+        val currentSession = session ?: return
+        if (appUpdateChecking) {
+            return
+        }
+        appUpdateChecking = true
+        appUpdateError = ""
+        if (showStatus) {
+            setStatus("Sprawdzam aktualizację aplikacji...")
+        }
+
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).checkAppUpdate(
+                    token = currentSession.token,
+                    currentVersionCode = currentAppVersionCode(),
+                    currentVersionName = currentAppVersionName(),
+                )
+            }.onSuccess { update ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    appUpdateChecking = false
+                    appUpdate = update
+                    appUpdateDismissalState = sessionStore.readUpdateDismissalState()
+                    appUpdateDialogVisible = shouldShowAppUpdateDialog(update)
+                    if (showStatus) {
+                        setStatus(if (update == null) "Masz aktualną wersję aplikacji." else "Dostępna jest nowa wersja aplikacji.")
+                    }
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    appUpdateChecking = false
+                    if (!handleMobileApiFailure(error, "Nie udało się sprawdzić aktualizacji.", showNonAuthStatus = showStatus)) {
+                        appUpdateError = mobileApiBusinessMessage(error, "Nie udało się sprawdzić aktualizacji.")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun shouldShowAppUpdateDialog(update: MobileAppUpdate?): Boolean {
+        if (update == null) {
+            return false
+        }
+
+        return mobileAppUpdateIsBlocking(update, appUpdateDismissalState) || dismissedAppUpdateVersionInRuntime != update.latestVersionCode
+    }
+
+    private fun dismissAppUpdate() {
+        val update = appUpdate ?: return
+        if (appUpdateDownloading) {
+            return
+        }
+        if (mobileAppUpdateIsBlocking(update, appUpdateDismissalState)) {
+            appUpdateDialogVisible = true
+            return
+        }
+
+        val nextState = nextMobileAppUpdateDismissalState(update, appUpdateDismissalState)
+        sessionStore.saveUpdateDismissalState(nextState)
+        appUpdateDismissalState = nextState
+        if (mobileAppUpdateIsBlocking(update, nextState)) {
+            appUpdateDialogVisible = true
+            setStatus("Aktualizacja jest teraz wymagana do dalszej pracy.")
+        } else {
+            dismissedAppUpdateVersionInRuntime = update.latestVersionCode
+            appUpdateDialogVisible = false
+            setStatus("Przypomnimy o aktualizacji przy kolejnym uruchomieniu aplikacji.")
+        }
+    }
+
+    private fun installAppUpdate() {
+        val update = appUpdate ?: return
+        if (appUpdateDownloading) {
+            return
+        }
+        if (update.downloadUrl.isBlank()) {
+            appUpdateError = "Brak linku pobrania. Sprawdź aktualizację ponownie."
+            return
+        }
+
+        appUpdateDialogVisible = true
+        appUpdateDownloading = true
+        appUpdateDownloadProgress = 0
+        appUpdateError = ""
+        setStatus("Pobieram aktualizację aplikacji...")
+
+        executor.execute {
+            runCatching {
+                downloadMobileAppUpdateApk(update) { progress ->
+                    runOnUiThread {
+                        appUpdateDownloadProgress = progress.coerceIn(0, 99)
+                    }
+                }
+            }.onSuccess { apkFile ->
+                runOnUiThread {
+                    appUpdateDownloading = false
+                    appUpdateDownloadProgress = 100
+                    openMobileUpdateInstaller(apkFile, update)
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    appUpdateDownloading = false
+                    appUpdateError = error.message ?: "Nie udało się pobrać aktualizacji."
+                    setStatus(appUpdateError)
+                }
+            }
+        }
+    }
+
+    private fun downloadMobileAppUpdateApk(update: MobileAppUpdate, onProgress: (Int) -> Unit): File {
+        val updatesDir = File(cacheDir, "mobile-updates").apply {
+            mkdirs()
+        }
+        updatesDir.listFiles()?.forEach { file ->
+            if (file.isFile) {
+                file.delete()
+            }
+        }
+        val apkFile = File(updatesDir, "dlaflow-mobile-assistant-${update.latestVersionCode}.apk")
+        val digest = MessageDigest.getInstance("SHA-256")
+        val connection = URL(update.downloadUrl).openConnection() as HttpURLConnection
+        connection.connectTimeout = 10_000
+        connection.readTimeout = 45_000
+        connection.setRequestProperty("Accept", "application/vnd.android.package-archive")
+
+        try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                throw IllegalStateException("Nie udało się pobrać aktualizacji.")
+            }
+
+            val expectedBytes = update.sizeBytes.takeIf { it > 0 }?.toLong()
+                ?: connection.contentLengthLong.takeIf { it > 0 }
+                ?: 0L
+            var downloadedBytes = 0L
+            connection.inputStream.use { input ->
+                FileOutputStream(apkFile).use { output ->
+                    val buffer = ByteArray(32 * 1024)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        digest.update(buffer, 0, read)
+                        output.write(buffer, 0, read)
+                        downloadedBytes += read.toLong()
+                        if (expectedBytes > 0L) {
+                            onProgress(((downloadedBytes * 100L) / expectedBytes).toInt())
+                        }
+                    }
+                }
+            }
+
+            val actualSha256 = digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+            if (!actualSha256.equals(update.sha256, ignoreCase = true)) {
+                apkFile.delete()
+                throw IllegalStateException("Pobrany plik nie przeszedł kontroli bezpieczeństwa.")
+            }
+
+            return apkFile
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun canInstallMobileUpdates(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
+    }
+
+    private fun currentAppVersionCode(): Int {
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode.toInt()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode
+        }
+    }
+
+    private fun currentAppVersionName(): String {
+        val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, 0)
+        }
+
+        return packageInfo.versionName ?: ""
+    }
+
+    private fun openMobileUpdateInstaller(apkFile: File, update: MobileAppUpdate) {
+        if (!apkFile.isFile) {
+            appUpdateError = "Pobrany plik aktualizacji jest niedostępny."
+            return
+        }
+
+        if (!canInstallMobileUpdates()) {
+            pendingInstallApkFile = apkFile
+            pendingInstallUpdate = update
+            setStatus("Włącz zgodę na instalację aplikacji DlaFlow, a potem wróć do aplikacji.")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+            }
+            return
+        }
+
+        pendingInstallApkFile = null
+        pendingInstallUpdate = null
+        val apkUri = FileProvider.getUriForFile(this, "$packageName.fileprovider", apkFile)
+        val installIntent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(apkUri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        try {
+            startActivity(installIntent)
+            setStatus("Otworzyłem instalator aktualizacji.")
+        } catch (_: ActivityNotFoundException) {
+            appUpdateError = "Nie udało się otworzyć instalatora Androida."
+            setStatus(appUpdateError)
         }
     }
 
@@ -1353,6 +1782,27 @@ class MainActivity : ComponentActivity() {
         return session?.token == token
     }
 
+    private fun clearMobileOrdersData(invalidateCallbacks: Boolean = false) {
+        if (invalidateCallbacks) {
+            mobileOrdersStateVersion += 1
+        }
+        mobileOrders = emptyList()
+        mobileOrdersNextOffset = null
+        mobileOrdersTotal = 0
+        mobileOrdersLoading = false
+        selectedMobileOrder = null
+        selectedMobileOrderLoading = false
+    }
+
+    private fun clearMobileOrdersState() {
+        mobileOrdersRequestVersion += 1
+        mobileOrderDetailRequestVersion += 1
+        clearMobileOrdersData(invalidateCallbacks = true)
+        mobileOrdersSearch = ""
+        mobileOrdersFilter = MobileOrderFilter.ALL
+        mobileOrdersNoAccess = false
+    }
+
     private fun clearMobileProductsData(invalidateCallbacks: Boolean = false) {
         if (invalidateCallbacks) {
             mobileProductsStateVersion += 1
@@ -1374,6 +1824,17 @@ class MainActivity : ComponentActivity() {
         mobileProductsNoAccess = false
     }
 
+    private fun clearAppUpdateState() {
+        appUpdate = null
+        appUpdateDialogVisible = false
+        appUpdateChecking = false
+        appUpdateDownloading = false
+        appUpdateDownloadProgress = 0
+        appUpdateError = ""
+        pendingInstallApkFile = null
+        pendingInstallUpdate = null
+    }
+
     private fun clearRevokedSession() {
         sessionStore.clearSession()
         stopPhotoTaskDispatchPolling()
@@ -1386,6 +1847,8 @@ class MainActivity : ComponentActivity() {
         focusedPhotoTaskView = null
         lastDispatchedPhotoTaskId = null
         packageScanResult = null
+        clearAppUpdateState()
+        clearMobileOrdersState()
         clearMobileProductsState()
         selectedTab = MobileAssistantTab.DASHBOARD
         pairingCodeValue = ""
@@ -1406,6 +1869,8 @@ class MainActivity : ComponentActivity() {
         focusedPhotoTaskView = null
         lastDispatchedPhotoTaskId = null
         packageScanResult = null
+        clearAppUpdateState()
+        clearMobileOrdersState()
         clearMobileProductsState()
         selectedTab = MobileAssistantTab.DASHBOARD
         pairingCodeValue = ""
