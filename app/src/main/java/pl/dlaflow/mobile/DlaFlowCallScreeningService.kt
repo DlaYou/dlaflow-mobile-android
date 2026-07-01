@@ -43,12 +43,16 @@ class DlaFlowCallScreeningService : CallScreeningService() {
     }
 
     private fun allowCallResponse(): CallResponse {
-        return CallResponse.Builder()
+        val builder = CallResponse.Builder()
             .setDisallowCall(false)
             .setRejectCall(false)
-            .setSilenceCall(false)
             .setSkipCallLog(false)
             .setSkipNotification(false)
-            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setSilenceCall(false)
+        }
+
+        return builder.build()
     }
 }

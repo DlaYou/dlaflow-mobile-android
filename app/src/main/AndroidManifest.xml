@@ -7,15 +7,21 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
         android:name=".DlaFlowMobileApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@drawable/dlaflow_app_icon"
         android:label="DlaFlow"
         android:roundIcon="@drawable/dlaflow_app_icon"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
             android:name=".MainActivity"
             android:exported="true"
