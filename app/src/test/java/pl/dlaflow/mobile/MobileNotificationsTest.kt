@@ -29,6 +29,19 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `notification filters keep only matching rows`() {
+        val all = listOf(
+            testNotification("1", "info", null, "OPEN_MESSAGES"),
+            testNotification("2", "warning", null, "OPEN_PRODUCTS"),
+            testNotification("3", "info", "2026-07-01T12:10:00.000Z", "OPEN_LOGS_SUMMARY"),
+        )
+
+        assertEquals(3, filterNotifications(all, MobileNotificationFilter.ALL).size)
+        assertEquals(listOf("2"), filterNotifications(all, MobileNotificationFilter.ATTENTION).map { it.id })
+        assertEquals(listOf("1", "2"), filterNotifications(all, MobileNotificationFilter.UNREAD).map { it.id })
+    }
+
+    @Test
     fun `mobile notifications page parses summary actions and read state`() {
         val payload = """
             {
@@ -135,5 +148,17 @@ class MobileNotificationsTest {
         val path: String,
         val authorization: String,
         val body: String,
+    )
+
+    private fun testNotification(id: String, tone: String, readAt: String?, action: String) = MobileAssistantNotification(
+        id = id,
+        title = "Test",
+        description = "Opis",
+        tone = tone,
+        source = "DlaFlow",
+        account = "Panel",
+        occurredAt = "2026-07-01T12:00:00.000Z",
+        readAt = readAt,
+        mobileAction = MobileNotificationAction(type = action, label = "Otwórz"),
     )
 }

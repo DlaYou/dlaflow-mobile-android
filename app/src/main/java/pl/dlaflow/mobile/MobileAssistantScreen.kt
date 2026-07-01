@@ -162,6 +162,17 @@ enum class MobileAssistantQuickAction {
     PRODUCTS,
 }
 
+enum class MobileAssistantOverlayScreen {
+    NONE,
+    NOTIFICATIONS,
+}
+
+enum class MobileNotificationFilter(val label: String) {
+    ALL("Wszystkie"),
+    ATTENTION("Wymaga uwagi"),
+    UNREAD("Nowe"),
+}
+
 data class MobilePackageScanResult(
     val code: String,
     val scannedAtLabel: String,
@@ -171,19 +182,37 @@ enum class MobileAssistantBackAction {
     NONE,
     CLOSE_PAIRING_HELP,
     CLOSE_ORDER_DETAIL,
+    CLOSE_OVERLAY,
 }
 
 fun mobileAssistantBackAction(
     sessionConnected: Boolean,
     pairingHelpVisible: Boolean,
+    overlayScreen: MobileAssistantOverlayScreen = MobileAssistantOverlayScreen.NONE,
     selectedTab: MobileAssistantTab,
     orderDetailVisible: Boolean,
 ): MobileAssistantBackAction {
     return when {
         !sessionConnected && pairingHelpVisible -> MobileAssistantBackAction.CLOSE_PAIRING_HELP
+        sessionConnected && overlayScreen != MobileAssistantOverlayScreen.NONE -> MobileAssistantBackAction.CLOSE_OVERLAY
         sessionConnected && selectedTab == MobileAssistantTab.ORDERS && orderDetailVisible -> MobileAssistantBackAction.CLOSE_ORDER_DETAIL
         else -> MobileAssistantBackAction.NONE
     }
+}
+
+fun filterNotifications(
+    notifications: List<MobileAssistantNotification>,
+    filter: MobileNotificationFilter,
+): List<MobileAssistantNotification> = when (filter) {
+    MobileNotificationFilter.ALL -> notifications
+    MobileNotificationFilter.ATTENTION -> notifications.filter { toneColorKey(it.tone) == "attention" }
+    MobileNotificationFilter.UNREAD -> notifications.filter { it.readAt.isNullOrBlank() }
+}
+
+private fun toneColorKey(tone: String): String {
+    val normalized = tone.lowercase(Locale.ROOT)
+
+    return if (normalized == "error" || normalized == "warning") "attention" else normalized
 }
 
 enum class MobileMoreSettingsKind {
@@ -386,6 +415,10 @@ fun MobileAssistantScreen(
     mobileProductVariantsLoading: Set<String> = emptySet(),
     mobileProductsReadOnly: Boolean = false,
     mobileProductsNoAccess: Boolean = false,
+    mobileOverlayScreen: MobileAssistantOverlayScreen = MobileAssistantOverlayScreen.NONE,
+    mobileNotifications: List<MobileAssistantNotification> = emptyList(),
+    mobileNotificationsLoading: Boolean = false,
+    mobileNotificationFilter: MobileNotificationFilter = MobileNotificationFilter.ALL,
     onPairingCodeChange: (String) -> Unit,
     onCallerIdTestPhoneChange: (String) -> Unit,
     onPairDevice: () -> Unit,
@@ -404,6 +437,10 @@ fun MobileAssistantScreen(
     onToggleProductVariants: (String) -> Unit = {},
     onQuickEditProduct: (MobileProduct, MobileProductQuickEditField, Double) -> Unit = { _, _, _ -> },
     onQuickEditVariant: (MobileProductVariant, MobileVariantQuickEditField, Double) -> Unit = { _, _, _ -> },
+    onOpenNotifications: () -> Unit = {},
+    onCloseOverlay: () -> Unit = {},
+    onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
+    onMarkNotificationsRead: () -> Unit = {},
     onTakePhoto: (String) -> Unit,
     onPickPhoto: (String) -> Unit,
     onCompletePhotoTask: (String) -> Unit,
@@ -425,6 +462,7 @@ fun MobileAssistantScreen(
     val backAction = mobileAssistantBackAction(
         sessionConnected = session != null,
         pairingHelpVisible = showPairingHelp,
+        overlayScreen = mobileOverlayScreen,
         selectedTab = selectedTab,
         orderDetailVisible = selectedMobileOrder != null || selectedMobileOrderLoading,
     )
@@ -453,6 +491,7 @@ fun MobileAssistantScreen(
             when (backAction) {
                 MobileAssistantBackAction.CLOSE_PAIRING_HELP -> showPairingHelp = false
                 MobileAssistantBackAction.CLOSE_ORDER_DETAIL -> onCloseOrderDetail()
+                MobileAssistantBackAction.CLOSE_OVERLAY -> onCloseOverlay()
                 MobileAssistantBackAction.NONE -> Unit
             }
         }
@@ -510,6 +549,10 @@ fun MobileAssistantScreen(
                     mobileProductVariantsLoading = mobileProductVariantsLoading,
                     mobileProductsReadOnly = mobileProductsReadOnly,
                     mobileProductsNoAccess = mobileProductsNoAccess,
+                    mobileOverlayScreen = mobileOverlayScreen,
+                    mobileNotifications = mobileNotifications,
+                    mobileNotificationsLoading = mobileNotificationsLoading,
+                    mobileNotificationFilter = mobileNotificationFilter,
                         callerIdTestPhone = callerIdTestPhone,
                         callerIdPreview = callerIdPreview,
                     callerIdOperational = callerIdOperational,
@@ -545,6 +588,10 @@ fun MobileAssistantScreen(
                         onToggleProductVariants = onToggleProductVariants,
                         onQuickEditProduct = onQuickEditProduct,
                         onQuickEditVariant = onQuickEditVariant,
+                        onOpenNotifications = onOpenNotifications,
+                        onCloseOverlay = onCloseOverlay,
+                        onNotificationFilterChange = onNotificationFilterChange,
+                        onMarkNotificationsRead = onMarkNotificationsRead,
                         onTakePhoto = onTakePhoto,
                         onPickPhoto = onPickPhoto,
                         onCompletePhotoTask = onCompletePhotoTask,
@@ -1502,6 +1549,10 @@ private fun AssistantContent(
     mobileProductVariantsLoading: Set<String>,
     mobileProductsReadOnly: Boolean,
     mobileProductsNoAccess: Boolean,
+    mobileOverlayScreen: MobileAssistantOverlayScreen,
+    mobileNotifications: List<MobileAssistantNotification>,
+    mobileNotificationsLoading: Boolean,
+    mobileNotificationFilter: MobileNotificationFilter,
     callerIdTestPhone: String,
     callerIdPreview: MobileCallerIdLookup?,
     callerIdOperational: Boolean,
@@ -1537,6 +1588,10 @@ private fun AssistantContent(
     onToggleProductVariants: (String) -> Unit,
     onQuickEditProduct: (MobileProduct, MobileProductQuickEditField, Double) -> Unit,
     onQuickEditVariant: (MobileProductVariant, MobileVariantQuickEditField, Double) -> Unit,
+    onOpenNotifications: () -> Unit,
+    onCloseOverlay: () -> Unit,
+    onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
+    onMarkNotificationsRead: () -> Unit,
     onTakePhoto: (String) -> Unit,
     onPickPhoto: (String) -> Unit,
     onCompletePhotoTask: (String) -> Unit,
@@ -1557,87 +1612,105 @@ private fun AssistantContent(
             .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        AppHeader(colors = colors, status = "Połączono")
-        when (selectedTab) {
-            MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onTakePhoto, onPickPhoto, onCompletePhotoTask)
-            MobileAssistantTab.ORDERS -> OrdersTab(
+        AppHeader(
+            colors = colors,
+            status = "Połączono",
+            unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
+            unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
+            onOpenNotifications = onOpenNotifications,
+        )
+        if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
+            NotificationsScreen(
                 colors = colors,
-                apiUrl = apiUrl,
-                mobileToken = session.token,
-                dashboard = dashboard,
-                packageScanResult = packageScanResult,
-                mobileOrders = mobileOrders,
-                mobileOrdersNextOffset = mobileOrdersNextOffset,
-                mobileOrdersTotal = mobileOrdersTotal,
-                mobileOrdersLoading = mobileOrdersLoading,
-                mobileOrdersSearch = mobileOrdersSearch,
-                mobileOrdersFilter = mobileOrdersFilter,
-                mobileOrdersNoAccess = mobileOrdersNoAccess,
-                selectedMobileOrder = selectedMobileOrder,
-                selectedMobileOrderLoading = selectedMobileOrderLoading,
-                onQuickAction = onQuickAction,
-                onOrdersSearchChange = onOrdersSearchChange,
-                onOrdersFilterChange = onOrdersFilterChange,
-                onLoadMoreOrders = onLoadMoreOrders,
-                onSelectOrder = onSelectOrder,
-                onCloseOrderDetail = onCloseOrderDetail,
+                notifications = mobileNotifications.ifEmpty { dashboard?.notifications.orEmpty() },
+                loading = mobileNotificationsLoading,
+                selectedFilter = mobileNotificationFilter,
+                onFilterChange = onNotificationFilterChange,
+                onBack = onCloseOverlay,
+                onMarkRead = onMarkNotificationsRead,
             )
-            MobileAssistantTab.PRODUCTS -> ProductsTab(
-                colors = colors,
-                apiUrl = apiUrl,
-                mobileToken = session.token,
-                dashboard = dashboard,
-                photoTasks = photoTasks,
-                mobileProducts = mobileProducts,
-                mobileProductsNextCursor = mobileProductsNextCursor,
-                mobileProductsTotal = mobileProductsTotal,
-                mobileProductsLoading = mobileProductsLoading,
-                mobileProductsSearch = mobileProductsSearch,
-                mobileProductsFilter = mobileProductsFilter,
-                mobileProductVariants = mobileProductVariants,
-                mobileProductVariantsLoading = mobileProductVariantsLoading,
-                mobileProductsReadOnly = mobileProductsReadOnly,
-                mobileProductsNoAccess = mobileProductsNoAccess,
-                onRefresh = onRefresh,
-                onProductsSearchChange = onProductsSearchChange,
-                onProductsFilterChange = onProductsFilterChange,
-                onLoadMoreProducts = onLoadMoreProducts,
-                onToggleProductVariants = onToggleProductVariants,
-                onQuickEditProduct = onQuickEditProduct,
-                onQuickEditVariant = onQuickEditVariant,
-                onTakePhoto = onTakePhoto,
-                onPickPhoto = onPickPhoto,
-                onCompletePhotoTask = onCompletePhotoTask,
-            )
-            MobileAssistantTab.MESSAGES -> MessagesTab(colors, dashboard)
-            MobileAssistantTab.MORE -> MoreTab(
-                colors = colors,
-                session = session,
-                dashboard = dashboard,
-                statusMessage = statusMessage,
-                callerIdTestPhone = callerIdTestPhone,
-                callerIdPreview = callerIdPreview,
-                callerIdOperational = callerIdOperational,
-                callerIdAvailable = callerIdAvailable,
-                canAutoOpenTasks = canAutoOpenTasks,
-                notificationAllowed = notificationAllowed,
-                appVersionName = appVersionName,
-                appUpdate = appUpdate,
-                appUpdateChecking = appUpdateChecking,
-                appUpdateDownloading = appUpdateDownloading,
-                appUpdateDownloadProgress = appUpdateDownloadProgress,
-                appUpdateError = appUpdateError,
-                onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
-                onEnableCallerId = onEnableCallerId,
-                onTestCallerId = onTestCallerId,
-                onShowCallerIdPreview = onShowCallerIdPreview,
-                onCheckAppUpdate = onCheckAppUpdate,
-                onInstallAppUpdate = onInstallAppUpdate,
-                onOpenNotificationSettings = onOpenNotificationSettings,
-                onOpenOverlaySettings = onOpenOverlaySettings,
-                onOpenAppSystemSettings = onOpenAppSystemSettings,
-                onDisconnect = onDisconnect,
-            )
+        } else {
+            when (selectedTab) {
+                MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onTakePhoto, onPickPhoto, onCompletePhotoTask)
+                MobileAssistantTab.ORDERS -> OrdersTab(
+                    colors = colors,
+                    apiUrl = apiUrl,
+                    mobileToken = session.token,
+                    dashboard = dashboard,
+                    packageScanResult = packageScanResult,
+                    mobileOrders = mobileOrders,
+                    mobileOrdersNextOffset = mobileOrdersNextOffset,
+                    mobileOrdersTotal = mobileOrdersTotal,
+                    mobileOrdersLoading = mobileOrdersLoading,
+                    mobileOrdersSearch = mobileOrdersSearch,
+                    mobileOrdersFilter = mobileOrdersFilter,
+                    mobileOrdersNoAccess = mobileOrdersNoAccess,
+                    selectedMobileOrder = selectedMobileOrder,
+                    selectedMobileOrderLoading = selectedMobileOrderLoading,
+                    onQuickAction = onQuickAction,
+                    onOrdersSearchChange = onOrdersSearchChange,
+                    onOrdersFilterChange = onOrdersFilterChange,
+                    onLoadMoreOrders = onLoadMoreOrders,
+                    onSelectOrder = onSelectOrder,
+                    onCloseOrderDetail = onCloseOrderDetail,
+                )
+                MobileAssistantTab.PRODUCTS -> ProductsTab(
+                    colors = colors,
+                    apiUrl = apiUrl,
+                    mobileToken = session.token,
+                    dashboard = dashboard,
+                    photoTasks = photoTasks,
+                    mobileProducts = mobileProducts,
+                    mobileProductsNextCursor = mobileProductsNextCursor,
+                    mobileProductsTotal = mobileProductsTotal,
+                    mobileProductsLoading = mobileProductsLoading,
+                    mobileProductsSearch = mobileProductsSearch,
+                    mobileProductsFilter = mobileProductsFilter,
+                    mobileProductVariants = mobileProductVariants,
+                    mobileProductVariantsLoading = mobileProductVariantsLoading,
+                    mobileProductsReadOnly = mobileProductsReadOnly,
+                    mobileProductsNoAccess = mobileProductsNoAccess,
+                    onRefresh = onRefresh,
+                    onProductsSearchChange = onProductsSearchChange,
+                    onProductsFilterChange = onProductsFilterChange,
+                    onLoadMoreProducts = onLoadMoreProducts,
+                    onToggleProductVariants = onToggleProductVariants,
+                    onQuickEditProduct = onQuickEditProduct,
+                    onQuickEditVariant = onQuickEditVariant,
+                    onTakePhoto = onTakePhoto,
+                    onPickPhoto = onPickPhoto,
+                    onCompletePhotoTask = onCompletePhotoTask,
+                )
+                MobileAssistantTab.MESSAGES -> MessagesTab(colors, dashboard)
+                MobileAssistantTab.MORE -> MoreTab(
+                    colors = colors,
+                    session = session,
+                    dashboard = dashboard,
+                    statusMessage = statusMessage,
+                    callerIdTestPhone = callerIdTestPhone,
+                    callerIdPreview = callerIdPreview,
+                    callerIdOperational = callerIdOperational,
+                    callerIdAvailable = callerIdAvailable,
+                    canAutoOpenTasks = canAutoOpenTasks,
+                    notificationAllowed = notificationAllowed,
+                    appVersionName = appVersionName,
+                    appUpdate = appUpdate,
+                    appUpdateChecking = appUpdateChecking,
+                    appUpdateDownloading = appUpdateDownloading,
+                    appUpdateDownloadProgress = appUpdateDownloadProgress,
+                    appUpdateError = appUpdateError,
+                    onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
+                    onEnableCallerId = onEnableCallerId,
+                    onTestCallerId = onTestCallerId,
+                    onShowCallerIdPreview = onShowCallerIdPreview,
+                    onCheckAppUpdate = onCheckAppUpdate,
+                    onInstallAppUpdate = onInstallAppUpdate,
+                    onOpenNotificationSettings = onOpenNotificationSettings,
+                    onOpenOverlaySettings = onOpenOverlaySettings,
+                    onOpenAppSystemSettings = onOpenAppSystemSettings,
+                    onDisconnect = onDisconnect,
+                )
+            }
         }
         if (shouldShowAssistantStatus(statusMessage)) {
             StatusStrip(colors, statusMessage)
@@ -4020,7 +4093,13 @@ private fun formatMobileUpdateBytes(bytes: Int): String {
 }
 
 @Composable
-private fun AppHeader(colors: DlaFlowComposeColors, status: String) {
+private fun AppHeader(
+    colors: DlaFlowComposeColors,
+    status: String,
+    unreadCount: Int = 0,
+    unreadAttentionCount: Int = 0,
+    onOpenNotifications: () -> Unit = {},
+) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Image(
             painter = painterResource(if (colors.dark) R.drawable.dlaflow_logo_dark else R.drawable.dlaflow_logo_light),
@@ -4031,7 +4110,12 @@ private fun AppHeader(colors: DlaFlowComposeColors, status: String) {
         )
         Spacer(Modifier.weight(1f))
         if (status == "Połączono") {
-            NotificationBell(colors, count = 12)
+            NotificationBell(
+                colors = colors,
+                unreadCount = unreadCount,
+                unreadAttentionCount = unreadAttentionCount,
+                onClick = onOpenNotifications,
+            )
         } else {
             StatusPill(colors, status)
         }
@@ -4048,33 +4132,48 @@ private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefres
 }
 
 @Composable
-private fun NotificationBell(colors: DlaFlowComposeColors, count: Int) {
-    Box(modifier = Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+private fun NotificationBell(
+    colors: DlaFlowComposeColors,
+    unreadCount: Int,
+    unreadAttentionCount: Int,
+    onClick: () -> Unit,
+) {
+    val badgeState = notificationBadgeState(unreadCount, unreadAttentionCount)
+    val badgeColor = if (badgeState == NotificationBadgeState.ATTENTION) colors.danger else colors.primary
+    Box(
+        modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
         Icon(
             imageVector = Icons.Rounded.NotificationsNone,
             contentDescription = "Powiadomienia",
             tint = colors.text,
             modifier = Modifier.size(25.dp),
         )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = (-2).dp, y = 1.dp)
-                .size(14.dp)
-                .clip(CircleShape)
-                .background(colors.primary),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = count.toString(),
-                color = Color.White,
-                fontSize = 7.sp,
-                fontFamily = DlaFlowInter,
-                fontWeight = FontWeight.ExtraBold,
-                letterSpacing = 0.sp,
-                lineHeight = 7.sp,
-                textAlign = TextAlign.Center,
-            )
+        if (badgeState != NotificationBadgeState.NONE) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = (-1).dp, y = 1.dp)
+                    .size(16.dp)
+                    .clip(CircleShape)
+                    .background(badgeColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = unreadCount.coerceAtMost(99).toString(),
+                    color = Color.White,
+                    fontSize = 8.sp,
+                    fontFamily = DlaFlowInter,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.sp,
+                    lineHeight = 8.sp,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -4451,6 +4550,116 @@ private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<
 }
 
 @Composable
+private fun NotificationsScreen(
+    colors: DlaFlowComposeColors,
+    notifications: List<MobileAssistantNotification>,
+    loading: Boolean,
+    selectedFilter: MobileNotificationFilter,
+    onFilterChange: (MobileNotificationFilter) -> Unit,
+    onBack: () -> Unit,
+    onMarkRead: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(colors.surfaceSubtle)
+                    .border(1.dp, colors.border, RoundedCornerShape(9.dp))
+                    .clickable { onBack() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    contentDescription = "Wróć",
+                    tint = colors.text,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            ScreenHeader(colors, "Powiadomienia", "Sprawy z panelu i telefonu")
+        }
+        NotificationFilterTabs(colors, selectedFilter, onFilterChange)
+        val visible = filterNotifications(notifications, selectedFilter)
+        PanelCard(colors, accent = visible.any { toneColorKey(it.tone) == "attention" }) {
+            if (loading && notifications.isEmpty()) {
+                NotificationEmptyRow(colors, "Ładujemy powiadomienia", "Za chwilę pokażemy najnowsze sprawy z panelu.")
+                return@PanelCard
+            }
+            if (visible.isEmpty()) {
+                NotificationEmptyRow(colors)
+                return@PanelCard
+            }
+            visible.forEachIndexed { index, notification ->
+                NotificationRow(colors, notification)
+                if (index < visible.lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 40.dp)
+                            .height(1.dp)
+                            .background(colors.borderSubtle),
+                    )
+                }
+            }
+        }
+        SecondaryActionButton(
+            colors = colors,
+            icon = Icons.Rounded.CheckCircle,
+            text = "Oznacz jako przeczytane",
+            modifier = Modifier.fillMaxWidth(),
+            enabled = visible.any { it.readAt.isNullOrBlank() },
+            onClick = onMarkRead,
+        )
+    }
+}
+
+@Composable
+private fun NotificationFilterTabs(
+    colors: DlaFlowComposeColors,
+    selectedFilter: MobileNotificationFilter,
+    onFilterChange: (MobileNotificationFilter) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.surfaceSubtle)
+            .border(1.dp, colors.border, RoundedCornerShape(10.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        MobileNotificationFilter.entries.forEach { filter ->
+            val selected = filter == selectedFilter
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) colors.primary else Color.Transparent)
+                    .clickable { onFilterChange(filter) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = filter.label,
+                    color = if (selected) Color.White else colors.textMuted,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun NotificationRow(colors: DlaFlowComposeColors, notification: MobileAssistantNotification) {
     val color = toneColor(colors, notification.tone)
     Row(
@@ -4525,13 +4734,17 @@ private fun NotificationToneIcon(icon: ImageVector, color: Color) {
 }
 
 @Composable
-private fun NotificationEmptyRow(colors: DlaFlowComposeColors) {
+private fun NotificationEmptyRow(
+    colors: DlaFlowComposeColors,
+    title: String = "Brak pilnych spraw",
+    subtitle: String = "Gdy pojawi się wiadomość albo problem, zobaczysz go tutaj.",
+) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         DlaIcon(Icons.Rounded.CheckCircle, colors.success, modifier = Modifier.size(38.dp))
         Spacer(Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text("Brak pilnych spraw", color = colors.textStrong, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-            Text("Gdy pojawi się wiadomość albo problem, zobaczysz go tutaj.", color = colors.textMuted, fontSize = 11.sp, maxLines = 2, lineHeight = 15.sp)
+            Text(title, color = colors.textStrong, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+            Text(subtitle, color = colors.textMuted, fontSize = 11.sp, maxLines = 2, lineHeight = 15.sp)
         }
     }
 }
