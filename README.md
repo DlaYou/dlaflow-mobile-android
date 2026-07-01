@@ -109,3 +109,21 @@ MOBILE_RELEASE_SSH_PORT
 `MOBILE_RELEASE_DIR` must point to the persistent VPS path that is mounted/read by the panel API as `MOBILE_ANDROID_RELEASES_DIR`. The workflow writes only `latest.json` and the generated APK there. Do not commit APK files, keystores, `local.properties`, `google-services.json` or release secrets.
 
 Main branch builds use a debug APK only for CI validation. Tag releases and manual publish runs build a signed release APK with the repository signing secrets and publish it to the VPS release directory.
+
+## Google Play Protect / Android Developer Verification
+
+DlaFlow Mobile Assistant is distributed from the DlaFlow panel as a signed APK. The current production standard is to register `pl.dlaflow.mobile` through Android Developer Verification without publishing the app to Google Play Store yet.
+
+Use the operational guide:
+
+```text
+docs/google-play-protect-verification.md
+```
+
+Use the local helper to export public APK and signing-certificate metadata for Google registration:
+
+```powershell
+.\scripts\export-google-play-protect-kit.ps1
+```
+
+The helper reads an already signed production APK and writes a local verification kit under `mobile-release/google-play-protect/`. It does not read or export the private signing key.
