@@ -12,8 +12,8 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.1"
+        versionCode = 6
+        versionName = "0.3.2"
     }
 
     val releaseStoreFile = System.getenv("ANDROID_SIGNING_STORE_FILE")
