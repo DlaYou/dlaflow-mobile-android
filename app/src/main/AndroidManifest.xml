@@ -46,7 +46,11 @@
             android:name=".CallerIdActivity"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:launchMode="singleTop"
+            android:noHistory="true"
             android:showOnLockScreen="true"
+            android:taskAffinity="${applicationId}.callerid"
             android:theme="@style/CallerIdOverlayTheme"
             android:turnScreenOn="true" />
         <provider
