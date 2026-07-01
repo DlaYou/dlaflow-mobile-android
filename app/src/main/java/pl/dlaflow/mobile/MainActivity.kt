@@ -153,7 +153,7 @@ class MainActivity : ComponentActivity() {
             } else {
                 setStatus("Przygotowujemy aplikację...")
                 completeSessionTransition {
-                    setStatus("Sparuj telefon z panelem.")
+                    setStatus("")
                 }
             }
         }
@@ -302,9 +302,6 @@ class MainActivity : ComponentActivity() {
                     mobileProductVariantsLoading = mobileProductVariantsLoading,
                     mobileProductsReadOnly = mobileProductsReadOnly,
                     mobileProductsNoAccess = mobileProductsNoAccess,
-                    onApiUrlChange = {
-                        apiUrlValue = it
-                    },
                     onPairingCodeChange = {
                         pairingCodeValue = it
                     },
@@ -642,15 +639,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun pairDevice() {
-        val baseUrl = apiUrlValue.trim()
-        val code = pairingCodeValue.trim()
+        val baseUrl = apiUrlValue.trim().ifBlank { sessionStore.readBaseUrl() }
+        val code = pairingCodeValue.trim().uppercase(Locale.ROOT).replace(" ", "")
 
-        if (baseUrl.isBlank() || code.isBlank()) {
-            setStatus("Wpisz adres API i kod parowania.")
+        if (code.isBlank()) {
+            setStatus("Wpisz kod połączenia albo zeskanuj QR z panelu.")
             return
         }
 
-        setStatus("Paruję telefon...")
+        if (!code.matches(Regex("^[A-Z0-9]{3}-?[A-Z0-9]{3}$"))) {
+            setStatus("To nie jest kod połączenia DlaFlow.")
+            return
+        }
+
+        apiUrlValue = baseUrl
+        setStatus("Łączę telefon z panelem DlaFlow...")
         showSessionTransition(activeStepIndex = 0, progress = 18)
         executor.execute {
             runCatching {
@@ -665,7 +668,7 @@ class MainActivity : ComponentActivity() {
                     session = nextSession
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
-                    setStatus("Telefon sparowany.")
+                    setStatus("Telefon połączony z panelem.")
                     completeSessionTransition {
                         requestNotificationPermissionIfNeeded()
                         startPhotoTaskDispatchPolling()
@@ -768,12 +771,7 @@ class MainActivity : ComponentActivity() {
         }
 
         pairingCodeValue = code
-        if (apiUrlValue.trim().isBlank()) {
-            setStatus("Kod QR odczytany. Wpisz adres API i sparuj telefon.")
-            return
-        }
-
-        setStatus("Kod QR odczytany.")
+        setStatus("Kod QR odczytany. Łączę telefon z panelem.")
         pairDevice()
     }
 

@@ -15,7 +15,7 @@ class MobileSessionStore(context: Context) {
     private val preferences = context.getSharedPreferences("dlaflow_mobile_session", Context.MODE_PRIVATE)
 
     fun readBaseUrl(): String {
-        return preferences.getString("base_url", "http://10.0.2.2:4000") ?: "http://10.0.2.2:4000"
+        return preferences.getString("base_url", defaultBaseUrl) ?: defaultBaseUrl
     }
 
     fun readToken(): String {
@@ -117,6 +117,8 @@ class MobileSessionStore(context: Context) {
         return keyGenerator.generateKey()
     }
 }
+
+private const val defaultBaseUrl = "https://panel.dlayou.pl"
 
 private data class EncryptedToken(
     val cipherText: String,
