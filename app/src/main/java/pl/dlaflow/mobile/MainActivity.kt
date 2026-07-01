@@ -209,7 +209,10 @@ class MainActivity : ComponentActivity() {
             setStatus(
                 when {
                     isCallerIdOperational() -> "Caller ID włączony."
-                    isCallerIdRoleHeld() -> "Caller ID wymaga jeszcze zgody na stan telefonu."
+                    isCallerIdRoleHeld() -> callerIdMissingPermissionMessage(
+                        needsPhoneState = !hasPhoneStatePermission(),
+                        needsContacts = !hasContactsPermission(),
+                    )
                     else -> "Caller ID nie jest jeszcze włączony w systemie."
                 },
             )
@@ -243,10 +246,15 @@ class MainActivity : ComponentActivity() {
         } else if (requestCode == notificationPermissionRequestCode) {
             setStatus(if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "Powiadomienia zadań włączone." else "Bez powiadomień otwórz aplikację, żeby zobaczyć zadania.")
         } else if (requestCode == phoneStatePermissionRequestCode) {
-            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            if (hasCallerIdRuntimePermissions()) {
                 requestCallerIdRole()
             } else {
-                setStatus("Caller ID wymaga zgody na stan telefonu, żeby karta znikała po rozmowie.")
+                setStatus(
+                    callerIdMissingPermissionMessage(
+                        needsPhoneState = !hasPhoneStatePermission(),
+                        needsContacts = !hasContactsPermission(),
+                    ),
+                )
                 render()
             }
         }
@@ -559,7 +567,10 @@ class MainActivity : ComponentActivity() {
         val roleStatus = when {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> "Na tym Androidzie włącz Caller ID w domyślnych aplikacjach systemu."
             isCallerIdOperational() -> "Caller ID jest włączony dla DlaFlow."
-            isCallerIdRoleHeld() -> "Caller ID wymaga jeszcze zgody na stan telefonu, żeby karta znikała po rozmowie."
+            isCallerIdRoleHeld() -> callerIdMissingPermissionMessage(
+                needsPhoneState = !hasPhoneStatePermission(),
+                needsContacts = !hasContactsPermission(),
+            )
             isCallerIdRoleAvailable() -> "Telefon wymaga zgody systemowej dla DlaFlow Caller ID."
             else -> "Ten telefon nie udostępnia roli Caller ID dla aplikacji."
         }
@@ -1657,8 +1668,9 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (!hasPhoneStatePermission()) {
-            requestPermissions(arrayOf(Manifest.permission.READ_PHONE_STATE), phoneStatePermissionRequestCode)
+        val missingPermissions = missingCallerIdRuntimePermissions()
+        if (missingPermissions.isNotEmpty()) {
+            requestPermissions(missingPermissions, phoneStatePermissionRequestCode)
             return
         }
 
@@ -1898,8 +1910,27 @@ class MainActivity : ComponentActivity() {
         return checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
     }
 
+    private fun hasContactsPermission(): Boolean {
+        return checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun hasCallerIdRuntimePermissions(): Boolean {
+        return hasPhoneStatePermission() && hasContactsPermission()
+    }
+
+    private fun missingCallerIdRuntimePermissions(): Array<String> {
+        return buildList {
+            if (!hasPhoneStatePermission()) {
+                add(Manifest.permission.READ_PHONE_STATE)
+            }
+            if (!hasContactsPermission()) {
+                add(Manifest.permission.READ_CONTACTS)
+            }
+        }.toTypedArray()
+    }
+
     private fun isCallerIdOperational(): Boolean {
-        return isCallerIdRoleHeld() && hasPhoneStatePermission()
+        return isCallerIdRoleHeld() && hasCallerIdRuntimePermissions()
     }
 
     private fun setStatus(value: String) {
@@ -2223,5 +2254,14 @@ class MainActivity : ComponentActivity() {
         private const val photoTaskNotificationId = 2701
         private const val sessionTransitionMinimumVisibleMs = 950L
         private val sessionTransitionSteps = listOf("Telefon", "Sesja", "Zadania", "Start")
+    }
+}
+
+internal fun callerIdMissingPermissionMessage(needsPhoneState: Boolean, needsContacts: Boolean): String {
+    return when {
+        needsPhoneState && needsContacts -> "Caller ID wymaga zgody na telefon i kontakty, żeby pokazywać kartę także dla zapisanych klientów."
+        needsContacts -> "Caller ID wymaga zgody na kontakty, żeby działać dla numerów zapisanych w telefonie."
+        needsPhoneState -> "Caller ID wymaga zgody na stan telefonu, żeby karta pojawiała się przy połączeniu."
+        else -> "Caller ID wymaga jeszcze zgody systemowej."
     }
 }
