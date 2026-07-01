@@ -8,6 +8,11 @@ import java.util.concurrent.Executors
 class DlaFlowCallScreeningService : CallScreeningService() {
     private val executor = Executors.newSingleThreadExecutor()
 
+    override fun onCreate() {
+        super.onCreate()
+        DlaFlowNotifications.ensureChannels(this)
+    }
+
     override fun onScreenCall(callDetails: Call.Details) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && callDetails.callDirection != Call.Details.DIRECTION_INCOMING) {
             return
@@ -31,7 +36,15 @@ class DlaFlowCallScreeningService : CallScreeningService() {
                 MobileApiClient(sessionStore.readBaseUrl()).lookupCallerId(token, phone)
             }.onSuccess { lookup ->
                 if (lookup.primaryOrder != null) {
-                    startActivity(CallerIdActivity.createIntent(this, lookup))
+                    DlaFlowNotifications.showCallerIdNotification(this, lookup)
+                    runCatching {
+                        startActivity(CallerIdActivity.createIntent(this, lookup))
+                    }
+                }
+            }.onFailure { error ->
+                if (error is MobileApiException && error.statusCode == 401) {
+                    sessionStore.clearSession()
+                    DlaFlowBackgroundSyncService.stop(this)
                 }
             }
         }

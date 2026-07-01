@@ -12,8 +12,8 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.4"
+        versionCode = 9
+        versionName = "0.3.5"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
@@ -68,6 +68,7 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
 
     implementation("androidx.activity:activity:1.8.2")
+    implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.core:core:1.13.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation(composeBom)
