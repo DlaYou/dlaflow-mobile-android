@@ -83,6 +83,14 @@ class MobileSessionStore(context: Context) {
             .apply()
     }
 
+    fun readLastBackgroundPhotoTaskId(): String {
+        return preferences.getString("last_background_photo_task_id", "") ?: ""
+    }
+
+    fun saveLastBackgroundPhotoTaskId(taskId: String) {
+        preferences.edit().putString("last_background_photo_task_id", taskId).apply()
+    }
+
     fun clear() {
         preferences.edit().clear().apply()
     }

@@ -351,6 +351,10 @@ class MobileApiClient(private val baseUrl: String) {
         )
     }
 
+    fun revokeCurrentDevice(token: String) {
+        postEmptyJson("/api/mobile/me/revoke", token)
+    }
+
     fun listActivePhotoTasks(token: String): List<MobilePhotoTask> {
         val data = getJson("/api/mobile/photo-tasks/active", token).getJSONArray("data")
         val tasks = mutableListOf<MobilePhotoTask>()
@@ -520,6 +524,19 @@ class MobileApiClient(private val baseUrl: String) {
         return readJsonResponse(connection)
     }
 
+    private fun postEmptyJson(path: String, token: String) {
+        val connection = openConnection(path)
+        connection.requestMethod = "POST"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        connection.setRequestProperty("Authorization", "Bearer $token")
+        connection.outputStream.use { stream ->
+            stream.write("{}".toByteArray(Charsets.UTF_8))
+        }
+
+        readEmptyResponse(connection)
+    }
+
     private fun patchJson(path: String, body: JSONObject, token: String): JSONObject {
         val connection = openConnection(path)
         connection.requestMethod = "PATCH"
@@ -586,6 +603,26 @@ class MobileApiClient(private val baseUrl: String) {
         }
 
         return JSONObject(text)
+    }
+
+    private fun readEmptyResponse(connection: HttpURLConnection) {
+        val status = connection.responseCode
+        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+        val text = stream.use { input ->
+            BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
+        }
+
+        if (status !in 200..299) {
+            val error = runCatching {
+                JSONObject(text).optJSONObject("error")
+            }.getOrNull()
+            val code = error?.optString("code", "") ?: ""
+            val message = runCatching {
+                error?.optString("message")
+            }.getOrNull().orEmpty()
+
+            throw MobileApiException(status, code, message.ifBlank { "API zwróciło błąd $status." })
+        }
     }
 
     private fun parsePhotoTask(task: JSONObject): MobilePhotoTask {

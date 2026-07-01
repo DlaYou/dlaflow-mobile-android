@@ -1,9 +1,6 @@
 package pl.dlaflow.mobile
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -29,7 +26,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
@@ -139,7 +135,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         sessionStore = MobileSessionStore(this)
         apiUrlValue = sessionStore.readBaseUrl()
-        createNotificationChannel()
+        DlaFlowNotifications.ensureChannels(this)
         handleLaunchIntent(intent)
         val hasSavedSession = sessionStore.readToken().isNotBlank()
         render()
@@ -282,6 +278,7 @@ class MainActivity : ComponentActivity() {
                     callerIdOperational = isCallerIdOperational(),
                     callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
                     canAutoOpenTasks = canDrawOverOtherApps(),
+                    notificationAllowed = areNotificationsAllowed(),
                     appVersionName = currentAppVersionName(),
                     appUpdate = appUpdate,
                     appUpdateDialogVisible = appUpdateDialogVisible,
@@ -378,6 +375,9 @@ class MainActivity : ComponentActivity() {
                     onCheckAppUpdate = { refreshAppUpdate(showStatus = true) },
                     onInstallAppUpdate = { installAppUpdate() },
                     onDismissAppUpdate = { dismissAppUpdate() },
+                    onOpenNotificationSettings = { openNotificationSettings() },
+                    onOpenOverlaySettings = { requestOverlayPermission() },
+                    onOpenAppSystemSettings = { openAppSystemSettings() },
                     onDisconnect = { disconnectLocalPhone() },
                 )
             }
@@ -456,6 +456,7 @@ class MainActivity : ComponentActivity() {
             card.addView(label(currentSession.userEmail, size = 12f, color = theme.muted, top = 2))
             card.addView(secondaryButton("Odłącz ten telefon") {
                 sessionStore.clear()
+                DlaFlowBackgroundSyncService.stop(this)
                 session = null
                 photoTasks = emptyList()
                 focusedPhotoTaskId = null
@@ -630,6 +631,7 @@ class MainActivity : ComponentActivity() {
                     setStatus("Telefon jest połączony.")
                     completeSessionTransition {
                         requestNotificationPermissionIfNeeded()
+                        DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
                         refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
@@ -682,6 +684,7 @@ class MainActivity : ComponentActivity() {
                     setStatus("Telefon połączony z panelem.")
                     completeSessionTransition {
                         requestNotificationPermissionIfNeeded()
+                        DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
                         refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
@@ -1417,37 +1420,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showPhotoTaskNotification(task: MobilePhotoTask) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (sessionStore.readLastBackgroundPhotoTaskId() == task.id) {
             return
         }
 
-        val notification = NotificationCompat.Builder(this, photoTaskChannelId)
-            .setSmallIcon(applicationInfo.icon)
-            .setContentTitle("Zrób zdjęcia produktu")
-            .setContentText(task.productName)
-            .setContentIntent(PendingIntent.getActivity(this, task.id.hashCode(), createPhotoTaskIntent(task.id), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
-
-        NotificationManagerCompat.from(this).notify(photoTaskNotificationId, notification)
+        sessionStore.saveLastBackgroundPhotoTaskId(task.id)
+        DlaFlowNotifications.showPhotoTaskNotification(this, task)
     }
 
     private fun createPhotoTaskIntent(taskId: String): Intent {
-        return Intent(this, MainActivity::class.java)
-            .putExtra(extraFocusPhotoTaskId, taskId)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        return DlaFlowDeepLinks.photoTaskIntent(this, taskId)
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
-        val taskId = intent?.getStringExtra(extraFocusPhotoTaskId).orEmpty()
+        val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {
             focusedPhotoTaskId = taskId
             lastDispatchedPhotoTaskId = taskId
             selectedTab = MobileAssistantTab.PRODUCTS
             statusMessage = "Otwieram zadanie zdjęciowe z panelu."
         }
-        val packageCode = intent?.getStringExtra(extraSmokePackageCode).orEmpty()
+        val packageCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode).orEmpty()
         if (packageCode.isNotBlank()) {
             packageScanResult = MobilePackageScanResult(
                 code = packageCode.trim(),
@@ -1695,12 +1688,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun areNotificationsAllowed(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            NotificationManagerCompat.from(this).areNotificationsEnabled()
+        }
+    }
+
+    private fun openNotificationSettings() {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+        }
+
+        startActivity(intent)
+    }
+
     private fun requestOverlayPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return
         }
 
         startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+    }
+
+    private fun openAppSystemSettings() {
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     }
 
     private fun canDrawOverOtherApps(): Boolean {
@@ -1713,17 +1728,6 @@ class MainActivity : ComponentActivity() {
         } else {
             "Bez dodatkowej zgody Android pokaże powiadomienie z zadaniem."
         }
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
-
-        val channel = NotificationChannel(photoTaskChannelId, "Zdjęcia produktów", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Zadania zdjęciowe wysłane z panelu DlaFlow."
-        }
-        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     private fun testCallerIdLookup() {
@@ -1848,7 +1852,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearRevokedSession() {
+        clearDisconnectedSession("Telefon został odłączony w panelu. Sparuj go ponownie.")
+    }
+
+    private fun clearDisconnectedSession(message: String) {
         sessionStore.clearSession()
+        DlaFlowBackgroundSyncService.stop(this)
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
@@ -1866,28 +1875,39 @@ class MainActivity : ComponentActivity() {
         pairingCodeValue = ""
         contentReadyForDisplay = true
         render()
-        setStatus("Telefon został odłączony w panelu. Sparuj go ponownie.")
+        setStatus(message)
     }
 
     private fun disconnectLocalPhone() {
-        sessionStore.clearSession()
-        stopPhotoTaskDispatchPolling()
-        clearPendingCameraPhoto()
-        session = null
-        assistantDashboard = null
-        photoTasks = emptyList()
-        callerIdPreview = null
-        focusedPhotoTaskId = null
-        focusedPhotoTaskView = null
-        lastDispatchedPhotoTaskId = null
-        packageScanResult = null
-        clearAppUpdateState()
-        clearMobileOrdersState()
-        clearMobileProductsState()
-        selectedTab = MobileAssistantTab.DASHBOARD
-        pairingCodeValue = ""
-        contentReadyForDisplay = true
-        setStatus("Telefon odłączony lokalnie. Sparuj go ponownie w panelu.")
+        val currentSession = session
+
+        if (currentSession == null) {
+            clearDisconnectedSession("Telefon odłączony. Sparuj go ponownie w panelu.")
+            return
+        }
+
+        setStatus("Odłączam telefon w panelu...")
+        executor.execute {
+            runCatching {
+                MobileApiClient(sessionStore.readBaseUrl()).revokeCurrentDevice(currentSession.token)
+            }.onSuccess {
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    clearDisconnectedSession("Telefon odłączony. Panel nie będzie go już pokazywać.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    if (!handleMobileApiFailure(error, "Nie udało się odłączyć telefonu w panelu. Sprawdź połączenie i spróbuj ponownie.")) {
+                        render()
+                    }
+                }
+            }
+        }
     }
 
     private fun isCallerIdRoleAvailable(): Boolean {
@@ -2246,12 +2266,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val dispatchPollIntervalMs = 5_000L
-        private const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
-        private const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
         private const val extraSmokeApiUrl = "pl.dlaflow.mobile.SMOKE_API_URL"
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
-        private const val photoTaskChannelId = "product-photo-tasks"
-        private const val photoTaskNotificationId = 2701
         private const val sessionTransitionMinimumVisibleMs = 950L
         private val sessionTransitionSteps = listOf("Telefon", "Sesja", "Zadania", "Start")
     }

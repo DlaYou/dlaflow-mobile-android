@@ -171,7 +171,7 @@ class DlaFlowSessionTransitionOverlay(context: Context) : FrameLayout(context) {
         return if (dark) {
             TransitionTheme(
                 dark = true,
-                overlay = Color.argb(245, 15, 19, 29),
+                overlay = sessionTransitionOverlayColor(dark = true),
                 surface = color(0x171C27),
                 border = color(0x202735),
                 strong = color(0xF8FAFC),
@@ -186,7 +186,7 @@ class DlaFlowSessionTransitionOverlay(context: Context) : FrameLayout(context) {
         } else {
             TransitionTheme(
                 dark = false,
-                overlay = Color.argb(244, 255, 255, 255),
+                overlay = sessionTransitionOverlayColor(dark = false),
                 surface = color(0xFFFFFF),
                 border = color(0xE4E9F2),
                 strong = color(0x070A52),
@@ -203,7 +203,7 @@ class DlaFlowSessionTransitionOverlay(context: Context) : FrameLayout(context) {
 
     private fun verticalBackground(theme: TransitionTheme) = android.graphics.drawable.GradientDrawable(
         android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-        if (theme.dark) intArrayOf(color(0x0F131D), color(0x141A26), color(0x0F131D)) else intArrayOf(color(0xFFFFFF), color(0xF8F9FF), color(0xFFFFFF)),
+        sessionTransitionBackgroundColors(theme.dark),
     )
 
     private fun rounded(fill: Int, radius: Int, strokeColor: Int? = null, strokeWidth: Int = 0) = android.graphics.drawable.GradientDrawable().apply {
@@ -242,6 +242,19 @@ class DlaFlowSessionTransitionOverlay(context: Context) : FrameLayout(context) {
         val success: Int,
         val dotIdle: Int,
     )
+}
+
+internal fun sessionTransitionBackgroundColors(dark: Boolean): IntArray {
+    val background = sessionTransitionOverlayColor(dark)
+    return intArrayOf(background, background)
+}
+
+internal fun sessionTransitionOverlayColor(dark: Boolean): Int {
+    return if (dark) {
+        0xFF0F131D.toInt()
+    } else {
+        0xFFF8F9FC.toInt()
+    }
 }
 
 private class SessionLoaderView(context: Context) : View(context) {
