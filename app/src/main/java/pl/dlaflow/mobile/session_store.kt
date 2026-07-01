@@ -91,6 +91,14 @@ class MobileSessionStore(context: Context) {
         preferences.edit().putString("last_background_photo_task_id", taskId).apply()
     }
 
+    fun readShownPanelNotificationIds(): String {
+        return preferences.getString("shown_panel_notification_ids", "") ?: ""
+    }
+
+    fun saveShownPanelNotificationIds(value: String) {
+        preferences.edit().putString("shown_panel_notification_ids", value).apply()
+    }
+
     fun clear() {
         preferences.edit().clear().apply()
     }
@@ -152,3 +160,28 @@ private data class EncryptedToken(
     val cipherText: String,
     val iv: String,
 )
+
+internal fun hasShownNotificationId(serialized: String, id: String): Boolean {
+    if (id.isBlank()) {
+        return false
+    }
+
+    return serialized
+        .split("|")
+        .filter { it.isNotBlank() }
+        .contains(id)
+}
+
+internal fun rememberShownNotificationId(serialized: String, id: String, maxIds: Int = 50): String {
+    if (id.isBlank()) {
+        return serialized
+    }
+
+    val ids = serialized
+        .split("|")
+        .filter { it.isNotBlank() && it != id }
+        .toMutableList()
+    ids.add(0, id)
+
+    return ids.take(maxIds.coerceAtLeast(1)).joinToString("|")
+}

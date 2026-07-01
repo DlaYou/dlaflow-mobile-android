@@ -42,6 +42,25 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `shown notification ids are stored as bounded set`() {
+        val ids = rememberShownNotificationId("", "n1", maxIds = 2)
+            .let { rememberShownNotificationId(it, "n2", maxIds = 2) }
+            .let { rememberShownNotificationId(it, "n1", maxIds = 2) }
+            .let { rememberShownNotificationId(it, "n3", maxIds = 2) }
+
+        assertTrue(hasShownNotificationId(ids, "n1"))
+        assertTrue(hasShownNotificationId(ids, "n3"))
+        assertFalse(hasShownNotificationId(ids, "n2"))
+        assertFalse(hasShownNotificationId(ids, "n4"))
+    }
+
+    @Test
+    fun `panel alert notification id keeps distinct hash collision ids`() {
+        assertEquals(panelAlertNotificationId("job:100"), panelAlertNotificationId("job:100"))
+        assertTrue(panelAlertNotificationId("job:100") != panelAlertNotificationId("job:218"))
+    }
+
+    @Test
     fun `mobile notifications page parses summary actions and read state`() {
         val payload = """
             {

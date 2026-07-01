@@ -70,22 +70,31 @@ class DlaFlowBackgroundSyncService : Service() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).getPhotoTaskDispatch(token)
-            }.onSuccess { dispatch ->
-                val task = dispatch.pendingOpenTask ?: return@onSuccess
-                if (sessionStore.readLastBackgroundPhotoTaskId() == task.id) {
-                    return@onSuccess
+                val client = MobileApiClient(sessionStore.readBaseUrl())
+                client to client.getPhotoTaskDispatch(token)
+            }.onSuccess { (client, dispatch) ->
+                val task = dispatch.pendingOpenTask
+                if (task != null && sessionStore.readLastBackgroundPhotoTaskId() != task.id) {
+                    sessionStore.saveLastBackgroundPhotoTaskId(task.id)
+                    DlaFlowNotifications.showPhotoTaskNotification(this, task)
                 }
 
-                sessionStore.saveLastBackgroundPhotoTaskId(task.id)
-                DlaFlowNotifications.showPhotoTaskNotification(this, task)
-            }.onFailure { error ->
-                if (error is MobileApiException && error.statusCode == 401) {
-                    sessionStore.clearSession()
-                    DlaFlowDispatchJobService.cancel(this)
-                    stopSelf()
+                runCatching {
+                    pollUnreadPanelAlertNotifications(this, sessionStore, client, token)
+                }.onFailure { error ->
+                    handleBackgroundSyncFailure(error)
                 }
+            }.onFailure { error ->
+                handleBackgroundSyncFailure(error)
             }
+        }
+    }
+
+    private fun handleBackgroundSyncFailure(error: Throwable) {
+        if (error is MobileApiException && error.statusCode == 401) {
+            sessionStore.clearSession()
+            DlaFlowDispatchJobService.cancel(this)
+            stopSelf()
         }
     }
 
@@ -107,4 +116,28 @@ class DlaFlowBackgroundSyncService : Service() {
             context.stopService(Intent(context, DlaFlowBackgroundSyncService::class.java))
         }
     }
+}
+
+internal fun pollUnreadPanelAlertNotifications(
+    context: Context,
+    sessionStore: MobileSessionStore,
+    client: MobileApiClient,
+    token: String,
+) {
+    val notificationPage = client.listNotifications(token, limit = 10)
+    var shownIds = sessionStore.readShownPanelNotificationIds()
+
+    notificationPage.notifications
+        .filter { it.readAt.isNullOrBlank() }
+        .filter { shouldShowNativePanelNotification(it.tone, it.mobileAction.type) }
+        .forEach { notification ->
+            if (!hasShownNotificationId(shownIds, notification.id)) {
+                val shown = DlaFlowNotifications.showPanelAlertNotification(context, notification)
+                if (shown) {
+                    shownIds = rememberShownNotificationId(shownIds, notification.id)
+                }
+            }
+        }
+
+    sessionStore.saveShownPanelNotificationIds(shownIds)
 }

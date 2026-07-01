@@ -42,4 +42,12 @@ class MobileBackgroundSyncTest {
         assertTrue(dispatchJobService.contains("setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)"))
         assertTrue(manifest.contains("android.permission.ACCESS_NETWORK_STATE"))
     }
+
+    @Test
+    fun `panel alert channel exists for urgent notifications`() {
+        val notifications = File("src/main/java/pl/dlaflow/mobile/DlaFlowNotifications.kt").readText()
+
+        assertTrue(notifications.contains("panel-alerts"))
+        assertTrue(notifications.contains("showPanelAlertNotification"))
+    }
 }
