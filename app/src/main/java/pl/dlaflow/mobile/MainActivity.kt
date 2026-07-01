@@ -692,10 +692,11 @@ class MainActivity : ComponentActivity() {
     private fun scanPairingQr() {
         pendingQrScanMode = QrScanMode.PAIRING
         IntentIntegrator(this).apply {
+            setCaptureActivity(DlaFlowQrScanActivity::class.java)
             setDesiredBarcodeFormats(IntentIntegrator.QR_CODE)
             setPrompt("Zeskanuj kod QR z panelu DlaFlow")
             setBeepEnabled(false)
-            setOrientationLocked(false)
+            setOrientationLocked(true)
             initiateScan()
         }
     }
@@ -703,10 +704,11 @@ class MainActivity : ComponentActivity() {
     private fun scanPackageCode() {
         pendingQrScanMode = QrScanMode.PACKAGE
         IntentIntegrator(this).apply {
+            setCaptureActivity(DlaFlowQrScanActivity::class.java)
             setDesiredBarcodeFormats(IntentIntegrator.ALL_CODE_TYPES)
             setPrompt("Zeskanuj kod paczki")
             setBeepEnabled(false)
-            setOrientationLocked(false)
+            setOrientationLocked(true)
             initiateScan()
         }
     }
