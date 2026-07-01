@@ -331,7 +331,12 @@ class CallerIdActivity : Activity() {
         fun createIntent(context: Context, lookup: MobileCallerIdLookup): Intent {
             return Intent(context, CallerIdActivity::class.java)
                 .putExtra(extraPayload, CallerIdPayload.fromLookup(lookup))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS or
+                        Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                )
         }
     }
 }
