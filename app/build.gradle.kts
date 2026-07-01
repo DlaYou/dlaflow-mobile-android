@@ -78,6 +78,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")
