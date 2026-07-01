@@ -28,7 +28,27 @@ class MobileSessionStore(context: Context) {
             }.getOrDefault("")
         }
 
-        return preferences.getString("token", "") ?: ""
+        val legacyPlainToken = preferences.getString("token", "") ?: ""
+        if (legacyPlainToken.isBlank()) {
+            return ""
+        }
+
+        val encryptedToken = runCatching {
+            encryptToken(legacyPlainToken)
+        }.getOrNull()
+
+        if (encryptedToken == null) {
+            preferences.edit().remove("token").apply()
+            return ""
+        }
+
+        preferences.edit()
+            .putString("token_cipher", encryptedToken.cipherText)
+            .putString("token_iv", encryptedToken.iv)
+            .remove("token")
+            .apply()
+
+        return legacyPlainToken
     }
 
     fun saveBaseUrl(baseUrl: String) {

@@ -12,8 +12,9 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.3.2"
+        versionCode = 7
+        versionName = "0.3.3"
+        manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
     val releaseStoreFile = System.getenv("ANDROID_SIGNING_STORE_FILE")
@@ -34,9 +35,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
