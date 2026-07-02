@@ -1631,7 +1631,7 @@ private fun AssistantContent(
             )
         } else {
             when (selectedTab) {
-                MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onTakePhoto, onPickPhoto, onCompletePhotoTask)
+                MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onOpenNotifications, onTakePhoto, onPickPhoto, onCompletePhotoTask)
                 MobileAssistantTab.ORDERS -> OrdersTab(
                     colors = colors,
                     apiUrl = apiUrl,
@@ -1681,7 +1681,7 @@ private fun AssistantContent(
                     onPickPhoto = onPickPhoto,
                     onCompletePhotoTask = onCompletePhotoTask,
                 )
-                MobileAssistantTab.MESSAGES -> MessagesTab(colors, dashboard)
+                MobileAssistantTab.MESSAGES -> MessagesTab(colors, dashboard, onOpenNotifications)
                 MobileAssistantTab.MORE -> MoreTab(
                     colors = colors,
                     session = session,
@@ -1738,6 +1738,7 @@ private fun DashboardTab(
     photoTasks: List<MobilePhotoTask>,
     onRefresh: () -> Unit,
     onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onOpenNotifications: () -> Unit,
     onTakePhoto: (String) -> Unit,
     onPickPhoto: (String) -> Unit,
     onCompletePhotoTask: (String) -> Unit,
@@ -1745,7 +1746,7 @@ private fun DashboardTab(
     GreetingRow(colors, dashboard?.userName ?: session.userEmail, onRefresh)
     RevenueCard(colors, dashboard)
     KpiGrid(colors, dashboard)
-    NotificationsList(colors, dashboard?.notifications.orEmpty())
+    NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
     QuickActions(colors, onQuickAction)
     val activeTask = dashboard?.activePhotoTask
     if (activeTask != null) {
@@ -3444,9 +3445,9 @@ private fun PackageScannerCard(
 }
 
 @Composable
-private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?) {
+private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?, onOpenNotifications: () -> Unit) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
-    NotificationsList(colors, dashboard?.notifications.orEmpty())
+    NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
 }
 
 @Composable
@@ -4142,7 +4143,7 @@ private fun NotificationBell(
     val badgeColor = if (badgeState == NotificationBadgeState.ATTENTION) colors.danger else colors.primary
     Box(
         modifier = Modifier
-            .size(38.dp)
+            .size(46.dp)
             .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
@@ -4506,7 +4507,7 @@ private fun ProgressLine(colors: DlaFlowComposeColors, current: Int, max: Int) {
 }
 
 @Composable
-private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<MobileAssistantNotification>) {
+private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<MobileAssistantNotification>, onOpenNotifications: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -4517,7 +4518,13 @@ private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Ostatnie powiadomienia", color = colors.textStrong, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { onOpenNotifications() }
+                    .padding(horizontal = 6.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text("Zobacz wszystkie", color = colors.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Icon(
                     imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
