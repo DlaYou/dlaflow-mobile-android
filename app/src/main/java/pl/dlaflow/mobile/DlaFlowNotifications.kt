@@ -28,10 +28,12 @@ object DlaFlowNotifications {
     const val backgroundServiceNotificationId = 2700
     const val photoTaskNotificationId = 2701
     const val callerIdNotificationId = 2702
+    const val panelAlertNotificationId = 2703
 
     private const val photoTaskChannelId = "product-photo-tasks"
     private const val callerIdChannelId = "caller-id"
     private const val backgroundChannelId = "mobile-background-sync"
+    private const val panelAlertChannelId = "panel-alerts"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -49,10 +51,14 @@ object DlaFlowNotifications {
             description = "Lekka synchronizacja zadań i powiadomień w tle."
             setShowBadge(false)
         }
+        val panelAlertChannel = NotificationChannel(panelAlertChannelId, "Powiadomienia panelu", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "Ważne sprawy z panelu DlaFlow."
+        }
 
         notificationManager.createNotificationChannel(photoTaskChannel)
         notificationManager.createNotificationChannel(callerIdChannel)
         notificationManager.createNotificationChannel(backgroundChannel)
+        notificationManager.createNotificationChannel(panelAlertChannel)
     }
 
     fun canPostNotifications(context: Context): Boolean {
@@ -132,17 +138,60 @@ object DlaFlowNotifications {
 
         notifyIfAllowed(context, callerIdNotificationId, notification)
     }
+
+    fun showPanelAlertNotification(context: Context, notification: MobileAssistantNotification): Boolean {
+        if (!canPostNotifications(context)) {
+            return false
+        }
+
+        val appIntent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+        val notificationText = notification.description
+            .lineSequence()
+            .firstOrNull()
+            .orEmpty()
+            .ifBlank { "Masz nową sprawę w panelu." }
+
+        val systemNotification = NotificationCompat.Builder(context, panelAlertChannelId)
+            .setSmallIcon(context.applicationInfo.icon)
+            .setContentTitle(notification.title.ifBlank { "DlaFlow" })
+            .setContentText(notificationText)
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    context,
+                    notification.id.hashCode(),
+                    appIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .build()
+
+        return notifyIfAllowed(context, panelAlertNotificationId(notification.id), systemNotification)
+    }
+}
+
+internal fun panelAlertNotificationId(id: String): Int {
+    if (id.isBlank()) {
+        return DlaFlowNotifications.panelAlertNotificationId
+    }
+
+    return DlaFlowNotifications.panelAlertNotificationId + id.hashCode()
 }
 
 @SuppressLint("MissingPermission")
-private fun notifyIfAllowed(context: Context, notificationId: Int, notification: Notification) {
+private fun notifyIfAllowed(context: Context, notificationId: Int, notification: Notification): Boolean {
     if (!DlaFlowNotifications.canPostNotifications(context)) {
-        return
+        return false
     }
 
-    runCatching {
+    return runCatching {
         NotificationManagerCompat.from(context).notify(notificationId, notification)
-    }
+        true
+    }.getOrDefault(false)
 }
 
 internal fun callerIdNotificationText(order: MobileCallerIdOrder?): String {

@@ -101,6 +101,10 @@ class MainActivity : ComponentActivity() {
     private var mobileProductVariantsLoading by mutableStateOf<Set<String>>(emptySet())
     private var mobileProductsReadOnly by mutableStateOf(false)
     private var mobileProductsNoAccess by mutableStateOf(false)
+    private var mobileOverlayScreen by mutableStateOf(MobileAssistantOverlayScreen.NONE)
+    private var mobileNotifications by mutableStateOf<List<MobileAssistantNotification>>(emptyList())
+    private var mobileNotificationsLoading by mutableStateOf(false)
+    private var mobileNotificationFilter by mutableStateOf(MobileNotificationFilter.ALL)
     private var appUpdate by mutableStateOf<MobileAppUpdate?>(null)
     private var appUpdateDismissalState by mutableStateOf(MobileAppUpdateDismissalState())
     private var appUpdateDialogVisible by mutableStateOf(false)
@@ -307,6 +311,10 @@ class MainActivity : ComponentActivity() {
                     mobileProductVariantsLoading = mobileProductVariantsLoading,
                     mobileProductsReadOnly = mobileProductsReadOnly,
                     mobileProductsNoAccess = mobileProductsNoAccess,
+                    mobileOverlayScreen = mobileOverlayScreen,
+                    mobileNotifications = mobileNotifications,
+                    mobileNotificationsLoading = mobileNotificationsLoading,
+                    mobileNotificationFilter = mobileNotificationFilter,
                     onPairingCodeChange = {
                         pairingCodeValue = it
                     },
@@ -364,6 +372,10 @@ class MainActivity : ComponentActivity() {
                     onToggleProductVariants = { productId -> toggleMobileProductVariants(productId) },
                     onQuickEditProduct = { product, field, value -> quickEditMobileProduct(product, field, value) },
                     onQuickEditVariant = { variant, field, value -> quickEditMobileProductVariant(variant, field, value) },
+                    onOpenNotifications = { openMobileNotifications() },
+                    onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
+                    onNotificationFilterChange = { mobileNotificationFilter = it },
+                    onMarkNotificationsRead = { markVisibleNotificationsRead() },
                     onTakePhoto = { taskId -> requestCamera(taskId) },
                     onPickPhoto = { taskId -> openGallery(taskId) },
                     onCompletePhotoTask = { taskId -> completePhotoTask(taskId) },
@@ -624,6 +636,7 @@ class MainActivity : ComponentActivity() {
                     if (session?.token != verifiedSession.token) {
                         clearMobileOrdersState()
                         clearMobileProductsState()
+                        clearMobileNotificationsState()
                     }
                     session = verifiedSession
                     render()
@@ -678,6 +691,7 @@ class MainActivity : ComponentActivity() {
                     updateSessionTransition(activeStepIndex = 1, progress = 46)
                     clearMobileOrdersState()
                     clearMobileProductsState()
+                    clearMobileNotificationsState()
                     session = nextSession
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
@@ -1130,6 +1144,63 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun openMobileNotifications() {
+        mobileOverlayScreen = MobileAssistantOverlayScreen.NOTIFICATIONS
+        refreshMobileNotifications(markVisibleRead = true)
+    }
+
+    private fun refreshMobileNotifications(markVisibleRead: Boolean = false) {
+        val currentSession = session ?: return
+        if (mobileNotificationsLoading) {
+            return
+        }
+        val filterSnapshot = mobileNotificationFilter
+        mobileNotificationsLoading = true
+        executor.execute {
+            runCatching {
+                val client = MobileApiClient(sessionStore.readBaseUrl())
+                val page = client.listNotifications(currentSession.token)
+                if (markVisibleRead) {
+                    val unreadIds = filterNotifications(page.notifications, filterSnapshot)
+                        .filter { it.readAt.isNullOrBlank() }
+                        .map { it.id }
+                        .filter { it.isNotBlank() }
+                    if (unreadIds.isNotEmpty()) {
+                        client.markNotificationsRead(currentSession.token, unreadIds)
+                        client.listNotifications(currentSession.token).notifications
+                    } else {
+                        page.notifications
+                    }
+                } else {
+                    page.notifications
+                }
+            }.onSuccess { notifications ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        mobileNotificationsLoading = false
+                        return@runOnUiThread
+                    }
+                    mobileNotifications = notifications
+                    mobileNotificationsLoading = false
+                    refreshAssistantDashboard(showLoading = false)
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        mobileNotificationsLoading = false
+                        return@runOnUiThread
+                    }
+                    mobileNotificationsLoading = false
+                    handleMobileApiFailure(error, "Nie udało się pobrać powiadomień.")
+                }
+            }
+        }
+    }
+
+    private fun markVisibleNotificationsRead() {
+        refreshMobileNotifications(markVisibleRead = true)
     }
 
     private fun refreshAppUpdate(showStatus: Boolean = false) {
@@ -1840,6 +1911,13 @@ class MainActivity : ComponentActivity() {
         mobileProductsNoAccess = false
     }
 
+    private fun clearMobileNotificationsState() {
+        mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+        mobileNotifications = emptyList()
+        mobileNotificationsLoading = false
+        mobileNotificationFilter = MobileNotificationFilter.ALL
+    }
+
     private fun clearAppUpdateState() {
         appUpdate = null
         appUpdateDialogVisible = false
@@ -1871,6 +1949,7 @@ class MainActivity : ComponentActivity() {
         clearAppUpdateState()
         clearMobileOrdersState()
         clearMobileProductsState()
+        clearMobileNotificationsState()
         selectedTab = MobileAssistantTab.DASHBOARD
         pairingCodeValue = ""
         contentReadyForDisplay = true

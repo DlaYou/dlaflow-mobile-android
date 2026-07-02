@@ -28,18 +28,22 @@ class DlaFlowDispatchJobService : JobService() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).getPhotoTaskDispatch(token)
-            }.onSuccess { dispatch ->
+                val client = MobileApiClient(sessionStore.readBaseUrl())
+                client to client.getPhotoTaskDispatch(token)
+            }.onSuccess { (client, dispatch) ->
                 val task = dispatch.pendingOpenTask
                 if (task != null && sessionStore.readLastBackgroundPhotoTaskId() != task.id) {
                     sessionStore.saveLastBackgroundPhotoTaskId(task.id)
                     DlaFlowNotifications.showPhotoTaskNotification(this, task)
                 }
-            }.onFailure { error ->
-                if (error is MobileApiException && error.statusCode == 401) {
-                    sessionStore.clearSession()
-                    cancel(this)
+
+                runCatching {
+                    pollUnreadPanelAlertNotifications(this, sessionStore, client, token)
+                }.onFailure { error ->
+                    handleBackgroundSyncFailure(error)
                 }
+            }.onFailure { error ->
+                handleBackgroundSyncFailure(error)
             }
             jobFinished(params, false)
         }
@@ -52,6 +56,13 @@ class DlaFlowDispatchJobService : JobService() {
     override fun onDestroy() {
         executor.shutdownNow()
         super.onDestroy()
+    }
+
+    private fun handleBackgroundSyncFailure(error: Throwable) {
+        if (error is MobileApiException && error.statusCode == 401) {
+            sessionStore.clearSession()
+            cancel(this)
+        }
     }
 
     companion object {

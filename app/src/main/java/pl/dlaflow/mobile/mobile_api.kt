@@ -246,12 +246,33 @@ data class MobileAssistantKpis(
     val messages: Int,
 )
 
+data class MobileNotificationAction(
+    val type: String,
+    val label: String,
+)
+
 data class MobileAssistantNotification(
+    val id: String,
     val title: String,
     val description: String,
     val tone: String,
     val source: String,
+    val account: String,
     val occurredAt: String,
+    val readAt: String?,
+    val mobileAction: MobileNotificationAction,
+)
+
+data class MobileNotificationSummary(
+    val unreadCount: Int,
+    val unreadAttentionCount: Int,
+)
+
+data class MobileNotificationsPage(
+    val attentionCount: Int,
+    val unreadAttentionCount: Int,
+    val unreadCount: Int,
+    val notifications: List<MobileAssistantNotification>,
 )
 
 data class MobileAssistantTrendPoint(
@@ -282,12 +303,34 @@ data class MobileAssistantDashboard(
     val todayRevenue: Double,
     val revenueChangePercent: Double,
     val kpis: MobileAssistantKpis,
+    val notificationSummary: MobileNotificationSummary,
     val notifications: List<MobileAssistantNotification>,
     val activePhotoTask: MobileAssistantPhotoTask?,
     val callerIdStatus: MobileAssistantCallerIdStatus,
     val trend: List<MobileAssistantTrendPoint>,
     val generatedAt: String,
 )
+
+enum class NotificationBadgeState {
+    NONE,
+    NORMAL,
+    ATTENTION,
+}
+
+fun notificationBadgeState(unreadCount: Int, unreadAttentionCount: Int): NotificationBadgeState = when {
+    unreadAttentionCount > 0 -> NotificationBadgeState.ATTENTION
+    unreadCount > 0 -> NotificationBadgeState.NORMAL
+    else -> NotificationBadgeState.NONE
+}
+
+fun shouldShowNativePanelNotification(tone: String, actionType: String): Boolean {
+    val normalizedTone = tone.lowercase()
+
+    return normalizedTone == "error" ||
+        normalizedTone == "warning" ||
+        actionType == "OPEN_MESSAGES" ||
+        actionType == "OPEN_PHOTO_TASKS"
+}
 
 data class MobileCallerIdOrder(
     val amount: Double,
@@ -377,6 +420,18 @@ class MobileApiClient(private val baseUrl: String) {
         val data = getJson("/api/mobile/assistant/dashboard", token).getJSONObject("data")
 
         return parseAssistantDashboard(data)
+    }
+
+    fun listNotifications(token: String, limit: Int = 20): MobileNotificationsPage {
+        val response = getJson("/api/mobile/notifications?limit=${limit.coerceIn(1, 20)}", token)
+
+        return parseMobileNotificationsPage(response.getJSONObject("data"))
+    }
+
+    fun markNotificationsRead(token: String, notificationIds: List<String>) {
+        val body = JSONObject().put("notificationIds", org.json.JSONArray(notificationIds))
+
+        postJson("/api/mobile/notifications/read", body, token)
     }
 
     fun checkAppUpdate(token: String, currentVersionCode: Int, currentVersionName: String): MobileAppUpdate? {
@@ -896,22 +951,8 @@ class MobileApiClient(private val baseUrl: String) {
     private fun parseAssistantDashboard(data: JSONObject): MobileAssistantDashboard {
         val kpis = data.optJSONObject("kpis") ?: JSONObject()
         val callerIdStatus = data.optJSONObject("callerIdStatus") ?: JSONObject()
-        val notificationsJson = data.optJSONArray("notifications")
-        val notifications = mutableListOf<MobileAssistantNotification>()
-        if (notificationsJson != null) {
-            for (index in 0 until notificationsJson.length()) {
-                val item = notificationsJson.getJSONObject(index)
-                notifications.add(
-                    MobileAssistantNotification(
-                        title = item.optString("title", ""),
-                        description = item.optString("description", ""),
-                        tone = item.optString("tone", "info"),
-                        source = item.optString("source", ""),
-                        occurredAt = item.optString("occurredAt", ""),
-                    ),
-                )
-            }
-        }
+        val notificationSummary = data.optJSONObject("notificationSummary") ?: JSONObject()
+        val notifications = parseMobileNotifications(data.optJSONArray("notifications"))
 
         val trendJson = data.optJSONArray("trend")
         val trend = mutableListOf<MobileAssistantTrendPoint>()
@@ -939,6 +980,10 @@ class MobileApiClient(private val baseUrl: String) {
                 overdueOrProblems = kpis.optInt("overdueOrProblems", 0),
                 messages = kpis.optInt("messages", 0),
             ),
+            notificationSummary = MobileNotificationSummary(
+                unreadCount = notificationSummary.optInt("unreadCount", 0),
+                unreadAttentionCount = notificationSummary.optInt("unreadAttentionCount", 0),
+            ),
             notifications = notifications,
             activePhotoTask = data.optJSONObject("activePhotoTask")?.let { parseAssistantPhotoTask(it) },
             callerIdStatus = MobileAssistantCallerIdStatus(
@@ -947,6 +992,47 @@ class MobileApiClient(private val baseUrl: String) {
             ),
             trend = trend,
             generatedAt = data.optString("generatedAt", ""),
+        )
+    }
+
+    private fun parseMobileNotificationsPage(data: JSONObject): MobileNotificationsPage {
+        return MobileNotificationsPage(
+            attentionCount = data.optInt("attentionCount", 0),
+            unreadAttentionCount = data.optInt("unreadAttentionCount", 0),
+            unreadCount = data.optInt("unreadCount", 0),
+            notifications = parseMobileNotifications(data.optJSONArray("notifications")),
+        )
+    }
+
+    private fun parseMobileNotifications(itemsJson: org.json.JSONArray?): List<MobileAssistantNotification> {
+        val notifications = mutableListOf<MobileAssistantNotification>()
+        if (itemsJson == null) {
+            return notifications
+        }
+
+        for (index in 0 until itemsJson.length()) {
+            notifications.add(parseMobileNotification(itemsJson.getJSONObject(index)))
+        }
+
+        return notifications
+    }
+
+    private fun parseMobileNotification(item: JSONObject): MobileAssistantNotification {
+        val action = item.optJSONObject("mobileAction") ?: JSONObject()
+
+        return MobileAssistantNotification(
+            id = item.optString("id", ""),
+            title = item.optString("title", ""),
+            description = item.optString("description", ""),
+            tone = item.optString("tone", "info"),
+            source = item.optString("source", ""),
+            account = item.optString("account", ""),
+            occurredAt = item.optString("occurredAt", ""),
+            readAt = if (item.has("readAt") && !item.isNull("readAt")) item.optString("readAt", "") else null,
+            mobileAction = MobileNotificationAction(
+                type = action.optString("type", "OPEN_LOGS_SUMMARY"),
+                label = action.optString("label", "Zobacz szczegóły"),
+            ),
         )
     }
 
