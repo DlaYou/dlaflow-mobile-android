@@ -113,10 +113,43 @@ function Find-JavaTool([string] $ToolName) {
   throw "Could not find $ToolName. Install JDK or set JAVA_HOME."
 }
 
-function Read-ApkCertificateSha256([string] $ApkFile, [object[]] $ApkSignerOutput) {
+function Read-ApkCertificateSha256FromPem([string] $ApkFile, [string] $ApkSignerPath) {
+  $pemOutput = & $ApkSignerPath verify --print-certs-pem $ApkFile 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not read APK signing certificate PEM with apksigner."
+  }
+
+  $pemText = ($pemOutput | ForEach-Object { [string] $_ }) -join "`n"
+  $pemMatch = [regex]::Match(
+    $pemText,
+    "-----BEGIN CERTIFICATE-----\s*(?<body>[A-Za-z0-9+/=\s]+?)\s*-----END CERTIFICATE-----",
+    [System.Text.RegularExpressions.RegexOptions]::Singleline
+  )
+  if (-not $pemMatch.Success) {
+    throw "Could not parse APK signing certificate PEM from apksigner output."
+  }
+
+  $certificateBytes = [Convert]::FromBase64String(($pemMatch.Groups["body"].Value -replace "\s", ""))
+  $sha256Algorithm = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $hashBytes = $sha256Algorithm.ComputeHash($certificateBytes)
+  } finally {
+    $sha256Algorithm.Dispose()
+  }
+
+  return -join ($hashBytes | ForEach-Object { $_.ToString("x2") })
+}
+
+function Read-ApkCertificateSha256([string] $ApkFile, [object[]] $ApkSignerOutput, [string] $ApkSignerPath) {
   try {
     return Read-ApkSignerValue $ApkSignerOutput "Signer #1 certificate SHA-256 digest"
   } catch {
+    try {
+      return Read-ApkCertificateSha256FromPem $ApkFile $ApkSignerPath
+    } catch {
+      # Some APKs are signed only with newer APK signing schemes, so keytool is a last-resort fallback.
+    }
+
     $keytoolPath = Find-JavaTool "keytool"
     $keytoolOutput = & $keytoolPath -printcert -jarfile $ApkFile 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -209,10 +242,10 @@ $expectedCertificateSha256 = if ($Channel -eq "production") {
 }
 $certificateSha256 = ""
 if ($expectedCertificateSha256 -or $Channel -eq "production") {
-  $certificateSha256 = Normalize-CertificateFingerprint (Read-ApkCertificateSha256 $apkFullPath $apkSignerOutput)
+  $certificateSha256 = Normalize-CertificateFingerprint (Read-ApkCertificateSha256 $apkFullPath $apkSignerOutput $apkSignerPath)
 } else {
   try {
-    $certificateSha256 = Normalize-CertificateFingerprint (Read-ApkCertificateSha256 $apkFullPath $apkSignerOutput)
+    $certificateSha256 = Normalize-CertificateFingerprint (Read-ApkCertificateSha256 $apkFullPath $apkSignerOutput $apkSignerPath)
   } catch {
     Write-Host "APK signing certificate fingerprint was not available for non-production manifest validation."
   }
