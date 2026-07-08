@@ -357,23 +357,35 @@ class MobileApiException(
     message: String,
 ) : IllegalStateException(message)
 
-class MobileApiClient(private val baseUrl: String) {
+class MobileApiClient(
+    private val baseUrl: String,
+    private val requestSigner: MobileRequestSigner? = null,
+    private val deviceIdProvider: () -> String = { "" },
+    private val nowMillis: () -> Long = { System.currentTimeMillis() },
+    private val nonceFactory: () -> String = { UUID.randomUUID().toString() },
+) {
     fun completePairing(pairingCode: String, deviceName: String): MobileSession {
+        val body = JSONObject()
+            .put("deviceName", deviceName)
+            .put("pairingCode", pairingCode)
+            .put("platform", "ANDROID")
+        requestSigner?.publicKeySpkiBase64()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { publicKey -> body.put("requestSigningPublicKey", publicKey) }
+
         val response = postJson(
             path = "/api/mobile/devices/pair/complete",
-            body = JSONObject()
-                .put("deviceName", deviceName)
-                .put("pairingCode", pairingCode)
-                .put("platform", "ANDROID"),
+            body = body,
             token = null,
         )
         val data = response.getJSONObject("data")
         val device = data.getJSONObject("device")
+        val deviceId = device.getString("id")
         val token = data.getString("token")
-        val me = getJson("/api/mobile/me", token).getJSONObject("data")
+        val me = getJson("/api/mobile/me", token, deviceIdOverride = deviceId).getJSONObject("data")
 
         return MobileSession(
-            deviceId = device.getString("id"),
+            deviceId = deviceId,
             deviceName = device.optString("name", "Telefon"),
             tenantName = me.getJSONObject("tenant").optString("name", ""),
             token = token,
@@ -558,48 +570,76 @@ class MobileApiClient(private val baseUrl: String) {
         return parseCallerIdLookup(response.getJSONObject("data"))
     }
 
-    private fun getJson(path: String, token: String): JSONObject {
+    private fun getJson(path: String, token: String, deviceIdOverride: String? = null): JSONObject {
         val connection = openConnection(path)
         connection.requestMethod = "GET"
-        connection.setRequestProperty("Authorization", "Bearer $token")
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "GET",
+            path = path,
+            token = token,
+            bodyBytes = ByteArray(0),
+            deviceIdOverride = deviceIdOverride,
+        )
 
         return readJsonResponse(connection)
     }
 
     private fun postJson(path: String, body: JSONObject, token: String?): JSONObject {
+        val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
         val connection = openConnection(path)
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "POST",
+            path = path,
+            token = token,
+            bodyBytes = bodyBytes,
+        )
         connection.outputStream.use { stream ->
-            stream.write(body.toString().toByteArray(Charsets.UTF_8))
+            stream.write(bodyBytes)
         }
 
         return readJsonResponse(connection)
     }
 
     private fun postEmptyJson(path: String, token: String) {
+        val bodyBytes = "{}".toByteArray(Charsets.UTF_8)
         val connection = openConnection(path)
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        connection.setRequestProperty("Authorization", "Bearer $token")
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "POST",
+            path = path,
+            token = token,
+            bodyBytes = bodyBytes,
+        )
         connection.outputStream.use { stream ->
-            stream.write("{}".toByteArray(Charsets.UTF_8))
+            stream.write(bodyBytes)
         }
 
         readEmptyResponse(connection)
     }
 
     private fun patchJson(path: String, body: JSONObject, token: String): JSONObject {
+        val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
         val connection = openConnection(path)
         connection.requestMethod = "PATCH"
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        connection.setRequestProperty("Authorization", "Bearer $token")
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "PATCH",
+            path = path,
+            token = token,
+            bodyBytes = bodyBytes,
+        )
         connection.outputStream.use { stream ->
-            stream.write(body.toString().toByteArray(Charsets.UTF_8))
+            stream.write(bodyBytes)
         }
 
         return readJsonResponse(connection)
@@ -607,11 +647,20 @@ class MobileApiClient(private val baseUrl: String) {
 
     private fun postMultipart(path: String, token: String, imageBytes: ByteArray, fileName: String, mimeType: String): JSONObject {
         val boundary = "dlaflow-mobile-${UUID.randomUUID()}"
+        val fileSha256 = mobileRequestBodySha256(imageBytes)
         val connection = openConnection(path)
         connection.requestMethod = "POST"
         connection.doOutput = true
-        connection.setRequestProperty("Authorization", "Bearer $token")
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+        connection.setRequestProperty("X-DlaFlow-File-SHA256", fileSha256)
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "POST",
+            path = path,
+            token = token,
+            bodyBytes = imageBytes,
+            bodySha256Override = fileSha256,
+        )
 
         connection.outputStream.use { stream ->
             val head = buildString {
@@ -625,6 +674,45 @@ class MobileApiClient(private val baseUrl: String) {
         }
 
         return readJsonResponse(connection)
+    }
+
+    private fun applyAuthorizationAndSignature(
+        connection: HttpURLConnection,
+        method: String,
+        path: String,
+        token: String?,
+        bodyBytes: ByteArray,
+        bodySha256Override: String? = null,
+        deviceIdOverride: String? = null,
+    ) {
+        token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+        if (token.isNullOrBlank() || requestSigner == null) {
+            return
+        }
+
+        val deviceId = deviceIdOverride?.takeIf { it.isNotBlank() } ?: deviceIdProvider()
+        if (deviceId.isBlank()) {
+            return
+        }
+
+        val bodySha256 = bodySha256Override ?: mobileRequestBodySha256(bodyBytes)
+        val timestamp = (nowMillis() / 1000L).toString()
+        val nonce = nonceFactory()
+        val canonical = mobileRequestCanonicalString(
+            method = method,
+            pathWithQuery = path,
+            bodySha256 = bodySha256,
+            timestamp = timestamp,
+            nonce = nonce,
+            deviceId = deviceId,
+        )
+
+        connection.setRequestProperty("X-DlaFlow-Signature-Version", "v1")
+        connection.setRequestProperty("X-DlaFlow-Device-Id", deviceId)
+        connection.setRequestProperty("X-DlaFlow-Timestamp", timestamp)
+        connection.setRequestProperty("X-DlaFlow-Nonce", nonce)
+        connection.setRequestProperty("X-DlaFlow-Body-SHA256", bodySha256)
+        connection.setRequestProperty("X-DlaFlow-Signature", requestSigner.sign(canonical))
     }
 
     private fun openConnection(path: String): HttpURLConnection {

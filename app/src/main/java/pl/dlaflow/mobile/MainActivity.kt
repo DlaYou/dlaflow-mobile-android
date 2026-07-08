@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
@@ -466,15 +467,7 @@ class MainActivity : ComponentActivity() {
             card.addView(label(currentSession.deviceName, size = 13f, color = theme.successText, bold = true, top = 6))
             card.addView(label(currentSession.tenantName.ifBlank { "Konto firmowe" }, size = 12f, color = theme.muted, top = 4))
             card.addView(label(currentSession.userEmail, size = 12f, color = theme.muted, top = 2))
-            card.addView(secondaryButton("Odłącz ten telefon") {
-                sessionStore.clear()
-                DlaFlowBackgroundSyncService.stop(this)
-                session = null
-                photoTasks = emptyList()
-                focusedPhotoTaskId = null
-                stopPhotoTaskDispatchPolling()
-                render()
-            })
+            card.addView(secondaryButton("Odłącz ten telefon") { disconnectLocalPhone() })
         }
 
         root.addView(card)
@@ -630,7 +623,7 @@ class MainActivity : ComponentActivity() {
         setStatus("Sprawdzam zapisane połączenie...")
         executor.execute {
             runCatching {
-                MobileApiClient(baseUrl).verifySession(token)
+                mobileApiClientForBaseUrl(baseUrl, sessionStore).verifySession(token)
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
@@ -656,7 +649,7 @@ class MainActivity : ComponentActivity() {
                 }
             }.onFailure {
                 runOnUiThread {
-                    if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.")) {
+                    if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.", confirmUnauthorized = false)) {
                         hideSessionTransition()
                     }
                 }
@@ -683,7 +676,7 @@ class MainActivity : ComponentActivity() {
         showSessionTransition(activeStepIndex = 0, progress = 18)
         executor.execute {
             runCatching {
-                val client = MobileApiClient(baseUrl)
+                val client = mobileApiClientForBaseUrl(baseUrl)
                 client.completePairing(code, "Telefon DlaFlow")
             }.onSuccess { nextSession ->
                 sessionStore.saveSession(baseUrl, nextSession)
@@ -824,7 +817,7 @@ class MainActivity : ComponentActivity() {
         }
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).listActivePhotoTasks(currentSession.token)
+                mobileApiClientForSession(sessionStore).listActivePhotoTasks(currentSession.token)
             }.onSuccess { tasks ->
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {
@@ -868,7 +861,7 @@ class MainActivity : ComponentActivity() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).listOrders(
+                mobileApiClientForSession(sessionStore).listOrders(
                     token = currentSession.token,
                     search = search,
                     filter = filter,
@@ -917,7 +910,7 @@ class MainActivity : ComponentActivity() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).getOrder(currentSession.token, orderId)
+                mobileApiClientForSession(sessionStore).getOrder(currentSession.token, orderId)
             }.onSuccess { order ->
                 runOnUiThread {
                     if (requestVersion != mobileOrderDetailRequestVersion || !isCurrentSessionToken(currentSession.token)) {
@@ -964,7 +957,7 @@ class MainActivity : ComponentActivity() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).listProducts(
+                mobileApiClientForSession(sessionStore).listProducts(
                     token = currentSession.token,
                     search = search,
                     filter = filter,
@@ -1020,7 +1013,7 @@ class MainActivity : ComponentActivity() {
         mobileProductVariantsLoading = mobileProductVariantsLoading + productId
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).listProductVariants(currentSession.token, productId)
+                mobileApiClientForSession(sessionStore).listProductVariants(currentSession.token, productId)
             }.onSuccess { variants ->
                 runOnUiThread {
                     if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
@@ -1052,7 +1045,7 @@ class MainActivity : ComponentActivity() {
         val stateVersion = mobileProductsStateVersion
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).quickEditProduct(currentSession.token, product.id, field, value)
+                mobileApiClientForSession(sessionStore).quickEditProduct(currentSession.token, product.id, field, value)
             }.onSuccess { updated ->
                 runOnUiThread {
                     if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
@@ -1084,7 +1077,7 @@ class MainActivity : ComponentActivity() {
         val stateVersion = mobileProductsStateVersion
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).quickEditProductVariant(
+                mobileApiClientForSession(sessionStore).quickEditProductVariant(
                     token = currentSession.token,
                     productId = variant.productId,
                     variantId = variant.id,
@@ -1124,7 +1117,7 @@ class MainActivity : ComponentActivity() {
         }
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).getAssistantDashboard(currentSession.token)
+                mobileApiClientForSession(sessionStore).getAssistantDashboard(currentSession.token)
             }.onSuccess { dashboard ->
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {
@@ -1160,7 +1153,7 @@ class MainActivity : ComponentActivity() {
         mobileNotificationsLoading = true
         executor.execute {
             runCatching {
-                val client = MobileApiClient(sessionStore.readBaseUrl())
+                val client = mobileApiClientForSession(sessionStore)
                 val page = client.listNotifications(currentSession.token)
                 if (markVisibleRead) {
                     val unreadIds = filterNotifications(page.notifications, filterSnapshot)
@@ -1216,7 +1209,7 @@ class MainActivity : ComponentActivity() {
 
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).checkAppUpdate(
+                mobileApiClientForSession(sessionStore).checkAppUpdate(
                     token = currentSession.token,
                     currentVersionCode = currentAppVersionCode(),
                     currentVersionName = currentAppVersionName(),
@@ -1411,6 +1404,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val apkIdentityError = verifyMobileUpdateApkIdentity(apkFile, update)
+        if (apkIdentityError != null) {
+            appUpdateError = apkIdentityError
+            apkFile.delete()
+            setStatus(apkIdentityError)
+            return
+        }
+
         if (!canInstallMobileUpdates()) {
             pendingInstallApkFile = apkFile
             pendingInstallUpdate = update
@@ -1437,6 +1438,82 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun verifyMobileUpdateApkIdentity(apkFile: File, update: MobileAppUpdate): String? {
+        val archiveInfo = archivePackageInfo(apkFile)
+            ?: return "Pobrana aplikacja nie wygląda jak poprawna paczka DlaFlow."
+
+        if (archiveInfo.packageName != packageName) {
+            return "Pobrana aplikacja ma niezgodny identyfikator pakietu."
+        }
+
+        if (packageVersionCode(archiveInfo) < update.latestVersionCode) {
+            return "Pobrana aplikacja ma starszą wersję niż opublikowana aktualizacja."
+        }
+
+        val currentFingerprints = signingFingerprints(currentPackageInfoWithSignatures())
+        val archiveFingerprints = signingFingerprints(archiveInfo)
+        if (currentFingerprints.isNotEmpty() && archiveFingerprints.isNotEmpty() && currentFingerprints.intersect(archiveFingerprints).isEmpty()) {
+            return "Pobrana aplikacja ma inny podpis bezpieczeństwa niż obecna instalacja."
+        }
+
+        return null
+    }
+
+    private fun archivePackageInfo(apkFile: File): PackageInfo? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageArchiveInfo(
+                apkFile.absolutePath,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+        }
+    }
+
+    private fun currentPackageInfoWithSignatures(): PackageInfo {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getPackageInfo(
+                packageName,
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong()),
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        }
+    }
+
+    private fun packageVersionCode(packageInfo: PackageInfo): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode.toInt()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode
+        }
+    }
+
+    private fun signingFingerprints(packageInfo: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = packageInfo.signingInfo ?: return emptySet()
+            if (signingInfo.hasMultipleSigners()) {
+                signingInfo.apkContentsSigners
+            } else {
+                signingInfo.signingCertificateHistory
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.signatures
+        } ?: return emptySet()
+
+        return signatures
+            .map { signature ->
+                MessageDigest.getInstance("SHA-256")
+                    .digest(signature.toByteArray())
+                    .joinToString("") { byte -> "%02x".format(byte) }
+            }
+            .toSet()
+    }
+
     private fun startPhotoTaskDispatchPolling() {
         dispatchHandler.removeCallbacks(dispatchRunnable)
         dispatchHandler.post(dispatchRunnable)
@@ -1450,7 +1527,7 @@ class MainActivity : ComponentActivity() {
         val currentSession = session ?: return
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).getPhotoTaskDispatch(currentSession.token)
+                mobileApiClientForSession(sessionStore).getPhotoTaskDispatch(currentSession.token)
             }.onSuccess { dispatch ->
                 val task = dispatch.pendingOpenTask ?: return@onSuccess
                 runOnUiThread {
@@ -1657,7 +1734,7 @@ class MainActivity : ComponentActivity() {
         setStatus("Wysyłam pełne zdjęcie (${formatBytes(bytes.size)})...")
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).uploadPhotoTaskMedia(
+                mobileApiClientForSession(sessionStore).uploadPhotoTaskMedia(
                     token = currentSession.token,
                     taskId = taskId,
                     imageBytes = bytes,
@@ -1705,7 +1782,7 @@ class MainActivity : ComponentActivity() {
         setStatus("Kończę zadanie...")
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).completePhotoTask(currentSession.token, taskId)
+                mobileApiClientForSession(sessionStore).completePhotoTask(currentSession.token, taskId)
             }.onSuccess {
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {
@@ -1812,7 +1889,7 @@ class MainActivity : ComponentActivity() {
         setStatus("Sprawdzam numer...")
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).lookupCallerId(currentSession.token, phone)
+                mobileApiClientForSession(sessionStore).lookupCallerId(currentSession.token, phone)
             }.onSuccess { lookup ->
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {
@@ -1833,9 +1910,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleMobileApiFailure(error: Throwable, fallbackMessage: String, showNonAuthStatus: Boolean = true): Boolean {
+    private fun handleMobileApiFailure(
+        error: Throwable,
+        fallbackMessage: String,
+        showNonAuthStatus: Boolean = true,
+        confirmUnauthorized: Boolean = true,
+    ): Boolean {
         if (isMobileSessionRevoked(error)) {
-            clearRevokedSession()
+            if (confirmUnauthorized) {
+                confirmRevokedSession(error, fallbackMessage, showNonAuthStatus)
+            } else {
+                clearRevokedSession()
+            }
             return true
         }
 
@@ -1844,6 +1930,36 @@ class MainActivity : ComponentActivity() {
         }
 
         return false
+    }
+
+    private fun confirmRevokedSession(error: Throwable, fallbackMessage: String, showNonAuthStatus: Boolean) {
+        val currentSession = session
+        if (currentSession == null) {
+            clearRevokedSession()
+            return
+        }
+
+        if (showNonAuthStatus) {
+            setStatus("Sprawdzam połączenie telefonu...")
+        }
+
+        executor.execute {
+            val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(error) {
+                mobileApiClientForSession(sessionStore).verifySession(currentSession.token)
+            }
+
+            runOnUiThread {
+                if (!isCurrentSessionToken(currentSession.token)) {
+                    return@runOnUiThread
+                }
+
+                if (shouldClearSession) {
+                    clearRevokedSession()
+                } else if (showNonAuthStatus) {
+                    setStatus(mobileApiBusinessMessage(error, fallbackMessage))
+                }
+            }
+        }
     }
 
     private fun mobileApiBusinessMessage(error: Throwable, fallbackMessage: String): String {
@@ -1968,7 +2084,7 @@ class MainActivity : ComponentActivity() {
         setStatus("Odłączam telefon w panelu...")
         executor.execute {
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).revokeCurrentDevice(currentSession.token)
+                mobileApiClientForSession(sessionStore).revokeCurrentDevice(currentSession.token)
             }.onSuccess {
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {
