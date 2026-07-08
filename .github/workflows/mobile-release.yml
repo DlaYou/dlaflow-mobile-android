@@ -136,16 +136,67 @@ jobs:
             echo "DLAFLOW_APK_PATH=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
           fi
 
+      - name: Fetch current published manifest
+        if: startsWith(github.ref, 'refs/tags/mobile-v') || github.event.inputs.publish == 'true'
+        shell: bash
+        env:
+          MOBILE_RELEASE_SSH_HOST: ${{ secrets.MOBILE_RELEASE_SSH_HOST }}
+          MOBILE_RELEASE_SSH_USER: ${{ secrets.MOBILE_RELEASE_SSH_USER }}
+          MOBILE_RELEASE_SSH_KEY: ${{ secrets.MOBILE_RELEASE_SSH_KEY }}
+          MOBILE_RELEASE_SSH_PORT: ${{ secrets.MOBILE_RELEASE_SSH_PORT }}
+          MOBILE_RELEASE_DIR: ${{ secrets.MOBILE_RELEASE_DIR }}
+        run: |
+          set -euo pipefail
+
+          missing=0
+          for name in MOBILE_RELEASE_SSH_HOST MOBILE_RELEASE_SSH_USER MOBILE_RELEASE_SSH_KEY MOBILE_RELEASE_DIR; do
+            if [ -z "${!name}" ]; then
+              echo "::error::GitHub secret ${name} is required to compare the Android release version."
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+          case "$MOBILE_RELEASE_DIR" in
+            *[[:space:]]*|*"'"*)
+              echo "::error::MOBILE_RELEASE_DIR must not contain spaces or single quotes."
+              exit 1
+              ;;
+          esac
+
+          port="${MOBILE_RELEASE_SSH_PORT:-22}"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$MOBILE_RELEASE_SSH_KEY" > "$HOME/.ssh/mobile_release_key"
+          chmod 600 "$HOME/.ssh/mobile_release_key"
+          ssh-keyscan -p "$port" -H "$MOBILE_RELEASE_SSH_HOST" >> "$HOME/.ssh/known_hosts"
+          mkdir -p mobile-release-previous
+
+          if ssh -p "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST" "test -s '$MOBILE_RELEASE_DIR/latest.json'"; then
+            scp -P "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST:$MOBILE_RELEASE_DIR/latest.json" mobile-release-previous/latest.json
+          else
+            echo "No previous Android release manifest found on VPS."
+          fi
+
       - name: Generate panel release manifest
         shell: pwsh
+        env:
+          ANDROID_SIGNING_CERT_SHA256: ${{ secrets.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
+          $previousManifest = "mobile-release-previous/latest.json"
+          if (-not (Test-Path -LiteralPath $previousManifest -PathType Leaf)) {
+            $previousManifest = ""
+          }
+
           ./scripts/generate-mobile-release-manifest.ps1 `
             -ApkPath "$env:DLAFLOW_APK_PATH" `
             -OutputDir "mobile-release" `
             -Channel "${{ env.RELEASE_CHANNEL }}" `
             -UpdatePriority "${{ env.UPDATE_PRIORITY }}" `
             -MinSupportedVersionCode ${{ env.MIN_SUPPORTED_VERSION_CODE }} `
-            -ReleaseTitle "${{ env.RELEASE_TITLE }}"
+            -ReleaseTitle "${{ env.RELEASE_TITLE }}" `
+            -PreviousManifestPath "$previousManifest"
 
       - name: Inspect release package
         shell: bash

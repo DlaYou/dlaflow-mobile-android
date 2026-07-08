@@ -32,8 +32,9 @@ class DlaFlowCallScreeningService : CallScreeningService() {
                 return@execute
             }
 
+            val client = mobileApiClientForSession(sessionStore)
             runCatching {
-                MobileApiClient(sessionStore.readBaseUrl()).lookupCallerId(token, phone)
+                client.lookupCallerId(token, phone)
             }.onSuccess { lookup ->
                 if (lookup.primaryOrder != null) {
                     DlaFlowNotifications.showCallerIdNotification(this, lookup)
@@ -42,7 +43,11 @@ class DlaFlowCallScreeningService : CallScreeningService() {
                     }
                 }
             }.onFailure { error ->
-                if (error is MobileApiException && error.statusCode == 401) {
+                val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(error) {
+                    client.verifySession(token)
+                }
+
+                if (shouldClearSession && isSameMobileSessionToken(sessionStore.readToken(), token)) {
                     sessionStore.clearSession()
                     DlaFlowBackgroundSyncService.stop(this)
                 }

@@ -1,11 +1,13 @@
 package pl.dlaflow.mobile
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
@@ -54,5 +56,168 @@ class MobileApiClientTest {
             server.close()
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun `signed mobile request adds canonical signature headers`() {
+        val method = AtomicReference("")
+        val path = AtomicReference("")
+        val authorization = AtomicReference("")
+        val signatureVersion = AtomicReference("")
+        val deviceId = AtomicReference("")
+        val timestamp = AtomicReference("")
+        val nonce = AtomicReference("")
+        val bodySha256 = AtomicReference("")
+        val signature = AtomicReference("")
+        val signer = FakeMobileRequestSigner()
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                val requestLine = reader.readLine().orEmpty()
+                val parts = requestLine.split(" ")
+                method.set(parts.getOrElse(0) { "" })
+                path.set(parts.getOrElse(1) { "" })
+
+                generateSequence { reader.readLine() }
+                    .takeWhile { it.isNotEmpty() }
+                    .forEach { header ->
+                        when {
+                            header.startsWith("Authorization:", ignoreCase = true) -> authorization.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Signature-Version:", ignoreCase = true) -> signatureVersion.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Device-Id:", ignoreCase = true) -> deviceId.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Timestamp:", ignoreCase = true) -> timestamp.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Nonce:", ignoreCase = true) -> nonce.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Body-SHA256:", ignoreCase = true) -> bodySha256.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Signature:", ignoreCase = true) -> signature.set(header.substringAfter(":").trim())
+                        }
+                    }
+
+                val body = """{"data":{"device":{"id":"device-1","status":"REVOKED"}}}""".toByteArray(Charsets.UTF_8)
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                requestSigner = signer,
+                deviceIdProvider = { "device-123" },
+                nowMillis = { 1_783_540_000_123L },
+                nonceFactory = { "nonce-abc-123456" },
+            )
+
+            client.revokeCurrentDevice("mobile-token")
+
+            val expectedBodyHash = sha256Hex("{}".toByteArray(Charsets.UTF_8))
+            assertEquals("POST", method.get())
+            assertEquals("/api/mobile/me/revoke", path.get())
+            assertEquals("Bearer mobile-token", authorization.get())
+            assertEquals("v1", signatureVersion.get())
+            assertEquals("device-123", deviceId.get())
+            assertEquals("1783540000", timestamp.get())
+            assertEquals("nonce-abc-123456", nonce.get())
+            assertEquals(expectedBodyHash, bodySha256.get())
+            assertEquals("fake-signature", signature.get())
+            assertEquals(
+                "v1\nPOST\n/api/mobile/me/revoke\n$expectedBodyHash\n1783540000\nnonce-abc-123456\ndevice-123",
+                signer.lastCanonical,
+            )
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `complete pairing sends device public key and signs first session lookup`() {
+        val firstBody = AtomicReference("")
+        val secondDeviceId = AtomicReference("")
+        val signer = FakeMobileRequestSigner(publicKey = "PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH_1234567890")
+        val server = ServerSocket(0, 2, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            repeat(2) { index ->
+                server.accept().use { socket ->
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                    val requestLine = reader.readLine().orEmpty()
+                    val headers = mutableMapOf<String, String>()
+                    var contentLength = 0
+                    generateSequence { reader.readLine() }
+                        .takeWhile { it.isNotEmpty() }
+                        .forEach { header ->
+                            val name = header.substringBefore(":").trim()
+                            val value = header.substringAfter(":").trim()
+                            headers[name.lowercase()] = value
+                            if (name.equals("Content-Length", ignoreCase = true)) {
+                                contentLength = value.toIntOrNull() ?: 0
+                            }
+                        }
+
+                    if (index == 0) {
+                        val chars = CharArray(contentLength)
+                        reader.read(chars)
+                        firstBody.set(String(chars))
+                    } else {
+                        assertEquals("GET /api/mobile/me HTTP/1.1", requestLine)
+                        secondDeviceId.set(headers["x-dlaflow-device-id"].orEmpty())
+                    }
+
+                    val body = if (index == 0) {
+                        """{"data":{"token":"mobile-token","device":{"id":"paired-device-7","name":"Telefon"}}}"""
+                    } else {
+                        """{"data":{"device":{"id":"paired-device-7","name":"Telefon"},"tenant":{"name":"Firma"},"user":{"email":"mobile@example.test"}}}"""
+                    }.toByteArray(Charsets.UTF_8)
+                    val responseHeaders = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                    socket.getOutputStream().use { output ->
+                        output.write(responseHeaders.toByteArray(Charsets.UTF_8))
+                        output.write(body)
+                    }
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                requestSigner = signer,
+                nowMillis = { 1_783_540_000_123L },
+                nonceFactory = { "nonce-pairing-123" },
+            )
+
+            val session = client.completePairing("ABC-123", "Telefon")
+
+            assertTrue(firstBody.get().contains("\"requestSigningPublicKey\":\"PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH_1234567890\""))
+            assertEquals("paired-device-7", secondDeviceId.get())
+            assertEquals("paired-device-7", session.deviceId)
+            assertEquals("mobile-token", session.token)
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    private class FakeMobileRequestSigner(
+        private val publicKey: String = "PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH",
+    ) : MobileRequestSigner {
+        var lastCanonical: String = ""
+
+        override fun publicKeySpkiBase64(): String = publicKey
+
+        override fun sign(canonical: String): String {
+            lastCanonical = canonical
+            return "fake-signature"
+        }
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 }

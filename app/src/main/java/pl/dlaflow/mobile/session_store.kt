@@ -51,6 +51,10 @@ class MobileSessionStore(context: Context) {
         return legacyPlainToken
     }
 
+    fun readDeviceId(): String {
+        return preferences.getString("device_id", "") ?: ""
+    }
+
     fun saveBaseUrl(baseUrl: String) {
         preferences.edit().putString("base_url", baseUrl.trim()).apply()
     }

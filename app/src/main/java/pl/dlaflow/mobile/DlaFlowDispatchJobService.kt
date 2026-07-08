@@ -28,7 +28,7 @@ class DlaFlowDispatchJobService : JobService() {
 
         executor.execute {
             runCatching {
-                val client = MobileApiClient(sessionStore.readBaseUrl())
+                val client = mobileApiClientForSession(sessionStore)
                 client to client.getPhotoTaskDispatch(token)
             }.onSuccess { (client, dispatch) ->
                 val task = dispatch.pendingOpenTask
@@ -40,10 +40,10 @@ class DlaFlowDispatchJobService : JobService() {
                 runCatching {
                     pollUnreadPanelAlertNotifications(this, sessionStore, client, token)
                 }.onFailure { error ->
-                    handleBackgroundSyncFailure(error)
+                    handleBackgroundSyncFailure(error, token)
                 }
             }.onFailure { error ->
-                handleBackgroundSyncFailure(error)
+                handleBackgroundSyncFailure(error, token)
             }
             jobFinished(params, false)
         }
@@ -58,8 +58,12 @@ class DlaFlowDispatchJobService : JobService() {
         super.onDestroy()
     }
 
-    private fun handleBackgroundSyncFailure(error: Throwable) {
-        if (error is MobileApiException && error.statusCode == 401) {
+    private fun handleBackgroundSyncFailure(error: Throwable, token: String) {
+        val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(error) {
+            mobileApiClientForSession(sessionStore).verifySession(token)
+        }
+
+        if (shouldClearSession && isSameMobileSessionToken(sessionStore.readToken(), token)) {
             sessionStore.clearSession()
             cancel(this)
         }
