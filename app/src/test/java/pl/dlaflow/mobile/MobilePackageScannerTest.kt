@@ -9,6 +9,41 @@ import org.junit.Test
 
 class MobilePackageScannerTest {
     @Test
+    fun packageScanUiStateShowsMatchedOrderTitle() {
+        val result = MobilePackageScanLookupResult(
+            matched = true,
+            scannedCode = "TRK123",
+            matchType = "trackingNumber",
+            message = "",
+            order = MobilePackageScanOrder(
+                amount = 129.0,
+                channel = "Allegro",
+                currency = "PLN",
+                customer = "Adam Kowalski",
+                id = "order-1",
+                orderNumber = "000000123",
+                paymentStatus = "Opłacone",
+                phone = "+48 501 234 987",
+                productSummary = "Bluza Classic",
+                status = "Nowe",
+            ),
+            shipment = MobilePackageScanShipment(
+                carrier = "InPost",
+                id = "shipment-1",
+                labelReady = true,
+                status = "Gotowa",
+                trackingNumber = "TRK123",
+                trackingUrl = "https://example.test/TRK123",
+            ),
+        )
+
+        val state = MobilePackageScanUiState.Resolved(result)
+
+        assertEquals("Adam Kowalski", state.result.order?.customer)
+        assertEquals("InPost", state.result.shipment?.carrier)
+    }
+
+    @Test
     fun parsesMatchedPackageScanResult() {
         val json = JSONObject(
             """

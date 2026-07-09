@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     private var callerIdTestPhoneValue by mutableStateOf("")
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
-    private var packageScanResult by mutableStateOf<MobilePackageScanResult?>(null)
+    private var packageScanState by mutableStateOf<MobilePackageScanUiState>(MobilePackageScanUiState.Empty)
     private var mobileOrders by mutableStateOf<List<MobileOrderListItem>>(emptyList())
     private var mobileOrdersNextOffset by mutableStateOf<Int?>(null)
     private var mobileOrdersTotal by mutableStateOf(0)
@@ -273,7 +273,7 @@ class MainActivity : ComponentActivity() {
                     session = session,
                     dashboard = assistantDashboard,
                     photoTasks = orderedPhotoTasks(),
-                    packageScanResult = packageScanResult,
+                    packageScanState = packageScanState,
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
@@ -356,6 +356,10 @@ class MainActivity : ComponentActivity() {
                     },
                     onLoadMoreOrders = { refreshMobileOrders(reset = false, showLoading = true) },
                     onSelectOrder = { order -> loadMobileOrderDetail(order.orderNumber) },
+                    onOpenScannedOrder = { orderNumber ->
+                        selectedTab = MobileAssistantTab.ORDERS
+                        loadMobileOrderDetail(orderNumber)
+                    },
                     onCloseOrderDetail = { selectedMobileOrder = null },
                     onProductsSearchChange = {
                         if (mobileProductsSearch != it) {
@@ -742,11 +746,38 @@ class MainActivity : ComponentActivity() {
         }
 
         selectedTab = MobileAssistantTab.ORDERS
-        packageScanResult = MobilePackageScanResult(
-            code = code,
-            scannedAtLabel = "Przed chwilą",
-        )
-        setStatus("Kod paczki odczytany. Szczegóły przesyłki będą dostępne po podpięciu modułu wysyłek.")
+        packageScanState = MobilePackageScanUiState.Loading(code)
+        setStatus("Sprawdzam paczkę w DlaFlow.")
+
+        val currentSession = session
+        if (currentSession == null) {
+            packageScanState = MobilePackageScanUiState.Failed(code, "Telefon nie jest połączony z panelem.")
+            setStatus("Telefon nie jest połączony z panelem.")
+            return
+        }
+
+        executor.execute {
+            runCatching {
+                mobileApiClientForSession(sessionStore).scanPackage(currentSession.token, code)
+            }.onSuccess { result ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    packageScanState = MobilePackageScanUiState.Resolved(result)
+                    setStatus(if (result.matched) "Paczka znaleziona w DlaFlow." else "Nie znaleziono paczki w DlaFlow.")
+                }
+            }.onFailure { error ->
+                runOnUiThread {
+                    if (!isCurrentSessionToken(currentSession.token)) {
+                        return@runOnUiThread
+                    }
+                    val message = error.message ?: "Nie udało się sprawdzić paczki."
+                    packageScanState = MobilePackageScanUiState.Failed(code, message)
+                    setStatus(message)
+                }
+            }
+        }
     }
 
     private fun handleQuickAction(action: MobileAssistantQuickAction) {
@@ -1590,12 +1621,9 @@ class MainActivity : ComponentActivity() {
         }
         val packageCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode).orEmpty()
         if (packageCode.isNotBlank()) {
-            packageScanResult = MobilePackageScanResult(
-                code = packageCode.trim(),
-                scannedAtLabel = "Smoke ADB",
-            )
+            packageScanState = MobilePackageScanUiState.Loading(packageCode.trim())
             selectedTab = MobileAssistantTab.ORDERS
-            statusMessage = "Kod paczki odczytany. Szczegóły przesyłki będą dostępne po podpięciu modułu wysyłek."
+            statusMessage = "Sprawdzam paczkę w DlaFlow."
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()
@@ -2061,7 +2089,7 @@ class MainActivity : ComponentActivity() {
         focusedPhotoTaskId = null
         focusedPhotoTaskView = null
         lastDispatchedPhotoTaskId = null
-        packageScanResult = null
+        packageScanState = MobilePackageScanUiState.Empty
         clearAppUpdateState()
         clearMobileOrdersState()
         clearMobileProductsState()

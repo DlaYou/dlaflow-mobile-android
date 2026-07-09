@@ -173,10 +173,12 @@ enum class MobileNotificationFilter(val label: String) {
     UNREAD("Nowe"),
 }
 
-data class MobilePackageScanResult(
-    val code: String,
-    val scannedAtLabel: String,
-)
+sealed class MobilePackageScanUiState {
+    data object Empty : MobilePackageScanUiState()
+    data class Loading(val code: String) : MobilePackageScanUiState()
+    data class Resolved(val result: MobilePackageScanLookupResult) : MobilePackageScanUiState()
+    data class Failed(val code: String, val message: String) : MobilePackageScanUiState()
+}
 
 enum class MobileAssistantBackAction {
     NONE,
@@ -376,7 +378,7 @@ fun MobileAssistantScreen(
     session: MobileSession?,
     dashboard: MobileAssistantDashboard?,
     photoTasks: List<MobilePhotoTask>,
-    packageScanResult: MobilePackageScanResult?,
+    packageScanState: MobilePackageScanUiState,
     statusMessage: String,
     selectedTab: MobileAssistantTab,
     apiUrl: String,
@@ -430,6 +432,7 @@ fun MobileAssistantScreen(
     onOrdersFilterChange: (MobileOrderFilter) -> Unit = {},
     onLoadMoreOrders: () -> Unit = {},
     onSelectOrder: (MobileOrderListItem) -> Unit = {},
+    onOpenScannedOrder: (String) -> Unit = {},
     onCloseOrderDetail: () -> Unit = {},
     onProductsSearchChange: (String) -> Unit = {},
     onProductsFilterChange: (MobileProductFilter) -> Unit = {},
@@ -536,7 +539,7 @@ fun MobileAssistantScreen(
                     session = session,
                     dashboard = dashboard,
                     photoTasks = photoTasks,
-                    packageScanResult = packageScanResult,
+                    packageScanState = packageScanState,
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     mobileProducts = mobileProducts,
@@ -581,6 +584,7 @@ fun MobileAssistantScreen(
                         onOrdersFilterChange = onOrdersFilterChange,
                         onLoadMoreOrders = onLoadMoreOrders,
                         onSelectOrder = onSelectOrder,
+                        onOpenScannedOrder = onOpenScannedOrder,
                         onCloseOrderDetail = onCloseOrderDetail,
                         onProductsSearchChange = onProductsSearchChange,
                         onProductsFilterChange = onProductsFilterChange,
@@ -1536,7 +1540,7 @@ private fun AssistantContent(
     session: MobileSession,
     dashboard: MobileAssistantDashboard?,
     photoTasks: List<MobilePhotoTask>,
-    packageScanResult: MobilePackageScanResult?,
+    packageScanState: MobilePackageScanUiState,
     statusMessage: String,
     selectedTab: MobileAssistantTab,
     mobileProducts: List<MobileProduct>,
@@ -1581,6 +1585,7 @@ private fun AssistantContent(
     onOrdersFilterChange: (MobileOrderFilter) -> Unit,
     onLoadMoreOrders: () -> Unit,
     onSelectOrder: (MobileOrderListItem) -> Unit,
+    onOpenScannedOrder: (String) -> Unit,
     onCloseOrderDetail: () -> Unit,
     onProductsSearchChange: (String) -> Unit,
     onProductsFilterChange: (MobileProductFilter) -> Unit,
@@ -1637,7 +1642,7 @@ private fun AssistantContent(
                     apiUrl = apiUrl,
                     mobileToken = session.token,
                     dashboard = dashboard,
-                    packageScanResult = packageScanResult,
+                    packageScanState = packageScanState,
                     mobileOrders = mobileOrders,
                     mobileOrdersNextOffset = mobileOrdersNextOffset,
                     mobileOrdersTotal = mobileOrdersTotal,
@@ -1650,9 +1655,10 @@ private fun AssistantContent(
                     onQuickAction = onQuickAction,
                     onOrdersSearchChange = onOrdersSearchChange,
                     onOrdersFilterChange = onOrdersFilterChange,
-                    onLoadMoreOrders = onLoadMoreOrders,
-                    onSelectOrder = onSelectOrder,
-                    onCloseOrderDetail = onCloseOrderDetail,
+                        onLoadMoreOrders = onLoadMoreOrders,
+                        onSelectOrder = onSelectOrder,
+                        onOpenScannedOrder = onOpenScannedOrder,
+                        onCloseOrderDetail = onCloseOrderDetail,
                 )
                 MobileAssistantTab.PRODUCTS -> ProductsTab(
                     colors = colors,
@@ -1777,7 +1783,7 @@ private fun OrdersTab(
     apiUrl: String,
     mobileToken: String,
     dashboard: MobileAssistantDashboard?,
-    packageScanResult: MobilePackageScanResult?,
+    packageScanState: MobilePackageScanUiState,
     mobileOrders: List<MobileOrderListItem>,
     mobileOrdersNextOffset: Int?,
     mobileOrdersTotal: Int,
@@ -1792,6 +1798,7 @@ private fun OrdersTab(
     onOrdersFilterChange: (MobileOrderFilter) -> Unit,
     onLoadMoreOrders: () -> Unit,
     onSelectOrder: (MobileOrderListItem) -> Unit,
+    onOpenScannedOrder: (String) -> Unit,
     onCloseOrderDetail: () -> Unit,
 ) {
     SectionTitle(colors, "Zamówienia", ordersSummary(mobileOrdersTotal, mobileOrders.size, mobileOrdersLoading, mobileOrdersNoAccess))
@@ -1819,9 +1826,12 @@ private fun OrdersTab(
         return
     }
 
-    PackageScannerCard(colors, packageScanResult) {
-        onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE)
-    }
+    PackageScannerCard(
+        colors = colors,
+        scanState = packageScanState,
+        onOpenOrder = onOpenScannedOrder,
+        onScanAgain = { onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE) },
+    )
     KpiGrid(colors, dashboard)
 
     when {
@@ -3377,60 +3387,60 @@ private fun ProductPhotoTaskMicroNotice(
 @Composable
 private fun PackageScannerCard(
     colors: DlaFlowComposeColors,
-    scanResult: MobilePackageScanResult?,
+    scanState: MobilePackageScanUiState,
+    onOpenOrder: (String) -> Unit,
     onScanAgain: () -> Unit,
 ) {
-    PanelCard(colors, accent = scanResult != null) {
+    PanelCard(colors, accent = scanState !is MobilePackageScanUiState.Empty) {
         Row(verticalAlignment = Alignment.Top) {
             DlaIcon(Icons.Rounded.QrCodeScanner, colors.primary, modifier = Modifier.size(42.dp))
             Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    if (scanResult == null) "Skaner paczek" else "Kod paczki odczytany",
-                    color = colors.textStrong,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 19.sp,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    if (scanResult == null) {
-                        "Zeskanuj etykietę albo numer nadania. W tej wersji przygotowujemy miejsce pod moduł wysyłek."
-                    } else {
-                        "Szczegóły przesyłki pojawią się tutaj po podpięciu modułu wysyłek."
-                    },
-                    color = colors.textMuted,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 16.sp,
-                )
+                when (scanState) {
+                    MobilePackageScanUiState.Empty -> {
+                        Text("Skaner paczek", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(3.dp))
+                        Text("Zeskanuj etykietę albo numer nadania. DlaFlow znajdzie pasujące zamówienie.", color = colors.textMuted, fontSize = 12.sp)
+                    }
+                    is MobilePackageScanUiState.Loading -> {
+                        Text("Sprawdzam paczkę", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(3.dp))
+                        Text(scanState.code, color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    is MobilePackageScanUiState.Resolved -> {
+                        if (scanState.result.matched && scanState.result.order != null) {
+                            Text("Paczka znaleziona", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.height(3.dp))
+                            Text(scanState.result.order.customer, color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.height(3.dp))
+                            Text("#${scanState.result.order.orderNumber} · ${scanState.result.order.status}", color = colors.textMuted, fontSize = 12.sp)
+                            scanState.result.shipment?.let { shipment ->
+                                Spacer(Modifier.height(3.dp))
+                                Text("${shipment.carrier} · ${shipment.status}", color = colors.textMuted, fontSize = 12.sp)
+                            }
+                        } else {
+                            Text("Nie znaleziono paczki", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                scanState.result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
+                                color = colors.textMuted,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                    is MobilePackageScanUiState.Failed -> {
+                        Text("Nie udało się sprawdzić paczki", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                        Spacer(Modifier.height(3.dp))
+                        Text(scanState.message, color = colors.textMuted, fontSize = 12.sp)
+                    }
+                }
             }
         }
 
-        if (scanResult != null) {
+        if (scanState is MobilePackageScanUiState.Resolved && scanState.result.matched && scanState.result.order != null) {
             Spacer(Modifier.height(12.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(colors.surfaceSubtle)
-                    .border(1.dp, colors.borderSubtle, RoundedCornerShape(8.dp))
-                    .padding(12.dp),
-            ) {
-                Text("Odczytany kod", color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    scanResult.code,
-                    color = colors.textStrong,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(8.dp))
-                KeyValue(colors, "Skan", scanResult.scannedAtLabel)
-                KeyValue(colors, "Status", "Gotowe do obsługi w panelu")
+            PrimaryActionButton(colors, Icons.AutoMirrored.Rounded.ReceiptLong, "Otwórz zamówienie") {
+                onOpenOrder(scanState.result.order.orderNumber)
             }
         }
 
@@ -3438,7 +3448,7 @@ private fun PackageScannerCard(
         SecondaryActionButton(
             colors = colors,
             icon = Icons.Rounded.QrCodeScanner,
-            text = if (scanResult == null) "Skanuj kod paczki" else "Skanuj kolejny kod",
+            text = if (scanState is MobilePackageScanUiState.Empty) "Skanuj kod paczki" else "Skanuj kolejny kod",
             onClick = onScanAgain,
         )
     }
