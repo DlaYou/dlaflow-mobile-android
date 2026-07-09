@@ -69,6 +69,18 @@ fun resolveLaunchPackageScanAction(
     }
 }
 
+fun shouldConsumePendingLaunchPackageScan(
+    pendingCode: String?,
+    hasActiveSession: Boolean,
+    hasSavedSession: Boolean,
+): Boolean {
+    return resolveLaunchPackageScanAction(
+        rawCode = pendingCode,
+        hasActiveSession = hasActiveSession,
+        hasSavedSession = hasSavedSession,
+    ) is MobileLaunchPackageScanAction.StartLookup
+}
+
 class MainActivity : ComponentActivity() {
     private val cameraRequestCode = 4101
     private val galleryRequestCode = 4102
@@ -193,7 +205,15 @@ class MainActivity : ComponentActivity() {
         if (consumeSmokePairingIntent()) {
             return
         }
-        consumePendingLaunchPackageScan()
+        if (
+            shouldConsumePendingLaunchPackageScan(
+                pendingCode = pendingLaunchPackageCode,
+                hasActiveSession = session != null,
+                hasSavedSession = sessionStore.readToken().isNotBlank(),
+            )
+        ) {
+            consumePendingLaunchPackageScan()
+        }
         refreshPhotoTasks(showLoading = false)
         if (selectedTab == MobileAssistantTab.ORDERS) {
             ensureMobileOrdersLoaded()

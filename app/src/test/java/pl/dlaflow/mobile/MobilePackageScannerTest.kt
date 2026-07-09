@@ -31,6 +31,17 @@ class MobilePackageScannerTest {
     }
 
     @Test
+    fun pendingLaunchPackageScanDoesNotConsumeBeforeSavedSessionVerification() {
+        val shouldConsume = shouldConsumePendingLaunchPackageScan(
+            pendingCode = "TRK123",
+            hasActiveSession = false,
+            hasSavedSession = true,
+        )
+
+        assertFalse(shouldConsume)
+    }
+
+    @Test
     fun packageScanUiStateShowsMatchedOrderTitle() {
         val result = MobilePackageScanLookupResult(
             matched = true,
