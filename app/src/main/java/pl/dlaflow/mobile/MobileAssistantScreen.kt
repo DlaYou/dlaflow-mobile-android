@@ -73,7 +73,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -101,12 +100,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -125,27 +120,10 @@ import java.net.URL
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
+import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
+import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
 import kotlin.math.sqrt
-
-@OptIn(ExperimentalTextApi::class)
-private fun dlaFlowInterFont(weight: FontWeight, axisWeight: Int): Font = Font(
-    resId = R.font.inter_variable,
-    weight = weight,
-    variationSettings = FontVariation.Settings(FontVariation.weight(axisWeight)),
-)
-
-private val DlaFlowInter = FontFamily(
-    dlaFlowInterFont(FontWeight.Normal, 400),
-    dlaFlowInterFont(FontWeight.Medium, 500),
-    dlaFlowInterFont(FontWeight.SemiBold, 600),
-    dlaFlowInterFont(FontWeight.Bold, 700),
-    dlaFlowInterFont(FontWeight.ExtraBold, 800),
-)
-
-private fun TextStyle.withDlaFlowTypography(fontFamily: FontFamily): TextStyle = copy(
-    fontFamily = fontFamily,
-    letterSpacing = 0.sp,
-)
 
 enum class MobileAssistantTab(val label: String, val symbol: String) {
     DASHBOARD("Pulpit", "P"),
@@ -485,8 +463,6 @@ fun MobileAssistantScreen(
     onDisconnect: () -> Unit,
 ) {
     val dark = isSystemInDarkTheme()
-    val colors = dlaFlowColors(dark)
-    val inter = DlaFlowInter
     var showPairingHelp by remember { mutableStateOf(false) }
     val backAction = mobileAssistantBackAction(
         sessionConnected = session != null,
@@ -496,26 +472,7 @@ fun MobileAssistantScreen(
         orderDetailVisible = selectedMobileOrder != null || selectedMobileOrderLoading,
     )
 
-    MaterialTheme(
-        colorScheme = colors.material,
-        typography = MaterialTheme.typography.copy(
-            displayLarge = MaterialTheme.typography.displayLarge.withDlaFlowTypography(inter),
-            displayMedium = MaterialTheme.typography.displayMedium.withDlaFlowTypography(inter),
-            displaySmall = MaterialTheme.typography.displaySmall.withDlaFlowTypography(inter),
-            headlineLarge = MaterialTheme.typography.headlineLarge.withDlaFlowTypography(inter),
-            headlineMedium = MaterialTheme.typography.headlineMedium.withDlaFlowTypography(inter),
-            headlineSmall = MaterialTheme.typography.headlineSmall.withDlaFlowTypography(inter),
-            titleLarge = MaterialTheme.typography.titleLarge.withDlaFlowTypography(inter),
-            titleMedium = MaterialTheme.typography.titleMedium.withDlaFlowTypography(inter),
-            titleSmall = MaterialTheme.typography.titleSmall.withDlaFlowTypography(inter),
-            bodyLarge = MaterialTheme.typography.bodyLarge.withDlaFlowTypography(inter),
-            bodyMedium = MaterialTheme.typography.bodyMedium.withDlaFlowTypography(inter),
-            bodySmall = MaterialTheme.typography.bodySmall.withDlaFlowTypography(inter),
-            labelLarge = MaterialTheme.typography.labelLarge.withDlaFlowTypography(inter),
-            labelMedium = MaterialTheme.typography.labelMedium.withDlaFlowTypography(inter),
-            labelSmall = MaterialTheme.typography.labelSmall.withDlaFlowTypography(inter),
-        ),
-    ) {
+    DlaFlowTheme(dark = dark) { colors ->
         BackHandler(enabled = backAction != MobileAssistantBackAction.NONE) {
             when (backAction) {
                 MobileAssistantBackAction.CLOSE_PAIRING_HELP -> showPairingHelp = false
@@ -5156,99 +5113,5 @@ private fun toneColor(colors: DlaFlowComposeColors, tone: String): Color {
         "success" -> colors.success
         "warning" -> colors.warning
         else -> colors.primary
-    }
-}
-
-private data class DlaFlowComposeColors(
-    val dark: Boolean,
-    val appBg: Color,
-    val surface: Color,
-    val surfaceSubtle: Color,
-    val border: Color,
-    val borderSubtle: Color,
-    val textStrong: Color,
-    val text: Color,
-    val textMuted: Color,
-    val primary: Color,
-    val primaryDeep: Color,
-    val primaryGlow: Color,
-    val primarySoft: Color,
-    val primarySoftBorder: Color,
-    val info: Color,
-    val success: Color,
-    val orange: Color,
-    val warning: Color,
-    val danger: Color,
-    val material: androidx.compose.material3.ColorScheme,
-)
-
-@Composable
-private fun dlaFlowColors(dark: Boolean): DlaFlowComposeColors {
-    val material = if (dark) {
-        androidx.compose.material3.darkColorScheme(
-            primary = Color(0xFF9B83FF),
-            background = Color(0xFF0F131D),
-            surface = Color(0xFF171C27),
-            onPrimary = Color.White,
-            onBackground = Color(0xFFF8FAFC),
-            onSurface = Color(0xFFF8FAFC),
-        )
-    } else {
-        androidx.compose.material3.lightColorScheme(
-            primary = Color(0xFF7B5CF6),
-            background = Color(0xFFF8F9FC),
-            surface = Color.White,
-            onPrimary = Color.White,
-            onBackground = Color(0xFF0F172A),
-            onSurface = Color(0xFF0F172A),
-        )
-    }
-
-    return if (dark) {
-        DlaFlowComposeColors(
-            dark = true,
-            appBg = Color(0xFF0F131D),
-            surface = Color(0xFF171C27),
-            surfaceSubtle = Color(0xFF151A24),
-            border = Color(0xFF2A3342),
-            borderSubtle = Color(0xFF202735),
-            textStrong = Color(0xFFF8FAFC),
-            text = Color(0xFFD7DEEA),
-            textMuted = Color(0xFF9AA7BA),
-            primary = Color(0xFF9B83FF),
-            primaryDeep = Color(0xFF5F47D8),
-            primaryGlow = Color(0xFFA78BFA),
-            primarySoft = Color(0x297B5CF6),
-            primarySoftBorder = Color(0x669B83FF),
-            info = Color(0xFF60A5FA),
-            success = Color(0xFF5EEAD4),
-            orange = Color(0xFFF59E0B),
-            warning = Color(0xFFFBBF24),
-            danger = Color(0xFFF87171),
-            material = material,
-        )
-    } else {
-        DlaFlowComposeColors(
-            dark = false,
-            appBg = Color.White,
-            surface = Color.White,
-            surfaceSubtle = Color(0xFFFBFCFE),
-            border = Color(0xFFDFE4EC),
-            borderSubtle = Color(0xFFEDF0F5),
-            textStrong = Color(0xFF0F172A),
-            text = Color(0xFF334155),
-            textMuted = Color(0xFF64748B),
-            primary = Color(0xFF7B5CF6),
-            primaryDeep = Color(0xFF5B3FE0),
-            primaryGlow = Color(0xFFA78BFA),
-            primarySoft = Color(0xFFF1ECFF),
-            primarySoftBorder = Color(0xFFE4DCFF),
-            info = Color(0xFF2563EB),
-            success = Color(0xFF0B8F78),
-            orange = Color(0xFFF97316),
-            warning = Color(0xFFC2410C),
-            danger = Color(0xFFDC2626),
-            material = material,
-        )
     }
 }
