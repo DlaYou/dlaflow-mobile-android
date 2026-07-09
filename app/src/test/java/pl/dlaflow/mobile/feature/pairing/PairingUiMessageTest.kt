@@ -11,4 +11,12 @@ class PairingUiMessageTest {
         assertEquals(R.string.pairing_error_name_required, PairingFeedback.DEVICE_NAME_REQUIRED.messageRes())
         assertEquals(R.string.pairing_error_code_expired, PairingFeedback.CODE_EXPIRED.messageRes())
     }
+
+    @Test
+    fun `pairing messages prefer local then request then session status`() {
+        assertEquals("local", pairingStatusMessage("local", "request", "session"))
+        assertEquals("request", pairingStatusMessage(null, "request", "session"))
+        assertEquals("session", pairingStatusMessage(null, null, "session"))
+        assertEquals("", pairingStatusMessage(null, null, ""))
+    }
 }

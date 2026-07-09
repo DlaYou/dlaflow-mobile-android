@@ -6,6 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 
 class PairingStateHolderTest {
     @Test
@@ -54,5 +55,21 @@ class PairingStateHolderTest {
         assertEquals("", holder.state.codeInput)
         assertEquals("Pakowanie", holder.state.deviceNameInput)
         assertFalse(holder.state.isSubmitting)
+    }
+
+    @Test
+    fun `stale callback cannot replace a newer pairing request`() {
+        val holder = PairingStateHolder()
+        val retryableMessage = DlaFlowUiMessage(titleRes = 1, descriptionRes = 2, retryable = true)
+        holder.updateCode("ABC-123")
+        holder.continueToName()
+        holder.updateDeviceName("Magazyn")
+        val first = holder.beginSubmission()!!
+        assertTrue(holder.failRetryable(first.requestId, retryableMessage))
+        val second = holder.beginSubmission()!!
+
+        assertFalse(holder.failRetryable(first.requestId, retryableMessage))
+        assertEquals(second.requestId, holder.state.activeRequestId)
+        assertTrue(holder.state.isSubmitting)
     }
 }

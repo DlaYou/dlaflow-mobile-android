@@ -38,12 +38,19 @@ internal fun pairingCodeFromQrOrNull(rawValue: String?): String? {
 
 internal fun normalizePairingDeviceName(value: String): String = value.trim()
 
+internal fun limitPairingDeviceNameInput(value: String): String {
+    val inputLimit = pairingDeviceNameMaxLength + 1
+    if (value.codePointCount(0, value.length) <= inputLimit) return value
+    return value.substring(0, value.offsetByCodePoints(0, inputLimit))
+}
+
 internal fun pairingDeviceNameError(value: String): PairingDeviceNameError? {
     val normalized = normalizePairingDeviceName(value)
+    val codePointCount = normalized.codePointCount(0, normalized.length)
     return when {
         normalized.isEmpty() -> PairingDeviceNameError.REQUIRED
-        normalized.length < pairingDeviceNameMinLength -> PairingDeviceNameError.TOO_SHORT
-        normalized.length > pairingDeviceNameMaxLength -> PairingDeviceNameError.TOO_LONG
+        codePointCount < pairingDeviceNameMinLength -> PairingDeviceNameError.TOO_SHORT
+        codePointCount > pairingDeviceNameMaxLength -> PairingDeviceNameError.TOO_LONG
         normalized.any(Char::isISOControl) -> PairingDeviceNameError.CONTROL_CHARACTER
         else -> null
     }

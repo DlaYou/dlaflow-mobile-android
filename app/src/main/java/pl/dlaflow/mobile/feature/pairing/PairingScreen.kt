@@ -69,6 +69,7 @@ internal fun PairingFeatureScreen(
     colors: DlaFlowComposeColors,
     state: PairingUiState,
     appVersionName: String,
+    externalStatusMessage: String,
     onCodeChange: (String) -> Unit,
     onContinue: () -> Unit,
     onScanQr: () -> Unit,
@@ -84,7 +85,7 @@ internal fun PairingFeatureScreen(
             colors = colors,
             pairingCode = state.codeInput,
             appVersionName = appVersionName,
-            statusMessage = localMessage ?: sharedMessage.orEmpty(),
+            statusMessage = pairingStatusMessage(localMessage, sharedMessage, externalStatusMessage),
             onPairingCodeChange = onCodeChange,
             onContinue = onContinue,
             onScanPairingQr = onScanQr,
@@ -93,6 +94,7 @@ internal fun PairingFeatureScreen(
         PairingStep.NAME -> PairingDeviceNameScreen(
             colors = colors,
             state = state,
+            externalStatusMessage = externalStatusMessage,
             onDeviceNameChange = onDeviceNameChange,
             onSubmit = onSubmit,
             onBack = onBack,
@@ -109,13 +111,14 @@ internal fun PairingFeatureScreen(
 private fun PairingDeviceNameScreen(
     colors: DlaFlowComposeColors,
     state: PairingUiState,
+    externalStatusMessage: String,
     onDeviceNameChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onBack: () -> Unit,
 ) {
     val localMessage = state.localFeedback?.let { stringResource(it.messageRes()) }
     val sharedMessage = state.sharedMessage?.let { stringResource(it.descriptionRes) }
-    val message = localMessage ?: sharedMessage
+    val message = pairingStatusMessage(localMessage, sharedMessage, externalStatusMessage)
     val nameValid = pairingDeviceNameError(state.deviceNameInput) == null
 
     Column(
@@ -178,7 +181,7 @@ private fun PairingDeviceNameScreen(
             enabled = nameValid && !state.isSubmitting,
             onClick = onSubmit,
         )
-        if (!message.isNullOrBlank() && localMessage == null) {
+        if (message.isNotBlank() && localMessage == null) {
             DlaFlowStatusStrip(colors, message)
         }
     }

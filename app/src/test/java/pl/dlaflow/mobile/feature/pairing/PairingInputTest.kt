@@ -33,4 +33,17 @@ class PairingInputTest {
         assertEquals(PairingDeviceNameError.TOO_LONG, pairingDeviceNameError("A".repeat(81)))
         assertNull(pairingDeviceNameError("Łódź – pakowanie 1"))
     }
+
+    @Test
+    fun `device name length counts Unicode code points without splitting emoji`() {
+        assertEquals(PairingDeviceNameError.TOO_SHORT, pairingDeviceNameError("😀"))
+        assertNull(pairingDeviceNameError("😀😀"))
+        assertNull(pairingDeviceNameError("😀".repeat(80)))
+        assertEquals(PairingDeviceNameError.TOO_LONG, pairingDeviceNameError("😀".repeat(81)))
+
+        val limited = limitPairingDeviceNameInput("😀".repeat(82))
+
+        assertEquals(81, limited.codePointCount(0, limited.length))
+        assertEquals("😀".repeat(81), limited)
+    }
 }

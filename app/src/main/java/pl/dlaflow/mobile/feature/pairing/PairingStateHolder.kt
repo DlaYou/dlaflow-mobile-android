@@ -60,7 +60,7 @@ internal class PairingStateHolder {
     fun updateDeviceName(value: String) {
         if (state.isSubmitting) return
         state = state.copy(
-            deviceNameInput = value.take(pairingDeviceNameMaxLength + 1),
+            deviceNameInput = limitPairingDeviceNameInput(value),
             localFeedback = null,
             sharedMessage = null,
         )

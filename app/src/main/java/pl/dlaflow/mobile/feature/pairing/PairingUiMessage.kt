@@ -17,3 +17,9 @@ internal fun PairingFeedback.messageRes(): Int = when (this) {
     PairingFeedback.CODE_USED -> R.string.pairing_error_code_used
     PairingFeedback.CODE_EXPIRED -> R.string.pairing_error_code_expired
 }
+
+internal fun pairingStatusMessage(
+    localMessage: String?,
+    requestMessage: String?,
+    sessionMessage: String,
+): String = localMessage ?: requestMessage ?: sessionMessage

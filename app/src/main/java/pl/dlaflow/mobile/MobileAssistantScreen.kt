@@ -494,6 +494,7 @@ internal fun MobileAssistantScreen(
                         colors = colors,
                         state = pairingState,
                         appVersionName = appVersionName,
+                        externalStatusMessage = statusMessage,
                         onCodeChange = onPairingCodeChange,
                         onContinue = onContinuePairing,
                         onScanQr = onScanPairingQr,
