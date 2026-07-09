@@ -1699,9 +1699,11 @@ class MainActivity : ComponentActivity() {
         apiUrlValue = seed.baseUrl
         pairingStateHolder.updateCode(seed.pairingCode)
         pairingStateHolder.continueToName()
-        seed.deviceName?.let {
-            pairingStateHolder.updateDeviceName(it)
+        if (seed.shouldAutoSubmit) {
+            pairingStateHolder.updateDeviceName(seed.deviceName.orEmpty())
             submitPairing()
+        } else {
+            completeSessionTransition()
         }
         return true
     }

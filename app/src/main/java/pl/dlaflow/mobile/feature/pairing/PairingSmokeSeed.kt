@@ -4,7 +4,10 @@ internal data class PairingSmokeSeed(
     val baseUrl: String,
     val pairingCode: String,
     val deviceName: String?,
-)
+) {
+    val shouldAutoSubmit: Boolean
+        get() = deviceName != null
+}
 
 internal fun pairingSmokeSeed(
     apiUrl: String?,
