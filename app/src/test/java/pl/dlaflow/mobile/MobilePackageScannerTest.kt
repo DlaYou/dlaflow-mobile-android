@@ -45,6 +45,7 @@ class MobilePackageScannerTest {
     fun packageScanUiStateShowsMatchedOrderTitle() {
         val result = MobilePackageScanLookupResult(
             matched = true,
+            ambiguous = false,
             scannedCode = "TRK123",
             matchType = "trackingNumber",
             message = "",
@@ -74,6 +75,38 @@ class MobilePackageScannerTest {
 
         assertEquals("Adam Kowalski", state.result.order?.customer)
         assertEquals("InPost", state.result.shipment?.carrier)
+    }
+
+    @Test
+    fun packageScanResolvedCopyShowsAmbiguousMatchWarning() {
+        val result = MobilePackageScanLookupResult(
+            matched = true,
+            ambiguous = true,
+            scannedCode = "TRK123",
+            matchType = "trackingNumber",
+            message = "",
+            order = MobilePackageScanOrder(
+                amount = 129.0,
+                channel = "Allegro",
+                currency = "PLN",
+                customer = "Adam Kowalski",
+                id = "order-1",
+                orderNumber = "000000123",
+                paymentStatus = "Opłacone",
+                phone = "+48 501 234 987",
+                productSummary = "Bluza Classic",
+                status = "Nowe",
+            ),
+            shipment = null,
+        )
+
+        val copy = packageScannerResolvedCopy(result)
+
+        assertEquals("Znaleziono kilka możliwych paczek", copy.title)
+        assertEquals(
+            "Pokazujemy najnowsze pasujące zamówienie. Sprawdź dane przed dalszą obsługą.",
+            copy.supportingText,
+        )
     }
 
     @Test
@@ -114,6 +147,46 @@ class MobilePackageScannerTest {
         assertEquals("trackingNumber", result.matchType)
         assertEquals("Anna Nowak", result.order?.customer)
         assertEquals("InPost", result.shipment?.carrier)
+    }
+
+    @Test
+    fun parsesAmbiguousMatchedPackageScanResult() {
+        val json = JSONObject(
+            """
+            {
+              "matched": true,
+              "ambiguous": true,
+              "scannedCode": "630123456789012345678904",
+              "matchType": "trackingNumber",
+              "shipment": {
+                "id": "shipment-1",
+                "carrier": "InPost",
+                "labelReady": true,
+                "status": "Gotowa",
+                "trackingNumber": "630123456789012345678904",
+                "trackingUrl": "https://example.test/track"
+              },
+              "order": {
+                "amount": 110,
+                "channel": "Allegro",
+                "currency": "PLN",
+                "customer": "Anna Nowak",
+                "id": "order-1",
+                "orderNumber": "000000107",
+                "paymentStatus": "Opłacone",
+                "phone": "+48 600 100 200",
+                "productSummary": "Produkt testowy",
+                "status": "Nowe"
+              }
+            }
+            """.trimIndent()
+        )
+
+        val result = parseMobilePackageScanLookupResult(json)
+
+        assertTrue(result.matched)
+        assertTrue(result.ambiguous)
+        assertEquals("Anna Nowak", result.order?.customer)
     }
 
     @Test

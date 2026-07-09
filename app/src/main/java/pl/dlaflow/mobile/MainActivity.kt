@@ -813,7 +813,13 @@ class MainActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     packageScanState = MobilePackageScanUiState.Resolved(result)
-                    setStatus(if (result.matched) "Paczka znaleziona w DlaFlow." else "Nie znaleziono paczki w DlaFlow.")
+                    setStatus(
+                        when {
+                            result.matched && result.ambiguous -> "Znaleziono kilka możliwych paczek w DlaFlow."
+                            result.matched -> "Paczka znaleziona w DlaFlow."
+                            else -> "Nie znaleziono paczki w DlaFlow."
+                        }
+                    )
                 }
             }.onFailure { error ->
                 runOnUiThread {

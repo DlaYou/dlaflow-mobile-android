@@ -180,6 +180,32 @@ sealed class MobilePackageScanUiState {
     data class Failed(val code: String, val message: String) : MobilePackageScanUiState()
 }
 
+data class PackageScannerResolvedCopy(
+    val title: String,
+    val supportingText: String,
+)
+
+fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageScannerResolvedCopy {
+    if (result.matched && result.order != null) {
+        return if (result.ambiguous) {
+            PackageScannerResolvedCopy(
+                title = "Znaleziono kilka możliwych paczek",
+                supportingText = "Pokazujemy najnowsze pasujące zamówienie. Sprawdź dane przed dalszą obsługą.",
+            )
+        } else {
+            PackageScannerResolvedCopy(
+                title = "Paczka znaleziona",
+                supportingText = result.order.customer,
+            )
+        }
+    }
+
+    return PackageScannerResolvedCopy(
+        title = "Nie znaleziono paczki",
+        supportingText = result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
+    )
+}
+
 enum class MobileAssistantBackAction {
     NONE,
     CLOSE_PAIRING_HELP,
@@ -3408,10 +3434,11 @@ private fun PackageScannerCard(
                         Text(scanState.code, color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     is MobilePackageScanUiState.Resolved -> {
+                        val copy = packageScannerResolvedCopy(scanState.result)
                         if (scanState.result.matched && scanState.result.order != null) {
-                            Text("Paczka znaleziona", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(copy.title, color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                             Spacer(Modifier.height(3.dp))
-                            Text(scanState.result.order.customer, color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(copy.supportingText, color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
                             Spacer(Modifier.height(3.dp))
                             Text("#${scanState.result.order.orderNumber} · ${scanState.result.order.status}", color = colors.textMuted, fontSize = 12.sp)
                             scanState.result.shipment?.let { shipment ->
@@ -3419,10 +3446,10 @@ private fun PackageScannerCard(
                                 Text("${shipment.carrier} · ${shipment.status}", color = colors.textMuted, fontSize = 12.sp)
                             }
                         } else {
-                            Text("Nie znaleziono paczki", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(copy.title, color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                scanState.result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
+                                copy.supportingText,
                                 color = colors.textMuted,
                                 fontSize = 12.sp,
                             )

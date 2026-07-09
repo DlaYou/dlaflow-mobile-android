@@ -204,6 +204,7 @@ data class MobilePackageScanShipment(
 
 data class MobilePackageScanLookupResult(
     val matched: Boolean,
+    val ambiguous: Boolean = false,
     val scannedCode: String,
     val matchType: String,
     val message: String,
@@ -391,6 +392,7 @@ fun parseMobilePackageScanLookupResult(data: JSONObject): MobilePackageScanLooku
 
     return MobilePackageScanLookupResult(
         matched = data.optBoolean("matched", false),
+        ambiguous = data.optBoolean("ambiguous", false),
         scannedCode = data.optString("scannedCode", ""),
         matchType = data.optString("matchType", ""),
         message = data.optString("message", ""),
