@@ -120,6 +120,11 @@ import java.net.URL
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import pl.dlaflow.mobile.app.navigation.MobileAssistantBackAction
+import pl.dlaflow.mobile.app.navigation.MobileAssistantOverlayScreen
+import pl.dlaflow.mobile.app.navigation.MobileAssistantTab
+import pl.dlaflow.mobile.app.navigation.MobileRoute
+import pl.dlaflow.mobile.app.navigation.mobileAssistantBackAction
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
@@ -134,24 +139,11 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowTextField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
 import kotlin.math.sqrt
 
-enum class MobileAssistantTab(val label: String, val symbol: String) {
-    DASHBOARD("Pulpit", "P"),
-    ORDERS("Zamówienia", "Z"),
-    PRODUCTS("Produkty", "PR"),
-    MESSAGES("Wiadomości", "W"),
-    MORE("Więcej", "..."),
-}
-
 enum class MobileAssistantQuickAction {
     SCAN_PACKAGE,
     ADD_PRODUCT,
     STATS,
     PRODUCTS,
-}
-
-enum class MobileAssistantOverlayScreen {
-    NONE,
-    NOTIFICATIONS,
 }
 
 enum class MobileNotificationFilter(val label: String) {
@@ -191,28 +183,6 @@ fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageSc
         title = "Nie znaleziono paczki",
         supportingText = result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
     )
-}
-
-enum class MobileAssistantBackAction {
-    NONE,
-    CLOSE_PAIRING_HELP,
-    CLOSE_ORDER_DETAIL,
-    CLOSE_OVERLAY,
-}
-
-fun mobileAssistantBackAction(
-    sessionConnected: Boolean,
-    pairingHelpVisible: Boolean,
-    overlayScreen: MobileAssistantOverlayScreen = MobileAssistantOverlayScreen.NONE,
-    selectedTab: MobileAssistantTab,
-    orderDetailVisible: Boolean,
-): MobileAssistantBackAction {
-    return when {
-        !sessionConnected && pairingHelpVisible -> MobileAssistantBackAction.CLOSE_PAIRING_HELP
-        sessionConnected && overlayScreen != MobileAssistantOverlayScreen.NONE -> MobileAssistantBackAction.CLOSE_OVERLAY
-        sessionConnected && selectedTab == MobileAssistantTab.ORDERS && orderDetailVisible -> MobileAssistantBackAction.CLOSE_ORDER_DETAIL
-        else -> MobileAssistantBackAction.NONE
-    }
 }
 
 fun filterNotifications(
@@ -473,13 +443,16 @@ fun MobileAssistantScreen(
 ) {
     val dark = isSystemInDarkTheme()
     var showPairingHelp by remember { mutableStateOf(false) }
-    val backAction = mobileAssistantBackAction(
-        sessionConnected = session != null,
-        pairingHelpVisible = showPairingHelp,
-        overlayScreen = mobileOverlayScreen,
-        selectedTab = selectedTab,
-        orderDetailVisible = selectedMobileOrder != null || selectedMobileOrderLoading,
-    )
+    val route = if (session == null) {
+        MobileRoute.Pairing(helpVisible = showPairingHelp)
+    } else {
+        MobileRoute.Assistant(
+            selectedTab = selectedTab,
+            overlayScreen = mobileOverlayScreen,
+            orderDetailVisible = selectedMobileOrder != null || selectedMobileOrderLoading,
+        )
+    }
+    val backAction = mobileAssistantBackAction(route)
 
     DlaFlowTheme(dark = dark) { colors ->
         BackHandler(enabled = backAction != MobileAssistantBackAction.NONE) {
