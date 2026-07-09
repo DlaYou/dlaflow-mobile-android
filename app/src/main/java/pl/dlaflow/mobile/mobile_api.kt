@@ -180,6 +180,37 @@ data class MobileOrderShipment(
     val trackingUrl: String,
 )
 
+data class MobilePackageScanOrder(
+    val amount: Double,
+    val channel: String,
+    val currency: String,
+    val customer: String,
+    val id: String,
+    val orderNumber: String,
+    val paymentStatus: String,
+    val phone: String,
+    val productSummary: String,
+    val status: String,
+)
+
+data class MobilePackageScanShipment(
+    val carrier: String,
+    val id: String,
+    val labelReady: Boolean,
+    val status: String,
+    val trackingNumber: String,
+    val trackingUrl: String,
+)
+
+data class MobilePackageScanLookupResult(
+    val matched: Boolean,
+    val scannedCode: String,
+    val matchType: String,
+    val message: String,
+    val order: MobilePackageScanOrder?,
+    val shipment: MobilePackageScanShipment?,
+)
+
 data class MobileOrderDocument(
     val id: String,
     val issuedAt: String,
@@ -332,6 +363,42 @@ fun shouldShowNativePanelNotification(tone: String, actionType: String): Boolean
         actionType == "OPEN_PHOTO_TASKS"
 }
 
+fun parseMobilePackageScanLookupResult(data: JSONObject): MobilePackageScanLookupResult {
+    val order = data.optJSONObject("order")?.let {
+        MobilePackageScanOrder(
+            amount = it.optDouble("amount", 0.0),
+            channel = it.optString("channel", ""),
+            currency = it.optString("currency", "PLN"),
+            customer = it.optString("customer", ""),
+            id = it.optString("id", ""),
+            orderNumber = it.optString("orderNumber", ""),
+            paymentStatus = it.optString("paymentStatus", ""),
+            phone = it.optString("phone", ""),
+            productSummary = it.optString("productSummary", ""),
+            status = it.optString("status", ""),
+        )
+    }
+    val shipment = data.optJSONObject("shipment")?.let {
+        MobilePackageScanShipment(
+            carrier = it.optString("carrier", ""),
+            id = it.optString("id", ""),
+            labelReady = it.optBoolean("labelReady", false),
+            status = it.optString("status", ""),
+            trackingNumber = it.optString("trackingNumber", ""),
+            trackingUrl = it.optString("trackingUrl", ""),
+        )
+    }
+
+    return MobilePackageScanLookupResult(
+        matched = data.optBoolean("matched", false),
+        scannedCode = data.optString("scannedCode", ""),
+        matchType = data.optString("matchType", ""),
+        message = data.optString("message", ""),
+        order = order,
+        shipment = shipment,
+    )
+}
+
 data class MobileCallerIdOrder(
     val amount: Double,
     val currency: String,
@@ -476,6 +543,15 @@ class MobileApiClient(
             offset = meta.optInt("offset", offset.coerceAtLeast(0)),
             total = meta.optInt("total", orders.size),
         )
+    }
+
+    fun scanPackage(token: String, code: String, format: String = ""): MobilePackageScanLookupResult {
+        val body = JSONObject()
+            .put("code", code)
+            .put("format", format)
+        val response = postJson("/api/mobile/shipments/scan", body, token)
+
+        return parseMobilePackageScanLookupResult(response.getJSONObject("data"))
     }
 
     fun getOrder(token: String, orderId: String): MobileOrderDetail {
