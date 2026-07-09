@@ -26,4 +26,26 @@ foreach ($forbidden in @(
     }
 }
 
+$activityPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/MainActivity.kt"
+$featureRoot = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/feature/pairing"
+$activity = Get-Content -LiteralPath $activityPath -Raw
+
+foreach ($forbidden in @(
+    'completePairing(code, "Telefon DlaFlow")',
+    "private fun pairDevice(",
+    "private fun extractPairingCodeFromQr(",
+    "private fun renderPairingCard("
+)) {
+    if ($activity.Contains($forbidden)) {
+        throw "Pairing ownership remains in MainActivity.kt: $forbidden"
+    }
+}
+
+$featureSource = (Get-ChildItem -LiteralPath $featureRoot -Filter "*.kt" | Get-Content -Raw) -join [Environment]::NewLine
+foreach ($forbidden in @("MobileApiClient(", "MobileSessionStore(", "AndroidKeyStore", "DlaFlowBackgroundSyncService.start")) {
+    if ($featureSource.Contains($forbidden)) {
+        throw "Pairing feature crossed a forbidden dependency boundary: $forbidden"
+    }
+}
+
 Write-Host "Mobile pairing feature boundary: OK"

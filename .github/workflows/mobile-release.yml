@@ -78,6 +78,14 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-repository-contract.ps1
 
+      - name: Verify mobile design-system boundary
+        shell: pwsh
+        run: ./scripts/verify-design-system-boundary.ps1
+
+      - name: Verify mobile pairing feature boundary
+        shell: pwsh
+        run: ./scripts/verify-pairing-feature-boundary.ps1
+
       - name: Run Android unit tests and lint
         shell: bash
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
