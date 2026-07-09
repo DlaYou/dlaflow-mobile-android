@@ -46,6 +46,29 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
+sealed interface MobileLaunchPackageScanAction {
+    data object None : MobileLaunchPackageScanAction
+    data class StartLookup(val code: String) : MobileLaunchPackageScanAction
+    data class WaitForSession(val code: String) : MobileLaunchPackageScanAction
+}
+
+fun resolveLaunchPackageScanAction(
+    rawCode: String?,
+    hasActiveSession: Boolean,
+    hasSavedSession: Boolean,
+): MobileLaunchPackageScanAction {
+    val code = rawCode?.trim().orEmpty()
+    if (code.isBlank()) {
+        return MobileLaunchPackageScanAction.None
+    }
+
+    return if (hasActiveSession || !hasSavedSession) {
+        MobileLaunchPackageScanAction.StartLookup(code)
+    } else {
+        MobileLaunchPackageScanAction.WaitForSession(code)
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private val cameraRequestCode = 4101
     private val galleryRequestCode = 4102
@@ -127,6 +150,7 @@ class MainActivity : ComponentActivity() {
     private var pendingPhotoTaskId: String? = null
     private var pendingSmokeApiUrl: String? = null
     private var pendingSmokePairingCode: String? = null
+    private var pendingLaunchPackageCode: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
     private var session by mutableStateOf<MobileSession?>(null)
@@ -155,6 +179,7 @@ class MainActivity : ComponentActivity() {
                 setStatus("Przygotowujemy aplikację...")
                 completeSessionTransition {
                     setStatus("")
+                    consumePendingLaunchPackageScan()
                 }
             }
         }
@@ -168,6 +193,7 @@ class MainActivity : ComponentActivity() {
         if (consumeSmokePairingIntent()) {
             return
         }
+        consumePendingLaunchPackageScan()
         refreshPhotoTasks(showLoading = false)
         if (selectedTab == MobileAssistantTab.ORDERS) {
             ensureMobileOrdersLoaded()
@@ -646,6 +672,7 @@ class MainActivity : ComponentActivity() {
                         refreshAssistantDashboard(showLoading = false)
                         refreshPhotoTasks(showLoading = false)
                         refreshAppUpdate(showStatus = false)
+                        consumePendingLaunchPackageScan()
                         if (selectedTab == MobileAssistantTab.ORDERS) {
                             ensureMobileOrdersLoaded()
                         }
@@ -656,6 +683,7 @@ class MainActivity : ComponentActivity() {
                     if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.", confirmUnauthorized = false)) {
                         hideSessionTransition()
                     }
+                    failPendingLaunchPackageScan(mobileApiBusinessMessage(it, "Nie udało się sprawdzić paczki."))
                 }
             }
         }
@@ -772,12 +800,40 @@ class MainActivity : ComponentActivity() {
                     if (!isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
-                    val message = error.message ?: "Nie udało się sprawdzić paczki."
+                    val fallbackMessage = "Nie udało się sprawdzić paczki."
+                    val message = mobileApiBusinessMessage(error, fallbackMessage)
+                    val handled = handleMobileApiFailure(error, fallbackMessage)
                     packageScanState = MobilePackageScanUiState.Failed(code, message)
-                    setStatus(message)
+                    if (!handled) {
+                        setStatus(message)
+                    }
                 }
             }
         }
+    }
+
+    private fun consumePendingLaunchPackageScan() {
+        val code = pendingLaunchPackageCode?.trim().orEmpty()
+        if (code.isBlank()) {
+            pendingLaunchPackageCode = null
+            return
+        }
+
+        pendingLaunchPackageCode = null
+        handlePackageQrResult(code)
+    }
+
+    private fun failPendingLaunchPackageScan(message: String) {
+        val code = pendingLaunchPackageCode?.trim().orEmpty()
+        if (code.isBlank()) {
+            pendingLaunchPackageCode = null
+            return
+        }
+
+        pendingLaunchPackageCode = null
+        selectedTab = MobileAssistantTab.ORDERS
+        packageScanState = MobilePackageScanUiState.Failed(code, message)
+        setStatus(message)
     }
 
     private fun handleQuickAction(action: MobileAssistantQuickAction) {
@@ -1619,11 +1675,24 @@ class MainActivity : ComponentActivity() {
             selectedTab = MobileAssistantTab.PRODUCTS
             statusMessage = "Otwieram zadanie zdjęciowe z panelu."
         }
-        val packageCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode).orEmpty()
-        if (packageCode.isNotBlank()) {
-            packageScanState = MobilePackageScanUiState.Loading(packageCode.trim())
-            selectedTab = MobileAssistantTab.ORDERS
-            statusMessage = "Sprawdzam paczkę w DlaFlow."
+        when (
+            val packageScanAction = resolveLaunchPackageScanAction(
+                rawCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode),
+                hasActiveSession = session != null,
+                hasSavedSession = sessionStore.readToken().isNotBlank(),
+            )
+        ) {
+            MobileLaunchPackageScanAction.None -> Unit
+            is MobileLaunchPackageScanAction.StartLookup -> {
+                pendingLaunchPackageCode = null
+                handlePackageQrResult(packageScanAction.code)
+            }
+            is MobileLaunchPackageScanAction.WaitForSession -> {
+                pendingLaunchPackageCode = packageScanAction.code
+                packageScanState = MobilePackageScanUiState.Loading(packageScanAction.code)
+                selectedTab = MobileAssistantTab.ORDERS
+                statusMessage = "Sprawdzam paczkę w DlaFlow."
+            }
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()

@@ -9,6 +9,28 @@ import org.junit.Test
 
 class MobilePackageScannerTest {
     @Test
+    fun launchPackageScanStartsLookupWhenNoSessionIsAvailable() {
+        val action = resolveLaunchPackageScanAction(
+            rawCode = " TRK123 ",
+            hasActiveSession = false,
+            hasSavedSession = false,
+        )
+
+        assertEquals(MobileLaunchPackageScanAction.StartLookup("TRK123"), action)
+    }
+
+    @Test
+    fun launchPackageScanWaitsForSavedSessionVerification() {
+        val action = resolveLaunchPackageScanAction(
+            rawCode = "TRK123",
+            hasActiveSession = false,
+            hasSavedSession = true,
+        )
+
+        assertEquals(MobileLaunchPackageScanAction.WaitForSession("TRK123"), action)
+    }
+
+    @Test
     fun packageScanUiStateShowsMatchedOrderTitle() {
         val result = MobilePackageScanLookupResult(
             matched = true,
