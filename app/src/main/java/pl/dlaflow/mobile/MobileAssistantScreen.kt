@@ -458,6 +458,7 @@ fun MobileAssistantScreen(
         BackHandler(enabled = backAction != MobileAssistantBackAction.NONE) {
             when (backAction) {
                 MobileAssistantBackAction.CLOSE_PAIRING_HELP -> showPairingHelp = false
+                MobileAssistantBackAction.CLOSE_PAIRING_NAME -> Unit
                 MobileAssistantBackAction.CLOSE_ORDER_DETAIL -> onCloseOrderDetail()
                 MobileAssistantBackAction.CLOSE_OVERLAY -> onCloseOverlay()
                 MobileAssistantBackAction.NONE -> Unit

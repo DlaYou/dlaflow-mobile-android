@@ -17,6 +17,15 @@ class MobileBackNavigationTest {
     }
 
     @Test
+    fun `android back closes mandatory pairing name before leaving pairing`() {
+        val action = mobileAssistantBackAction(
+            MobileRoute.Pairing(helpVisible = false, nameVisible = true),
+        )
+
+        assertEquals(MobileAssistantBackAction.CLOSE_PAIRING_NAME, action)
+    }
+
+    @Test
     fun `android back closes order detail and keeps orders list visible`() {
         val action = mobileAssistantBackAction(
             MobileRoute.Assistant(

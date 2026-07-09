@@ -14,14 +14,18 @@ enum class MobileAssistantOverlayScreen {
 }
 
 enum class MobileAssistantBackAction {
-    NONE,
     CLOSE_PAIRING_HELP,
+    CLOSE_PAIRING_NAME,
     CLOSE_ORDER_DETAIL,
     CLOSE_OVERLAY,
+    NONE,
 }
 
 sealed interface MobileRoute {
-    data class Pairing(val helpVisible: Boolean) : MobileRoute
+    data class Pairing(
+        val helpVisible: Boolean,
+        val nameVisible: Boolean = false,
+    ) : MobileRoute
 
     data class Assistant(
         val selectedTab: MobileAssistantTab,
@@ -32,10 +36,10 @@ sealed interface MobileRoute {
 
 fun mobileAssistantBackAction(route: MobileRoute): MobileAssistantBackAction {
     return when (route) {
-        is MobileRoute.Pairing -> if (route.helpVisible) {
-            MobileAssistantBackAction.CLOSE_PAIRING_HELP
-        } else {
-            MobileAssistantBackAction.NONE
+        is MobileRoute.Pairing -> when {
+            route.helpVisible -> MobileAssistantBackAction.CLOSE_PAIRING_HELP
+            route.nameVisible -> MobileAssistantBackAction.CLOSE_PAIRING_NAME
+            else -> MobileAssistantBackAction.NONE
         }
 
         is MobileRoute.Assistant -> when {
