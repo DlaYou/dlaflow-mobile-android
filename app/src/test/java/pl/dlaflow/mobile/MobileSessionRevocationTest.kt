@@ -4,6 +4,7 @@ import java.io.File
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.dlaflow.mobile.core.network.MobileApiException
 
 class MobileSessionRevocationTest {
     @Test

@@ -1,5 +1,7 @@
 package pl.dlaflow.mobile
 
+import pl.dlaflow.mobile.core.network.MobileApiException
+
 internal fun shouldClearMobileSessionAfterUnauthorized(
     error: Throwable,
     verifyCurrentSession: () -> Any?,

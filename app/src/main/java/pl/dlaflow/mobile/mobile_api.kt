@@ -7,6 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URLEncoder
 import java.net.URL
 import java.util.UUID
+import pl.dlaflow.mobile.core.network.MobileApiException
 
 data class MobileSession(
     val deviceId: String,
@@ -419,12 +420,6 @@ data class MobileCallerIdLookup(
     val phone: String,
     val primaryOrder: MobileCallerIdOrder?,
 )
-
-class MobileApiException(
-    val statusCode: Int,
-    val code: String,
-    message: String,
-) : IllegalStateException(message)
 
 class MobileApiClient(
     private val baseUrl: String,

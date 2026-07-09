@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mobile_error_offline_title">Brak połączenia</string>
+    <string name="mobile_error_offline_description">Sprawdź internet i spróbuj ponownie.</string>
+    <string name="mobile_error_timeout_title">Połączenie trwało zbyt długo</string>
+    <string name="mobile_error_timeout_description">Spróbuj ponownie za chwilę.</string>
+    <string name="mobile_error_session_title">Połączenie telefonu wymaga sprawdzenia</string>
+    <string name="mobile_error_session_description">Sprawdź połączenie telefonu z DlaFlow.</string>
+    <string name="mobile_error_no_access_title">Brak dostępu</string>
+    <string name="mobile_error_no_access_description">Twoje konto nie ma uprawnień do tej operacji.</string>
+    <string name="mobile_error_validation_title">Sprawdź wprowadzone dane</string>
+    <string name="mobile_error_validation_description">Popraw dane i spróbuj ponownie.</string>
+    <string name="mobile_error_rate_limit_title">Za dużo prób naraz</string>
+    <string name="mobile_error_rate_limit_description">Odczekaj chwilę i spróbuj ponownie.</string>
+    <string name="mobile_error_server_title">DlaFlow jest chwilowo niedostępny</string>
+    <string name="mobile_error_server_description">Spróbuj ponownie za chwilę.</string>
+    <string name="mobile_error_unknown_title">Nie udało się wykonać operacji</string>
+    <string name="mobile_error_unknown_description">Spróbuj ponownie.</string>
+</resources>
