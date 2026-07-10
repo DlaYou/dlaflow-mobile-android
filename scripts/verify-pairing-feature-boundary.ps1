@@ -41,7 +41,7 @@ foreach ($forbidden in @(
     }
 }
 
-$featureSource = (Get-ChildItem -LiteralPath $featureRoot -Filter "*.kt" | Get-Content -Raw) -join [Environment]::NewLine
+$featureSource = (Get-ChildItem -LiteralPath $featureRoot -Recurse -File -Filter "*.kt" | Get-Content -Raw) -join [Environment]::NewLine
 foreach ($forbidden in @("MobileApiClient(", "MobileSessionStore(", "AndroidKeyStore", "DlaFlowBackgroundSyncService.start")) {
     if ($featureSource.Contains($forbidden)) {
         throw "Pairing feature crossed a forbidden dependency boundary: $forbidden"
