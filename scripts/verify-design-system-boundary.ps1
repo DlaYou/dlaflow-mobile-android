@@ -4,7 +4,14 @@ Set-StrictMode -Version Latest
 $root = Split-Path -Parent $PSScriptRoot
 $screenPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt"
 $componentsPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/core/designsystem/DlaFlowComponents.kt"
+$sourceRoot = Join-Path $root "app/src/main/java"
+$designSystemRoot = Join-Path $sourceRoot "pl/dlaflow/mobile/core/designsystem"
 $screen = Get-Content -LiteralPath $screenPath -Raw
+$legacyColorLimits = @{
+    "app/src/main/java/pl/dlaflow/mobile/CallerIdActivity.kt" = 1
+    "app/src/main/java/pl/dlaflow/mobile/DlaFlowSessionTransitionOverlay.kt" = 30
+    "app/src/main/java/pl/dlaflow/mobile/MainActivity.kt" = 27
+}
 
 $forbiddenDefinitions = @(
     "private fun ScreenHeader(",
@@ -24,8 +31,26 @@ foreach ($definition in $forbiddenDefinitions) {
     }
 }
 
-if ($screen -match 'Color\(0x[0-9A-Fa-f]+\)') {
-    throw "Hardcoded hex color remains in MobileAssistantScreen.kt"
+foreach ($sourceFile in Get-ChildItem -LiteralPath $sourceRoot -Recurse -Filter "*.kt") {
+    if ($sourceFile.FullName.StartsWith($designSystemRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        continue
+    }
+    $source = Get-Content -LiteralPath $sourceFile.FullName -Raw
+    $hardcodedColorCount = ([regex]::Matches(
+        $source,
+        'Color\(0x[0-9A-Fa-f]+\)',
+        [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )).Count
+    if ($hardcodedColorCount -eq 0) {
+        continue
+    }
+    $relativePath = $sourceFile.FullName.Substring($root.Length).TrimStart([char[]]@('\', '/')).Replace('\', '/')
+    if (-not $legacyColorLimits.ContainsKey($relativePath)) {
+        throw "Hardcoded hex color outside core/designsystem: $relativePath"
+    }
+    if ($hardcodedColorCount -gt $legacyColorLimits[$relativePath]) {
+        throw "Legacy hardcoded color limit exceeded in ${relativePath}: $hardcodedColorCount"
+    }
 }
 
 if (-not (Test-Path -LiteralPath $componentsPath -PathType Leaf)) {
