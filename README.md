@@ -17,6 +17,30 @@ This is the standalone Android repository for the DlaFlow Mobile Assistant. The 
 - Show compact bottom Caller ID card with customer and order context.
 - Test Caller ID lookup from the app without placing a real call.
 
+## Architecture Foundation
+
+The Android app remains a single Gradle `app` module with explicit package boundaries:
+
+- `app/navigation` owns tabs, overlays and Android Back rules;
+- `core/designsystem` owns Compose colors, dimensions, Inter typography, theme and shared UI primitives;
+- `core/state` owns shared loading/content/empty/error/offline/no-access contracts;
+- `core/network` owns transport-level error types and, in the next approved stage, signed transport;
+- feature extraction is performed one area at a time without changing `/api/mobile/*` contracts.
+
+The DlaFlow panel/API remains the source of truth for business models, tenant isolation, permissions, normalizers, storage and APK release metadata.
+
+## Required Local Verification
+
+Run before every push:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-repository-contract.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-design-system-boundary.ps1
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+```
+
+Do not bump `versionCode`/`versionName`, create a `mobile-v*` tag or publish an APK without a separate release decision.
+
 ## Local Setup
 
 Required on Windows:

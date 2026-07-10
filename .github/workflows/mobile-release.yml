@@ -45,7 +45,6 @@ name: Mobile Android Release
         type: string
 
 env:
-  GRADLE_VERSION: "8.13"
   RELEASE_CHANNEL: ${{ github.event.inputs.channel || (startsWith(github.ref, 'refs/tags/mobile-v') && 'production') || 'test' }}
   UPDATE_PRIORITY: ${{ github.event.inputs.update_priority || 'normal' }}
   MIN_SUPPORTED_VERSION_CODE: ${{ github.event.inputs.min_supported_version_code || '1' }}
@@ -68,19 +67,24 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Install Gradle
+      - name: Make Gradle wrapper executable
         shell: bash
-        run: |
-          set -euo pipefail
-          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -o "$RUNNER_TEMP/gradle.zip"
-          curl -fsSL "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip.sha256" -o "$RUNNER_TEMP/gradle.zip.sha256"
-          echo "$(cat "$RUNNER_TEMP/gradle.zip.sha256")  $RUNNER_TEMP/gradle.zip" | sha256sum -c -
-          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP/gradle"
-          echo "$RUNNER_TEMP/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+        run: chmod +x gradlew
 
-      - name: Verify Gradle
+      - name: Validate Gradle Wrapper
+        uses: gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+
+      - name: Verify mobile repository contract
+        shell: pwsh
+        run: ./scripts/verify-repository-contract.ps1
+
+      - name: Verify mobile design-system boundary
+        shell: pwsh
+        run: ./scripts/verify-design-system-boundary.ps1
+
+      - name: Run Android unit tests and lint
         shell: bash
-        run: gradle --version
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
 
       - name: Validate mobile tag version
         if: startsWith(github.ref, 'refs/tags/mobile-v')
@@ -129,10 +133,10 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF}" == refs/tags/mobile-v* || "${{ github.event.inputs.publish }}" == "true" ]]; then
-            gradle :app:assembleRelease --no-daemon
+            ./gradlew :app:assembleRelease --no-daemon
             echo "DLAFLOW_APK_PATH=app/build/outputs/apk/release/app-release.apk" >> "$GITHUB_ENV"
           else
-            gradle :app:assembleDebug --no-daemon
+            ./gradlew :app:assembleDebug --no-daemon
             echo "DLAFLOW_APK_PATH=app/build/outputs/apk/debug/app-debug.apk" >> "$GITHUB_ENV"
           fi
 
