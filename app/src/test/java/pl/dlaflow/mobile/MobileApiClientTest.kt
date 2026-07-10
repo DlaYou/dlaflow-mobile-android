@@ -1,5 +1,6 @@
 package pl.dlaflow.mobile
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -188,12 +189,20 @@ class MobileApiClientTest {
                 requestSigner = signer,
                 nowMillis = { 1_783_540_000_123L },
                 nonceFactory = { "nonce-pairing-123" },
+                appVersionCode = 16,
+                appVersionName = "0.4.2",
             )
 
             val session = client.completePairing("ABC-123", "Magazyn")
 
-            assertTrue(firstBody.get().contains("\"deviceName\":\"Magazyn\""))
-            assertTrue(firstBody.get().contains("\"requestSigningPublicKey\":\"PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH_1234567890\""))
+            val pairingBody = JSONObject(firstBody.get())
+            assertEquals("Magazyn", pairingBody.getString("deviceName"))
+            assertEquals(16, pairingBody.getInt("appVersionCode"))
+            assertEquals("0.4.2", pairingBody.getString("appVersionName"))
+            assertEquals(
+                "PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH_1234567890",
+                pairingBody.getString("requestSigningPublicKey"),
+            )
             assertEquals("paired-device-7", secondDeviceId.get())
             assertEquals("paired-device-7", session.deviceId)
             assertEquals("mobile-token", session.token)
