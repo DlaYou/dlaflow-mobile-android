@@ -12,8 +12,8 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.4.0"
+        versionCode = 15
+        versionName = "0.4.1"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
