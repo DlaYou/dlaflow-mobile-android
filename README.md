@@ -6,7 +6,7 @@ This is the standalone Android repository for the DlaFlow Mobile Assistant. The 
 
 ## Current Scope
 
-- Pair phone by scanning the Mobile Assistant QR code from `Integracje -> Wtyczki`.
+- Pair phone by scanning the Mobile Assistant QR code from `Integracje -> Wtyczki` and entering a required device name.
 - Store mobile bearer token through Android Keystore.
 - Verify the mobile session with `/api/mobile/me`.
 - Clear the local session automatically when the panel revokes the phone.
@@ -25,9 +25,12 @@ The Android app remains a single Gradle `app` module with explicit package bound
 - `core/designsystem` owns Compose colors, dimensions, Inter typography, theme and shared UI primitives;
 - `core/state` owns shared loading/content/empty/error/offline/no-access contracts;
 - `core/network` owns transport-level error types and, in the next approved stage, signed transport;
+- `feature/pairing` owns the pairing form, help, code/QR validation and the required device name;
 - feature extraction is performed one area at a time without changing `/api/mobile/*` contracts.
 
 The DlaFlow panel/API remains the source of truth for business models, tenant isolation, permissions, normalizers, storage and APK release metadata.
+
+`MainActivity` remains the platform adapter for launching ZXing, persisting the successful session and starting post-pair Android services. The custom name and code are sent together through the existing atomic `POST /api/mobile/devices/pair/complete`; this extraction does not add an endpoint, bump the Android version, create a tag or publish an APK.
 
 ## Required Local Verification
 
@@ -36,6 +39,7 @@ Run before every push:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-repository-contract.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-design-system-boundary.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-pairing-feature-boundary.ps1
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
 ```
 
@@ -82,15 +86,16 @@ Production must use HTTPS.
 2. Open panel `/integrations?category=plugins&plugin=mobile-assistant`.
 3. Click `Konfiguruj`, then generate the Mobile Assistant pairing QR code.
 4. Run this Android app.
-5. Enter API URL.
-6. Tap `Skanuj kod QR`; the app fills the code and starts pairing. Manual code entry remains a fallback.
-7. Confirm that the app shows connected tenant/user/device.
-8. In the panel product media tab, send a task with `Wyślij z telefonu`.
-9. Tap `Odśwież zadania` in the app.
-10. Open camera or select an image and confirm the panel product gallery receives the uploaded photo.
-11. For camera capture, verify the app status shows a full file size and the backend stored image is not a thumbnail.
-12. Use the Caller ID test field with a known order phone number and confirm the bottom card shows customer/order details.
-13. Enable Caller ID role on a physical Android phone and perform a real incoming call smoke.
+5. Configure the debug app to use the local API URL through the existing local smoke setup.
+6. Tap `Skanuj kod QR` or enter the code manually; a valid code opens `Nazwij ten telefon` without consuming it.
+7. Enter a synthetic device name and tap `Połącz telefon`.
+8. Confirm that the app and panel both show the exact chosen device name together with the connected tenant/user.
+9. In the panel product media tab, send a task with `Wyślij z telefonu`.
+10. Tap `Odśwież zadania` in the app.
+11. Open camera or select an image and confirm the panel product gallery receives the uploaded photo.
+12. For camera capture, verify the app status shows a full file size and the backend stored image is not a thumbnail.
+13. Use the Caller ID test field with a known order phone number and confirm the bottom card shows customer/order details.
+14. Enable Caller ID role on a physical Android phone and perform a real incoming call smoke.
 
 Caller ID UI can be previewed from the app, but final acceptance still requires a real physical-phone call smoke.
 

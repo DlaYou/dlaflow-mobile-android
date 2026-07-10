@@ -48,6 +48,10 @@ import java.util.concurrent.Executors
 import pl.dlaflow.mobile.app.navigation.MobileAssistantOverlayScreen
 import pl.dlaflow.mobile.app.navigation.MobileAssistantTab
 import pl.dlaflow.mobile.core.network.MobileApiException
+import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
+import pl.dlaflow.mobile.feature.pairing.PairingGateway
+import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
+import pl.dlaflow.mobile.feature.pairing.pairingSmokeSeed
 
 sealed interface MobileLaunchPackageScanAction {
     data object None : MobileLaunchPackageScanAction
@@ -100,12 +104,24 @@ class MainActivity : ComponentActivity() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private val pairingStateHolder = PairingStateHolder()
+    private val pairingCoordinator by lazy {
+        PairingCoordinator(
+            stateHolder = pairingStateHolder,
+            gateway = PairingGateway { baseUrl, submission ->
+                mobileApiClientForBaseUrl(baseUrl).completePairing(submission.code, submission.deviceName)
+            },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onStarted = { showSessionTransition(activeStepIndex = 0, progress = 18) },
+            onSuccess = ::handlePairingSuccess,
+            onFailure = { hideSessionTransition() },
+        )
+    }
     private lateinit var root: LinearLayout
     private lateinit var scrollView: ScrollView
     private lateinit var contentView: View
     private lateinit var statusView: TextView
-    private lateinit var baseUrlInput: EditText
-    private lateinit var pairingCodeInput: EditText
     private lateinit var callerIdTestPhoneInput: EditText
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
     private var sessionTransitionStartedAt: Long = 0L
@@ -116,7 +132,6 @@ class MainActivity : ComponentActivity() {
     private var lastDispatchedPhotoTaskId: String? = null
     private var photoTasks by mutableStateOf<List<MobilePhotoTask>>(emptyList())
     private var apiUrlValue by mutableStateOf("")
-    private var pairingCodeValue by mutableStateOf("")
     private var callerIdTestPhoneValue by mutableStateOf("")
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
@@ -165,6 +180,7 @@ class MainActivity : ComponentActivity() {
     private var pendingPhotoTaskId: String? = null
     private var pendingSmokeApiUrl: String? = null
     private var pendingSmokePairingCode: String? = null
+    private var pendingSmokePairingDeviceName: String? = null
     private var pendingLaunchPackageCode: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
@@ -326,7 +342,7 @@ class MainActivity : ComponentActivity() {
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
-                    pairingCode = pairingCodeValue,
+                    pairingState = pairingStateHolder.state,
                     callerIdTestPhone = callerIdTestPhoneValue,
                     callerIdPreview = callerIdPreview,
                     callerIdOperational = isCallerIdOperational(),
@@ -365,14 +381,16 @@ class MainActivity : ComponentActivity() {
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
-                    onPairingCodeChange = {
-                        pairingCodeValue = it
-                    },
+                    onPairingCodeChange = pairingStateHolder::updateCode,
+                    onContinuePairing = { pairingStateHolder.continueToName() },
+                    onScanPairingQr = { scanPairingQr() },
+                    onPairingDeviceNameChange = pairingStateHolder::updateDeviceName,
+                    onSubmitPairing = { submitPairing() },
+                    onShowPairingHelp = pairingStateHolder::showHelp,
+                    onPairingBack = { pairingStateHolder.back() },
                     onCallerIdTestPhoneChange = {
                         callerIdTestPhoneValue = it
                     },
-                    onPairDevice = { pairDevice() },
-                    onScanPairingQr = { scanPairingQr() },
                     onRefresh = {
                         refreshAssistantDashboard(showLoading = true)
                         refreshPhotoTasks(showLoading = false)
@@ -489,23 +507,6 @@ class MainActivity : ComponentActivity() {
         })
         header.addView(pill(if (session == null) "Do sparowania" else "Połączono", if (session == null) theme.warningText else theme.successText, if (session == null) theme.warningBg else theme.surface))
         root.addView(header)
-    }
-
-    private fun renderPairingCard() {
-        val theme = mobileTheme()
-        val card = card(prominent = true)
-        card.addView(sectionLabel("POŁĄCZENIE Z PANELEM"))
-        card.addView(label("Sparuj telefon z DlaFlow", size = 20f, color = theme.strong, bold = true, top = 8))
-        card.addView(label("W panelu otwórz Integracje, wybierz Wtyczki i zeskanuj kod QR z Mobile Assistant.", size = 13f, color = theme.muted, top = 8))
-
-        baseUrlInput = input("Adres API", sessionStore.readBaseUrl())
-        pairingCodeInput = input("Kod parowania", "")
-
-        card.addView(baseUrlInput)
-        card.addView(pairingCodeInput)
-        card.addView(secondaryButton("Skanuj kod QR") { scanPairingQr() })
-        card.addView(primaryButton("Sparuj telefon") { pairDevice() })
-        root.addView(card)
     }
 
     private fun renderConnectedCard() {
@@ -712,55 +713,32 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun pairDevice() {
+    private fun submitPairing() {
         val baseUrl = apiUrlValue.trim().ifBlank { sessionStore.readBaseUrl() }
-        val code = pairingCodeValue.trim().uppercase(Locale.ROOT).replace(" ", "")
-
-        if (code.isBlank()) {
-            setStatus("Wpisz kod połączenia albo zeskanuj QR z panelu.")
-            return
-        }
-
-        if (!code.matches(Regex("^[A-Z0-9]{3}-?[A-Z0-9]{3}$"))) {
-            setStatus("To nie jest kod połączenia DlaFlow.")
-            return
-        }
-
         apiUrlValue = baseUrl
-        setStatus("Łączę telefon z panelem DlaFlow...")
-        showSessionTransition(activeStepIndex = 0, progress = 18)
-        executor.execute {
-            runCatching {
-                val client = mobileApiClientForBaseUrl(baseUrl)
-                client.completePairing(code, "Telefon DlaFlow")
-            }.onSuccess { nextSession ->
-                sessionStore.saveSession(baseUrl, nextSession)
-                runOnUiThread {
-                    updateSessionTransition(activeStepIndex = 1, progress = 46)
-                    clearMobileOrdersState()
-                    clearMobileProductsState()
-                    clearMobileNotificationsState()
-                    session = nextSession
-                    render()
-                    showSessionTransition(activeStepIndex = 2, progress = 78)
-                    setStatus("Telefon połączony z panelem.")
-                    completeSessionTransition {
-                        requestNotificationPermissionIfNeeded()
-                        DlaFlowBackgroundSyncService.start(this)
-                        startPhotoTaskDispatchPolling()
-                        refreshAssistantDashboard(showLoading = false)
-                        refreshPhotoTasks(showLoading = false)
-                        refreshAppUpdate(showStatus = false)
-                        if (selectedTab == MobileAssistantTab.ORDERS) {
-                            ensureMobileOrdersLoaded()
-                        }
-                    }
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    hideSessionTransition()
-                    setStatus(error.message ?: "Nie udało się sparować telefonu.")
-                }
+        pairingCoordinator.submit(baseUrl)
+    }
+
+    private fun handlePairingSuccess(baseUrl: String, nextSession: MobileSession) {
+        sessionStore.saveSession(baseUrl, nextSession)
+        updateSessionTransition(activeStepIndex = 1, progress = 46)
+        clearMobileOrdersState()
+        clearMobileProductsState()
+        clearMobileNotificationsState()
+        session = nextSession
+        pairingStateHolder.reset()
+        render()
+        showSessionTransition(activeStepIndex = 2, progress = 78)
+        setStatus("Telefon połączony z panelem.")
+        completeSessionTransition {
+            requestNotificationPermissionIfNeeded()
+            DlaFlowBackgroundSyncService.start(this)
+            startPhotoTaskDispatchPolling()
+            refreshAssistantDashboard(showLoading = false)
+            refreshPhotoTasks(showLoading = false)
+            refreshAppUpdate(showStatus = false)
+            if (selectedTab == MobileAssistantTab.ORDERS) {
+                ensureMobileOrdersLoaded()
             }
         }
     }
@@ -898,32 +876,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePairingQrResult(rawValue: String?) {
-        val code = extractPairingCodeFromQr(rawValue)
-        if (code.isBlank()) {
-            setStatus("Nie odczytano kodu QR.")
-            return
-        }
-
-        if (!code.matches(Regex("^[A-Z0-9]{3}-?[A-Z0-9]{3}$"))) {
-            setStatus("To nie jest kod parowania DlaFlow.")
-            return
-        }
-
-        pairingCodeValue = code
-        setStatus("Kod QR odczytany. Łączę telefon z panelem.")
-        pairDevice()
-    }
-
-    private fun extractPairingCodeFromQr(rawValue: String?): String {
-        val value = rawValue?.trim().orEmpty()
-        val prefix = "dlaflow-pair:v1:"
-        val code = if (value.startsWith(prefix, ignoreCase = true)) {
-            value.substring(prefix.length)
-        } else {
-            value
-        }
-
-        return code.trim().uppercase(Locale.ROOT).replace(" ", "")
+        pairingStateHolder.acceptQrResult(rawValue)
     }
 
     private fun refreshPhotoTasks(showLoading: Boolean = true) {
@@ -1725,25 +1678,33 @@ class MainActivity : ComponentActivity() {
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()
+        val smokePairingDeviceName = intent?.getStringExtra(extraSmokePairingDeviceName)
         if (smokeApiUrl.isNotBlank() && smokePairingCode.isNotBlank()) {
             pendingSmokeApiUrl = smokeApiUrl
             pendingSmokePairingCode = smokePairingCode
+            pendingSmokePairingDeviceName = smokePairingDeviceName
         }
     }
 
     private fun consumeSmokePairingIntent(): Boolean {
-        val apiUrl = pendingSmokeApiUrl?.trim().orEmpty()
-        val pairingCode = pendingSmokePairingCode?.trim().orEmpty()
-        if (apiUrl.isBlank() || pairingCode.isBlank()) {
-            return false
-        }
+        val seed = pairingSmokeSeed(
+            apiUrl = pendingSmokeApiUrl,
+            pairingCode = pendingSmokePairingCode,
+            deviceName = pendingSmokePairingDeviceName,
+        ) ?: return false
 
         pendingSmokeApiUrl = null
         pendingSmokePairingCode = null
-        apiUrlValue = apiUrl
-        pairingCodeValue = pairingCode
-        pairDevice()
-
+        pendingSmokePairingDeviceName = null
+        apiUrlValue = seed.baseUrl
+        pairingStateHolder.updateCode(seed.pairingCode)
+        pairingStateHolder.continueToName()
+        if (seed.shouldAutoSubmit) {
+            pairingStateHolder.updateDeviceName(seed.deviceName.orEmpty())
+            submitPairing()
+        } else {
+            completeSessionTransition()
+        }
         return true
     }
 
@@ -2193,7 +2154,7 @@ class MainActivity : ComponentActivity() {
         clearMobileProductsState()
         clearMobileNotificationsState()
         selectedTab = MobileAssistantTab.DASHBOARD
-        pairingCodeValue = ""
+        pairingStateHolder.reset()
         contentReadyForDisplay = true
         render()
         setStatus(message)
@@ -2589,6 +2550,7 @@ class MainActivity : ComponentActivity() {
         private const val dispatchPollIntervalMs = 5_000L
         private const val extraSmokeApiUrl = "pl.dlaflow.mobile.SMOKE_API_URL"
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
+        private const val extraSmokePairingDeviceName = "pl.dlaflow.mobile.SMOKE_PAIRING_DEVICE_NAME"
         private const val sessionTransitionMinimumVisibleMs = 950L
         private val sessionTransitionSteps = listOf("Telefon", "Sesja", "Zadania", "Start")
     }

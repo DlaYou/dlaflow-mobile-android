@@ -190,8 +190,9 @@ class MobileApiClientTest {
                 nonceFactory = { "nonce-pairing-123" },
             )
 
-            val session = client.completePairing("ABC-123", "Telefon")
+            val session = client.completePairing("ABC-123", "Magazyn")
 
+            assertTrue(firstBody.get().contains("\"deviceName\":\"Magazyn\""))
             assertTrue(firstBody.get().contains("\"requestSigningPublicKey\":\"PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH_1234567890\""))
             assertEquals("paired-device-7", secondDeviceId.get())
             assertEquals("paired-device-7", session.deviceId)

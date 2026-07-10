@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,16 +93,30 @@ internal fun DlaFlowTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    isError: Boolean = false,
+    placeholder: String? = null,
+    supportingText: String? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
+        enabled = enabled,
+        isError = isError,
         label = { Text(label) },
+        placeholder = placeholder?.let { text -> { Text(text) } },
+        supportingText = supportingText?.let { text -> { Text(text) } },
         singleLine = true,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
         shape = RoundedCornerShape(DlaFlowDimensions.controlRadius),
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = colors.primary,
             unfocusedBorderColor = colors.border,
+            errorBorderColor = colors.danger,
             focusedLabelColor = colors.primary,
             cursorColor = colors.primary,
             focusedTextColor = colors.textStrong,
@@ -108,7 +124,7 @@ internal fun DlaFlowTextField(
             focusedContainerColor = colors.surfaceSubtle,
             unfocusedContainerColor = colors.surfaceSubtle,
         ),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     )
 }
 
