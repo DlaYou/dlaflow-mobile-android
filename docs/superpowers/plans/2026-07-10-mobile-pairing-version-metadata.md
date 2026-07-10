@@ -14,7 +14,7 @@
 
 - Modify `app/src/test/java/pl/dlaflow/mobile/MobileApiClientTest.kt`: prove the pairing request includes exact version metadata.
 - Modify `app/src/main/java/pl/dlaflow/mobile/mobile_api.kt`: provide and serialize app version metadata.
-- Modify `app/build.gradle.kts`: bump the Android release to 0.4.2 (16).
+- Modify `app/build.gradle.kts`: generate `BuildConfig` and bump the Android release to 0.4.2 (16).
 - Keep `docs/superpowers/specs/2026-07-10-mobile-pairing-version-metadata-design.md` as the approved design contract.
 
 ### Task 1: Pairing request regression test and minimal implementation
@@ -22,6 +22,7 @@
 **Files:**
 - Modify: `app/src/test/java/pl/dlaflow/mobile/MobileApiClientTest.kt:138-204`
 - Modify: `app/src/main/java/pl/dlaflow/mobile/mobile_api.kt:424-441`
+- Modify: `app/build.gradle.kts:48-51`
 
 - [ ] **Step 1: Write the failing request-body assertions**
 
@@ -77,6 +78,15 @@ class MobileApiClient(
     private val appVersionCode: Int = BuildConfig.VERSION_CODE,
     private val appVersionName: String = BuildConfig.VERSION_NAME,
 )
+```
+
+Enable the already-supported Android build metadata source:
+
+```kotlin
+buildFeatures {
+    buildConfig = true
+    compose = true
+}
 ```
 
 Serialize the fields in `completePairing`:

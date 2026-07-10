@@ -427,12 +427,16 @@ class MobileApiClient(
     private val deviceIdProvider: () -> String = { "" },
     private val nowMillis: () -> Long = { System.currentTimeMillis() },
     private val nonceFactory: () -> String = { UUID.randomUUID().toString() },
+    private val appVersionCode: Int = BuildConfig.VERSION_CODE,
+    private val appVersionName: String = BuildConfig.VERSION_NAME,
 ) {
     fun completePairing(pairingCode: String, deviceName: String): MobileSession {
         val body = JSONObject()
             .put("deviceName", deviceName)
             .put("pairingCode", pairingCode)
             .put("platform", "ANDROID")
+            .put("appVersionCode", appVersionCode)
+            .put("appVersionName", appVersionName)
         requestSigner?.publicKeySpkiBase64()
             ?.takeIf { it.isNotBlank() }
             ?.let { publicKey -> body.put("requestSigningPublicKey", publicKey) }
