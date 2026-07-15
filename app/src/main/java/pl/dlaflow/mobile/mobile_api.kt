@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URLEncoder
 import java.net.URL
 import java.util.UUID
@@ -430,6 +431,33 @@ class MobileApiClient(
     private val appVersionCode: Int = BuildConfig.VERSION_CODE,
     private val appVersionName: String = BuildConfig.VERSION_NAME,
 ) {
+    fun getMobileMedia(token: String, pathWithQuery: String): ByteArray? {
+        val canonicalPath = resolveMobileMediaPath(baseUrl, pathWithQuery) ?: return null
+
+        val connection = openConnection(canonicalPath)
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Accept", "image/*")
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "GET",
+            path = canonicalPath,
+            token = token,
+            bodyBytes = ByteArray(0),
+        )
+
+        return try {
+            val status = connection.responseCode
+            if (status !in 200..299) {
+                connection.errorStream?.use { Unit }
+                null
+            } else {
+                connection.inputStream.use { input -> input.readBytes() }
+            }
+        } finally {
+            connection.disconnect()
+        }
+    }
+
     fun completePairing(pairingCode: String, deviceName: String): MobileSession {
         val body = JSONObject()
             .put("deviceName", deviceName)
@@ -1274,4 +1302,56 @@ class MobileApiClient(
     private fun encodeQueryValue(value: String): String {
         return URLEncoder.encode(value, Charsets.UTF_8.name())
     }
+}
+
+internal fun resolveMobileMediaPath(apiUrl: String, mediaUrl: String): String? {
+    val base = runCatching { URI(apiUrl.trim().removeSuffix("/")) }.getOrNull() ?: return null
+    val candidate = runCatching { URI(mediaUrl.trim()) }.getOrNull() ?: return null
+    if (candidate.rawFragment != null) {
+        return null
+    }
+
+    if (candidate.isAbsolute && !sameHttpOrigin(base, candidate)) {
+        return null
+    }
+    if (!candidate.isAbsolute && candidate.rawAuthority != null) {
+        return null
+    }
+
+    val pathWithQuery = buildString {
+        append(candidate.rawPath.orEmpty())
+        candidate.rawQuery?.let { query -> append('?').append(query) }
+    }
+
+    return pathWithQuery.takeIf(::isCanonicalMobileApiPath)
+}
+
+private fun isCanonicalMobileApiPath(pathWithQuery: String): Boolean {
+    val candidate = runCatching { URI(pathWithQuery) }.getOrNull() ?: return false
+
+    return !candidate.isAbsolute &&
+        candidate.rawAuthority == null &&
+        candidate.rawFragment == null &&
+        candidate.rawPath.startsWith("/api/mobile/")
+}
+
+private fun sameHttpOrigin(base: URI, candidate: URI): Boolean {
+    val baseScheme = base.scheme?.lowercase() ?: return false
+    val candidateScheme = candidate.scheme?.lowercase() ?: return false
+    if (baseScheme !in setOf("http", "https") || candidateScheme != baseScheme) {
+        return false
+    }
+
+    val baseHost = base.host?.lowercase() ?: return false
+    val candidateHost = candidate.host?.lowercase() ?: return false
+
+    return baseHost == candidateHost && effectivePort(base) == effectivePort(candidate)
+}
+
+private fun effectivePort(uri: URI): Int {
+    if (uri.port >= 0) {
+        return uri.port
+    }
+
+    return if (uri.scheme.equals("https", ignoreCase = true)) 443 else 80
 }

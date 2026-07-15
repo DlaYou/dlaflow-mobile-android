@@ -2,6 +2,7 @@ package pl.dlaflow.mobile
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
@@ -13,6 +14,131 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
 
 class MobileApiClientTest {
+    @Test
+    fun `mobile media path keeps same origin query and rejects bearer exfiltration targets`() {
+        val baseUrl = "https://panel.dlayou.pl"
+
+        assertEquals(
+            "/api/mobile/products/media/thumb%20one.webp?width=96&fit=cover",
+            resolveMobileMediaPath(
+                apiUrl = baseUrl,
+                mediaUrl = "https://panel.dlayou.pl/api/mobile/products/media/thumb%20one.webp?width=96&fit=cover",
+            ),
+        )
+        assertEquals(
+            "/api/mobile/orders/media/thumb.webp?width=64",
+            resolveMobileMediaPath(baseUrl, "/api/mobile/orders/media/thumb.webp?width=64"),
+        )
+        assertNull(resolveMobileMediaPath(baseUrl, "https://example.test/api/mobile/products/media/thumb.webp"))
+        assertNull(resolveMobileMediaPath(baseUrl, "/api/auth/me"))
+        assertNull(resolveMobileMediaPath(baseUrl, "//example.test/api/mobile/products/media/thumb.webp"))
+    }
+
+    @Test
+    fun `signed mobile media get preserves exact query and adds all authentication headers`() {
+        val method = AtomicReference("")
+        val path = AtomicReference("")
+        val authorization = AtomicReference("")
+        val signatureVersion = AtomicReference("")
+        val deviceId = AtomicReference("")
+        val timestamp = AtomicReference("")
+        val nonce = AtomicReference("")
+        val bodySha256 = AtomicReference("")
+        val signature = AtomicReference("")
+        val signer = FakeMobileRequestSigner()
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                val requestLine = reader.readLine().orEmpty()
+                val parts = requestLine.split(" ")
+                method.set(parts.getOrElse(0) { "" })
+                path.set(parts.getOrElse(1) { "" })
+
+                generateSequence { reader.readLine() }
+                    .takeWhile { it.isNotEmpty() }
+                    .forEach { header ->
+                        when {
+                            header.startsWith("Authorization:", ignoreCase = true) -> authorization.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Signature-Version:", ignoreCase = true) -> signatureVersion.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Device-Id:", ignoreCase = true) -> deviceId.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Timestamp:", ignoreCase = true) -> timestamp.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Nonce:", ignoreCase = true) -> nonce.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Body-SHA256:", ignoreCase = true) -> bodySha256.set(header.substringAfter(":").trim())
+                            header.startsWith("X-DlaFlow-Signature:", ignoreCase = true) -> signature.set(header.substringAfter(":").trim())
+                        }
+                    }
+
+                val body = byteArrayOf(1, 2, 3, 4)
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                requestSigner = signer,
+                deviceIdProvider = { "device-media-123" },
+                nowMillis = { 1_783_540_000_123L },
+                nonceFactory = { "nonce-media-123456" },
+            )
+            val pathWithQuery = "/api/mobile/products/media/thumb%20one.webp?width=96&fit=cover"
+
+            val bytes = client.getMobileMedia(token = "mobile-token", pathWithQuery = pathWithQuery)
+
+            val expectedBodyHash = sha256Hex(ByteArray(0))
+            assertEquals(listOf<Byte>(1, 2, 3, 4), bytes?.toList())
+            assertEquals("GET", method.get())
+            assertEquals(pathWithQuery, path.get())
+            assertEquals("Bearer mobile-token", authorization.get())
+            assertEquals("v1", signatureVersion.get())
+            assertEquals("device-media-123", deviceId.get())
+            assertEquals("1783540000", timestamp.get())
+            assertEquals("nonce-media-123456", nonce.get())
+            assertEquals(expectedBodyHash, bodySha256.get())
+            assertEquals("fake-signature", signature.get())
+            assertEquals(
+                "v1\nGET\n$pathWithQuery\n$expectedBodyHash\n1783540000\nnonce-media-123456\ndevice-media-123",
+                signer.lastCanonical,
+            )
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `unauthorized helper media response returns no bytes`() {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val body = """{"error":{"code":"AUTH_REQUIRED"}}""".toByteArray(Charsets.UTF_8)
+                val headers = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient("http://127.0.0.1:${server.localPort}")
+
+            assertNull(client.getMobileMedia("mobile-token", "/api/mobile/orders/media/thumb.webp"))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     @Test
     fun `revoke current device posts to mobile self revoke endpoint with bearer token`() {
         val method = AtomicReference("")
