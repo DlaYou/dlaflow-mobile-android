@@ -11,6 +11,8 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 class MobileApiClientTest {
@@ -32,6 +34,64 @@ class MobileApiClientTest {
         assertNull(resolveMobileMediaPath(baseUrl, "https://example.test/api/mobile/products/media/thumb.webp"))
         assertNull(resolveMobileMediaPath(baseUrl, "/api/auth/me"))
         assertNull(resolveMobileMediaPath(baseUrl, "//example.test/api/mobile/products/media/thumb.webp"))
+        assertNull(resolveMobileMediaPath(baseUrl, "/api/mobile/notifications?limit=20"))
+        assertNull(resolveMobileMediaPath(baseUrl, "/api/mobile/photo-tasks/task-1/media"))
+        assertNull(resolveMobileMediaPath(baseUrl, "/api/mobile/orders/media"))
+    }
+
+    @Test
+    fun `mobile media redirect is not followed to foreign origin`() {
+        val redirectServer = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val foreignServer = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).apply {
+            soTimeout = 1_000
+        }
+        val foreignConnections = AtomicInteger(0)
+        val foreignAuthorization = AtomicReference("")
+        val executor = Executors.newFixedThreadPool(2)
+        val redirectFuture = executor.submit {
+            redirectServer.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val headers = buildString {
+                    append("HTTP/1.1 302 Found\r\n")
+                    append("Location: http://127.0.0.1:${foreignServer.localPort}/api/mobile/products/media/redirected.webp\r\n")
+                    append("Content-Length: 0\r\n")
+                    append("Connection: close\r\n\r\n")
+                }
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                }
+            }
+        }
+        val foreignFuture = executor.submit {
+            runCatching {
+                foreignServer.accept().use { socket ->
+                    foreignConnections.incrementAndGet()
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                    generateSequence { reader.readLine() }
+                        .takeWhile { it.isNotEmpty() }
+                        .forEach { header ->
+                            if (header.startsWith("Authorization:", ignoreCase = true)) {
+                                foreignAuthorization.set(header.substringAfter(":").trim())
+                            }
+                        }
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient("http://127.0.0.1:${redirectServer.localPort}")
+
+            assertNull(client.getMobileMedia("mobile-token", "/api/mobile/products/media/thumb.webp"))
+            redirectFuture.get(2, TimeUnit.SECONDS)
+            foreignFuture.get(2, TimeUnit.SECONDS)
+            assertEquals(0, foreignConnections.get())
+            assertEquals("", foreignAuthorization.get())
+        } finally {
+            redirectServer.close()
+            foreignServer.close()
+            executor.shutdownNow()
+        }
     }
 
     @Test

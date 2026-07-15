@@ -445,6 +445,7 @@ class MobileApiClient(
         val canonicalPath = resolveMobileMediaPath(baseUrl, pathWithQuery) ?: return null
 
         val connection = openConnection(canonicalPath)
+        connection.instanceFollowRedirects = false
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "image/*")
         applyAuthorizationAndSignature(
@@ -1384,11 +1385,13 @@ private fun readMobileMediaWithinLimit(input: InputStream, maxBytes: Int): ByteA
 
 private fun isCanonicalMobileApiPath(pathWithQuery: String): Boolean {
     val candidate = runCatching { URI(pathWithQuery) }.getOrNull() ?: return false
+    val mediaPathAllowed = candidate.rawPath.startsWith("/api/mobile/orders/media/") ||
+        candidate.rawPath.startsWith("/api/mobile/products/media/")
 
     return !candidate.isAbsolute &&
         candidate.rawAuthority == null &&
         candidate.rawFragment == null &&
-        candidate.rawPath.startsWith("/api/mobile/")
+        mediaPathAllowed
 }
 
 private fun sameHttpOrigin(base: URI, candidate: URI): Boolean {

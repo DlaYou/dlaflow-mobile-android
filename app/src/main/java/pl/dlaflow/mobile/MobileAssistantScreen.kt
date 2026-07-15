@@ -1,7 +1,6 @@
 package pl.dlaflow.mobile
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
@@ -1870,7 +1869,7 @@ private suspend fun loadMobileImageBitmap(
 ): Bitmap? = withContext(Dispatchers.IO) {
     val bytes = mobileMediaClient.getMobileMedia(mobileToken, mediaUrl) ?: return@withContext null
 
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    decodeMobileImageBitmap(bytes)
 }
 
 @Composable
