@@ -35,6 +35,92 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `mobile media path rejects literal and encoded traversal segments`() {
+        val baseUrl = "https://panel.dlayou.pl"
+
+        listOf(
+            "/api/mobile/products/media/../secret.webp",
+            "/api/mobile/products/media/./thumb.webp",
+            "/api/mobile/products/media/%2e%2e/secret.webp",
+            "/api/mobile/products/media/%2E/thumb.webp",
+            "/api/mobile/products/media/%252e%252e/secret.webp",
+            "/api/mobile/products/media/%2e%2e%2fsecret.webp",
+            "https://panel.dlayou.pl/api/mobile/products/media/%2E%2E/secret.webp?width=96",
+        ).forEach { mediaUrl ->
+            assertNull(mediaUrl, resolveMobileMediaPath(baseUrl, mediaUrl))
+        }
+
+        assertEquals(
+            "/api/mobile/products/media/thumb..final.webp?width=96",
+            resolveMobileMediaPath(baseUrl, "/api/mobile/products/media/thumb..final.webp?width=96"),
+        )
+    }
+
+    @Test
+    fun `mobile media rejects declared content length above thumbnail limit`() {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: image/webp\r\nContent-Length: 5\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(byteArrayOf(1, 2, 3, 4, 5))
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                mobileMediaMaxBytes = 4,
+            )
+
+            assertNull(client.getMobileMedia("mobile-token", "/api/mobile/products/media/thumb.webp"))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `mobile media stops chunked stream after thumbnail limit`() {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val response = buildString {
+                    append("HTTP/1.1 200 OK\r\n")
+                    append("Content-Type: image/webp\r\n")
+                    append("Transfer-Encoding: chunked\r\n")
+                    append("Connection: close\r\n\r\n")
+                    append("5\r\n12345\r\n")
+                    append("0\r\n\r\n")
+                }
+                socket.getOutputStream().use { output ->
+                    output.write(response.toByteArray(Charsets.UTF_8))
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                mobileMediaMaxBytes = 4,
+            )
+
+            assertNull(client.getMobileMedia("mobile-token", "/api/mobile/orders/media/thumb.webp"))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `signed mobile media get preserves exact query and adds all authentication headers`() {
         val method = AtomicReference("")
         val path = AtomicReference("")

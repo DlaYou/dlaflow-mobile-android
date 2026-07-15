@@ -2,13 +2,18 @@ package pl.dlaflow.mobile
 
 import org.json.JSONObject
 import java.io.BufferedReader
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
 import java.net.URL
+import java.net.URLDecoder
 import java.util.UUID
 import pl.dlaflow.mobile.core.network.MobileApiException
+
+private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 
 data class MobileSession(
     val deviceId: String,
@@ -430,7 +435,12 @@ class MobileApiClient(
     private val nonceFactory: () -> String = { UUID.randomUUID().toString() },
     private val appVersionCode: Int = BuildConfig.VERSION_CODE,
     private val appVersionName: String = BuildConfig.VERSION_NAME,
+    private val mobileMediaMaxBytes: Int = DEFAULT_MOBILE_MEDIA_MAX_BYTES,
 ) {
+    init {
+        require(mobileMediaMaxBytes > 0) { "Mobile media byte limit must be positive." }
+    }
+
     fun getMobileMedia(token: String, pathWithQuery: String): ByteArray? {
         val canonicalPath = resolveMobileMediaPath(baseUrl, pathWithQuery) ?: return null
 
@@ -450,8 +460,12 @@ class MobileApiClient(
             if (status !in 200..299) {
                 connection.errorStream?.use { Unit }
                 null
+            } else if (connection.contentLengthLong > mobileMediaMaxBytes.toLong()) {
+                null
             } else {
-                connection.inputStream.use { input -> input.readBytes() }
+                connection.inputStream.use { input ->
+                    readMobileMediaWithinLimit(input, mobileMediaMaxBytes)
+                }
             }
         } finally {
             connection.disconnect()
@@ -1317,6 +1331,9 @@ internal fun resolveMobileMediaPath(apiUrl: String, mediaUrl: String): String? {
     if (!candidate.isAbsolute && candidate.rawAuthority != null) {
         return null
     }
+    if (containsTraversalSegment(candidate.rawPath.orEmpty())) {
+        return null
+    }
 
     val pathWithQuery = buildString {
         append(candidate.rawPath.orEmpty())
@@ -1324,6 +1341,45 @@ internal fun resolveMobileMediaPath(apiUrl: String, mediaUrl: String): String? {
     }
 
     return pathWithQuery.takeIf(::isCanonicalMobileApiPath)
+}
+
+private fun containsTraversalSegment(rawPath: String): Boolean {
+    var decodedPath = rawPath
+
+    while (true) {
+        if (decodedPath.replace('\\', '/').split('/').any { segment -> segment == "." || segment == ".." }) {
+            return true
+        }
+
+        val nextDecodedPath = runCatching {
+            URLDecoder.decode(decodedPath.replace("+", "%2B"), Charsets.UTF_8.name())
+        }.getOrNull() ?: return true
+        if (nextDecodedPath == decodedPath) {
+            return false
+        }
+        decodedPath = nextDecodedPath
+    }
+}
+
+private fun readMobileMediaWithinLimit(input: InputStream, maxBytes: Int): ByteArray? {
+    val output = ByteArrayOutputStream(minOf(maxBytes, 8 * 1024))
+    val buffer = ByteArray(8 * 1024)
+    var totalBytes = 0L
+
+    while (true) {
+        val remainingBytes = maxBytes.toLong() - totalBytes
+        val nextReadLimit = minOf(buffer.size.toLong(), remainingBytes + 1L).toInt()
+        val read = input.read(buffer, 0, nextReadLimit)
+        if (read < 0) {
+            return output.toByteArray()
+        }
+
+        totalBytes += read.toLong()
+        if (totalBytes > maxBytes.toLong()) {
+            return null
+        }
+        output.write(buffer, 0, read)
+    }
 }
 
 private fun isCanonicalMobileApiPath(pathWithQuery: String): Boolean {
