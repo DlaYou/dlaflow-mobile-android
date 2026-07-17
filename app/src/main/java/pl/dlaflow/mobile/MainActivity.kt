@@ -48,6 +48,12 @@ import java.util.concurrent.Executors
 import pl.dlaflow.mobile.app.navigation.MobileAssistantOverlayScreen
 import pl.dlaflow.mobile.app.navigation.MobileAssistantTab
 import pl.dlaflow.mobile.core.network.MobileApiException
+import pl.dlaflow.mobile.feature.dashboard.DashboardAction
+import pl.dlaflow.mobile.feature.dashboard.DashboardCoordinator
+import pl.dlaflow.mobile.feature.dashboard.DashboardFeedback
+import pl.dlaflow.mobile.feature.dashboard.DashboardGateway
+import pl.dlaflow.mobile.feature.dashboard.DashboardStateHolder
+import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
 import pl.dlaflow.mobile.feature.pairing.PairingGateway
 import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
@@ -104,6 +110,21 @@ class MainActivity : ComponentActivity() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private val dashboardStateHolder = DashboardStateHolder()
+    private val dashboardCoordinator by lazy {
+        DashboardCoordinator(
+            stateHolder = dashboardStateHolder,
+            gateway = DashboardGateway { token ->
+                mobileApiClientForSession(sessionStore).getAssistantDashboard(token)
+            },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onFeedback = ::handleDashboardFeedback,
+            onSessionRevoked = {
+                clearDisconnectedSession("Telefon został odłączony w panelu. Sparuj go ponownie.")
+            },
+        )
+    }
     private val pairingStateHolder = PairingStateHolder()
     private val pairingCoordinator by lazy {
         PairingCoordinator(
@@ -126,7 +147,6 @@ class MainActivity : ComponentActivity() {
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
     private var sessionTransitionStartedAt: Long = 0L
     private var callerIdPreview by mutableStateOf<MobileCallerIdLookup?>(null)
-    private var assistantDashboard by mutableStateOf<MobileAssistantDashboard?>(null)
     private var focusedPhotoTaskId: String? = null
     private var focusedPhotoTaskView: View? = null
     private var lastDispatchedPhotoTaskId: String? = null
@@ -336,7 +356,7 @@ class MainActivity : ComponentActivity() {
             setContent {
                 MobileAssistantScreen(
                     session = session,
-                    dashboard = assistantDashboard,
+                    dashboardState = dashboardStateHolder.state,
                     photoTasks = orderedPhotoTasks(),
                     packageScanState = packageScanState,
                     statusMessage = statusMessage,
@@ -391,15 +411,7 @@ class MainActivity : ComponentActivity() {
                     onCallerIdTestPhoneChange = {
                         callerIdTestPhoneValue = it
                     },
-                    onRefresh = {
-                        refreshAssistantDashboard(showLoading = true)
-                        refreshPhotoTasks(showLoading = false)
-                        if (selectedTab == MobileAssistantTab.ORDERS) {
-                            refreshMobileOrders(reset = true, showLoading = false)
-                        }
-                        refreshAppUpdate(showStatus = false)
-                    },
-                    onQuickAction = { handleQuickAction(it) },
+                    onDashboardAction = ::handleDashboardAction,
                     onSelectTab = {
                         selectedTab = it
                         if (it == MobileAssistantTab.ORDERS) {
@@ -444,13 +456,9 @@ class MainActivity : ComponentActivity() {
                     onToggleProductVariants = { productId -> toggleMobileProductVariants(productId) },
                     onQuickEditProduct = { product, field, value -> quickEditMobileProduct(product, field, value) },
                     onQuickEditVariant = { variant, field, value -> quickEditMobileProductVariant(variant, field, value) },
-                    onOpenNotifications = { openMobileNotifications() },
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
                     onNotificationFilterChange = { mobileNotificationFilter = it },
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
-                    onTakePhoto = { taskId -> requestCamera(taskId) },
-                    onPickPhoto = { taskId -> openGallery(taskId) },
-                    onCompletePhotoTask = { taskId -> completePhotoTask(taskId) },
                     onEnableCallerId = { requestCallerIdRole() },
                     onTestCallerId = { testCallerIdLookup() },
                     onShowCallerIdPreview = {
@@ -681,6 +689,7 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
+                        dashboardCoordinator.reset()
                         clearMobileOrdersState()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
@@ -693,7 +702,7 @@ class MainActivity : ComponentActivity() {
                         requestNotificationPermissionIfNeeded()
                         DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
-                        refreshAssistantDashboard(showLoading = false)
+                        dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
                         refreshPhotoTasks(showLoading = false)
                         refreshAppUpdate(showStatus = false)
                         consumePendingLaunchPackageScan()
@@ -722,6 +731,7 @@ class MainActivity : ComponentActivity() {
     private fun handlePairingSuccess(baseUrl: String, nextSession: MobileSession) {
         sessionStore.saveSession(baseUrl, nextSession)
         updateSessionTransition(activeStepIndex = 1, progress = 46)
+        dashboardCoordinator.reset()
         clearMobileOrdersState()
         clearMobileProductsState()
         clearMobileNotificationsState()
@@ -734,7 +744,7 @@ class MainActivity : ComponentActivity() {
             requestNotificationPermissionIfNeeded()
             DlaFlowBackgroundSyncService.start(this)
             startPhotoTaskDispatchPolling()
-            refreshAssistantDashboard(showLoading = false)
+            dashboardCoordinator.refresh(nextSession.token, showFeedback = false)
             refreshPhotoTasks(showLoading = false)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -843,36 +853,61 @@ class MainActivity : ComponentActivity() {
         setStatus(message)
     }
 
-    private fun handleQuickAction(action: MobileAssistantQuickAction) {
+    private fun handleDashboardAction(action: DashboardAction) {
         when (action) {
-            MobileAssistantQuickAction.SCAN_PACKAGE -> scanPackageCode()
-            MobileAssistantQuickAction.ADD_PRODUCT -> {
+            DashboardAction.Refresh -> {
+                val currentSession = session ?: return
+                dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
+                refreshPhotoTasks(showLoading = false)
+                if (selectedTab == MobileAssistantTab.ORDERS) {
+                    refreshMobileOrders(reset = true, showLoading = false)
+                }
+                refreshAppUpdate(showStatus = false)
+            }
+            DashboardAction.ScanPackage -> scanPackageCode()
+            DashboardAction.OpenProductWork -> {
                 val decision = chooseProductPhotoTaskAction(
                     activeTaskIds = orderedPhotoTasks().map { it.id },
-                    dashboardActiveTaskId = assistantDashboard?.activePhotoTask?.id,
+                    dashboardActiveTaskId = dashboardStateHolder.state.contentOrNull()?.activePhotoTask?.id,
                 )
                 focusedPhotoTaskId = decision.focusedTaskId
                 selectedTab = MobileAssistantTab.PRODUCTS
                 setStatus(decision.statusMessage)
                 if (decision.shouldRefreshTasks) {
-                    refreshAssistantDashboard(showLoading = false)
+                    session?.token?.let { token ->
+                        dashboardCoordinator.refresh(token, showFeedback = false)
+                    }
                     refreshPhotoTasks(showLoading = true)
                 }
                 if (decision.focusedTaskId == null) {
                     ensureMobileProductsLoaded()
                 }
             }
-            MobileAssistantQuickAction.STATS -> {
+            DashboardAction.OpenStatistics -> {
                 selectedTab = MobileAssistantTab.ORDERS
                 ensureMobileOrdersLoaded()
                 setStatus("Pokazuję szybkie statystyki z dzisiejszego dashboardu.")
             }
-            MobileAssistantQuickAction.PRODUCTS -> {
+            DashboardAction.OpenProducts -> {
                 selectedTab = MobileAssistantTab.PRODUCTS
                 setStatus("Pokazuję produkty.")
                 ensureMobileProductsLoaded()
             }
+            DashboardAction.OpenNotifications -> openMobileNotifications()
+            is DashboardAction.TakePhoto -> requestCamera(action.taskId)
+            is DashboardAction.PickPhoto -> openGallery(action.taskId)
+            is DashboardAction.CompletePhotoTask -> completePhotoTask(action.taskId)
         }
+    }
+
+    private fun handleDashboardFeedback(feedback: DashboardFeedback) {
+        setStatus(
+            when (feedback) {
+                DashboardFeedback.REFRESHING -> "Odświeżam pulpit asystenta..."
+                DashboardFeedback.REFRESHED -> "Pulpit odświeżony."
+                DashboardFeedback.LOAD_FAILED -> "Nie udało się pobrać pulpitu."
+            },
+        )
     }
 
     private fun handlePairingQrResult(rawValue: String?) {
@@ -1179,35 +1214,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refreshAssistantDashboard(showLoading: Boolean = false) {
-        val currentSession = session ?: return
-        if (showLoading) {
-            setStatus("Odświeżam pulpit asystenta...")
-        }
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).getAssistantDashboard(currentSession.token)
-            }.onSuccess { dashboard ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    assistantDashboard = dashboard
-                    if (showLoading) {
-                        setStatus("Pulpit odświeżony.")
-                    }
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    handleMobileApiFailure(error, "Nie udało się pobrać pulpitu.", showNonAuthStatus = showLoading)
-                }
-            }
-        }
-    }
-
     private fun openMobileNotifications() {
         mobileOverlayScreen = MobileAssistantOverlayScreen.NOTIFICATIONS
         refreshMobileNotifications(markVisibleRead = true)
@@ -1246,7 +1252,7 @@ class MainActivity : ComponentActivity() {
                     }
                     mobileNotifications = notifications
                     mobileNotificationsLoading = false
-                    refreshAssistantDashboard(showLoading = false)
+                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
                 }
             }.onFailure { error ->
                 runOnUiThread {
@@ -1611,7 +1617,7 @@ class MainActivity : ComponentActivity() {
                     selectedTab = MobileAssistantTab.PRODUCTS
                     showPhotoTaskNotification(task)
                     openPhotoTaskIfAllowed(task)
-                    refreshAssistantDashboard(showLoading = false)
+                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
                     refreshPhotoTasks(showLoading = false)
                 }
             }.onFailure { error ->
@@ -1835,7 +1841,7 @@ class MainActivity : ComponentActivity() {
                     }
                     clearPendingCameraPhoto()
                     setStatus("Zdjęcie dodane do produktu.")
-                    refreshAssistantDashboard(showLoading = false)
+                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
                     refreshPhotoTasks()
                 }
             }.onFailure { error ->
@@ -1876,7 +1882,7 @@ class MainActivity : ComponentActivity() {
                         return@runOnUiThread
                     }
                     photoTasks = photoTasks.filterNot { it.id == taskId }
-                    refreshAssistantDashboard(showLoading = false)
+                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
                     setStatus("Zadanie zakończone.")
                 }
             }.onFailure { error ->
@@ -2142,7 +2148,7 @@ class MainActivity : ComponentActivity() {
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
-        assistantDashboard = null
+        dashboardCoordinator.reset()
         photoTasks = emptyList()
         callerIdPreview = null
         focusedPhotoTaskId = null

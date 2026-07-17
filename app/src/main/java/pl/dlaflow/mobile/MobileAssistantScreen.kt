@@ -139,22 +139,17 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusBadge
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusStrip
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTextField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
-import pl.dlaflow.mobile.core.state.DlaFlowUiState
 import pl.dlaflow.mobile.feature.dashboard.DashboardAction
+import pl.dlaflow.mobile.feature.dashboard.DashboardContent
 import pl.dlaflow.mobile.feature.dashboard.DashboardFeatureScreen
+import pl.dlaflow.mobile.feature.dashboard.DashboardKpis
+import pl.dlaflow.mobile.feature.dashboard.DashboardNotification
 import pl.dlaflow.mobile.feature.dashboard.DashboardPhotoTask
 import pl.dlaflow.mobile.feature.dashboard.DashboardUiState
-import pl.dlaflow.mobile.feature.dashboard.toDashboardContent
+import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.pairing.PairingFeatureScreen
 import pl.dlaflow.mobile.feature.pairing.PairingStep
 import pl.dlaflow.mobile.feature.pairing.PairingUiState
-
-enum class MobileAssistantQuickAction {
-    SCAN_PACKAGE,
-    ADD_PRODUCT,
-    STATS,
-    PRODUCTS,
-}
 
 enum class MobileNotificationFilter(val label: String) {
     ALL("Wszystkie"),
@@ -203,6 +198,28 @@ fun filterNotifications(
     MobileNotificationFilter.ATTENTION -> notifications.filter { toneColorKey(it.tone) == "attention" }
     MobileNotificationFilter.UNREAD -> notifications.filter { it.readAt.isNullOrBlank() }
 }
+
+private fun filterDashboardNotifications(
+    notifications: List<DashboardNotification>,
+    filter: MobileNotificationFilter,
+): List<DashboardNotification> = when (filter) {
+    MobileNotificationFilter.ALL -> notifications
+    MobileNotificationFilter.ATTENTION -> notifications.filter { toneColorKey(it.tone) == "attention" }
+    MobileNotificationFilter.UNREAD -> notifications.filter { it.readAt.isNullOrBlank() }
+}
+
+private fun MobileAssistantNotification.toDashboardNotification() = DashboardNotification(
+    id = id,
+    title = title,
+    description = description,
+    tone = tone,
+    source = source,
+    account = account,
+    occurredAt = occurredAt,
+    readAt = readAt,
+    actionType = mobileAction.type,
+    actionLabel = mobileAction.label,
+)
 
 private fun toneColorKey(tone: String): String {
     val normalized = tone.lowercase(Locale.ROOT)
@@ -369,7 +386,7 @@ fun buildMobileMoreSettingsDetail(
 @Composable
 internal fun MobileAssistantScreen(
     session: MobileSession?,
-    dashboard: MobileAssistantDashboard?,
+    dashboardState: DashboardUiState,
     photoTasks: List<MobilePhotoTask>,
     packageScanState: MobilePackageScanUiState,
     statusMessage: String,
@@ -422,8 +439,7 @@ internal fun MobileAssistantScreen(
     onShowPairingHelp: () -> Unit,
     onPairingBack: () -> Unit,
     onCallerIdTestPhoneChange: (String) -> Unit,
-    onRefresh: () -> Unit,
-    onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onDashboardAction: (DashboardAction) -> Unit,
     onSelectTab: (MobileAssistantTab) -> Unit,
     onOrdersSearchChange: (String) -> Unit = {},
     onOrdersFilterChange: (MobileOrderFilter) -> Unit = {},
@@ -437,13 +453,9 @@ internal fun MobileAssistantScreen(
     onToggleProductVariants: (String) -> Unit = {},
     onQuickEditProduct: (MobileProduct, MobileProductQuickEditField, Double) -> Unit = { _, _, _ -> },
     onQuickEditVariant: (MobileProductVariant, MobileVariantQuickEditField, Double) -> Unit = { _, _, _ -> },
-    onOpenNotifications: () -> Unit = {},
     onCloseOverlay: () -> Unit = {},
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
     onMarkNotificationsRead: () -> Unit = {},
-    onTakePhoto: (String) -> Unit,
-    onPickPhoto: (String) -> Unit,
-    onCompletePhotoTask: (String) -> Unit,
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
@@ -455,6 +467,7 @@ internal fun MobileAssistantScreen(
     onOpenAppSystemSettings: () -> Unit = {},
     onDisconnect: () -> Unit,
 ) {
+    val dashboard = dashboardState.contentOrNull()
     val dark = isSystemInDarkTheme()
     val route = if (session == null) {
         MobileRoute.Pairing(
@@ -515,6 +528,7 @@ internal fun MobileAssistantScreen(
                     colors = colors,
                     apiUrl = apiUrl,
                     session = session,
+                    dashboardState = dashboardState,
                     dashboard = dashboard,
                     photoTasks = photoTasks,
                     packageScanState = packageScanState,
@@ -556,8 +570,7 @@ internal fun MobileAssistantScreen(
                         selectedMobileOrder = selectedMobileOrder,
                         selectedMobileOrderLoading = selectedMobileOrderLoading,
                         onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
-                        onRefresh = onRefresh,
-                        onQuickAction = onQuickAction,
+                        onDashboardAction = onDashboardAction,
                         onOrdersSearchChange = onOrdersSearchChange,
                         onOrdersFilterChange = onOrdersFilterChange,
                         onLoadMoreOrders = onLoadMoreOrders,
@@ -570,13 +583,9 @@ internal fun MobileAssistantScreen(
                         onToggleProductVariants = onToggleProductVariants,
                         onQuickEditProduct = onQuickEditProduct,
                         onQuickEditVariant = onQuickEditVariant,
-                        onOpenNotifications = onOpenNotifications,
                         onCloseOverlay = onCloseOverlay,
                         onNotificationFilterChange = onNotificationFilterChange,
                         onMarkNotificationsRead = onMarkNotificationsRead,
-                        onTakePhoto = onTakePhoto,
-                        onPickPhoto = onPickPhoto,
-                        onCompletePhotoTask = onCompletePhotoTask,
                         onEnableCallerId = onEnableCallerId,
                         onTestCallerId = onTestCallerId,
                         onShowCallerIdPreview = onShowCallerIdPreview,
@@ -611,7 +620,8 @@ private fun AssistantContent(
     colors: DlaFlowComposeColors,
     apiUrl: String,
     session: MobileSession,
-    dashboard: MobileAssistantDashboard?,
+    dashboardState: DashboardUiState,
+    dashboard: DashboardContent?,
     photoTasks: List<MobilePhotoTask>,
     packageScanState: MobilePackageScanUiState,
     statusMessage: String,
@@ -652,8 +662,7 @@ private fun AssistantContent(
     selectedMobileOrder: MobileOrderDetail?,
     selectedMobileOrderLoading: Boolean,
     onCallerIdTestPhoneChange: (String) -> Unit,
-    onRefresh: () -> Unit,
-    onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onDashboardAction: (DashboardAction) -> Unit,
     onOrdersSearchChange: (String) -> Unit,
     onOrdersFilterChange: (MobileOrderFilter) -> Unit,
     onLoadMoreOrders: () -> Unit,
@@ -666,13 +675,9 @@ private fun AssistantContent(
     onToggleProductVariants: (String) -> Unit,
     onQuickEditProduct: (MobileProduct, MobileProductQuickEditField, Double) -> Unit,
     onQuickEditVariant: (MobileProductVariant, MobileVariantQuickEditField, Double) -> Unit,
-    onOpenNotifications: () -> Unit,
     onCloseOverlay: () -> Unit,
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
-    onTakePhoto: (String) -> Unit,
-    onPickPhoto: (String) -> Unit,
-    onCompletePhotoTask: (String) -> Unit,
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
@@ -695,12 +700,16 @@ private fun AssistantContent(
             status = "Połączono",
             unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
             unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
-            onOpenNotifications = onOpenNotifications,
+            onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
         )
         if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
             NotificationsScreen(
                 colors = colors,
-                notifications = mobileNotifications.ifEmpty { dashboard?.notifications.orEmpty() },
+                notifications = if (mobileNotifications.isNotEmpty()) {
+                    mobileNotifications.map { it.toDashboardNotification() }
+                } else {
+                    dashboard?.notifications.orEmpty()
+                },
                 loading = mobileNotificationsLoading,
                 selectedFilter = mobileNotificationFilter,
                 onFilterChange = onNotificationFilterChange,
@@ -712,10 +721,7 @@ private fun AssistantContent(
                 MobileAssistantTab.DASHBOARD -> DashboardFeatureScreen(
                     colors = colors,
                     sessionUserName = session.userEmail,
-                    state = DashboardUiState(
-                        contentState = dashboard?.let { DlaFlowUiState.Content(it.toDashboardContent()) }
-                            ?: DlaFlowUiState.Loading,
-                    ),
+                    state = dashboardState,
                     fallbackPhotoTask = photoTasks.firstOrNull()?.let { task ->
                         DashboardPhotoTask(
                             id = task.id,
@@ -728,19 +734,7 @@ private fun AssistantContent(
                             expiresAt = task.expiresAt,
                         )
                     },
-                    onAction = { action ->
-                        when (action) {
-                            DashboardAction.Refresh -> onRefresh()
-                            DashboardAction.ScanPackage -> onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE)
-                            DashboardAction.OpenProductWork -> onQuickAction(MobileAssistantQuickAction.ADD_PRODUCT)
-                            DashboardAction.OpenStatistics -> onQuickAction(MobileAssistantQuickAction.STATS)
-                            DashboardAction.OpenProducts -> onQuickAction(MobileAssistantQuickAction.PRODUCTS)
-                            DashboardAction.OpenNotifications -> onOpenNotifications()
-                            is DashboardAction.TakePhoto -> onTakePhoto(action.taskId)
-                            is DashboardAction.PickPhoto -> onPickPhoto(action.taskId)
-                            is DashboardAction.CompletePhotoTask -> onCompletePhotoTask(action.taskId)
-                        }
-                    },
+                    onAction = onDashboardAction,
                 )
                 MobileAssistantTab.ORDERS -> OrdersTab(
                     colors = colors,
@@ -757,7 +751,7 @@ private fun AssistantContent(
                     mobileOrdersNoAccess = mobileOrdersNoAccess,
                     selectedMobileOrder = selectedMobileOrder,
                     selectedMobileOrderLoading = selectedMobileOrderLoading,
-                    onQuickAction = onQuickAction,
+                    onDashboardAction = onDashboardAction,
                     onOrdersSearchChange = onOrdersSearchChange,
                     onOrdersFilterChange = onOrdersFilterChange,
                         onLoadMoreOrders = onLoadMoreOrders,
@@ -781,18 +775,22 @@ private fun AssistantContent(
                     mobileProductVariantsLoading = mobileProductVariantsLoading,
                     mobileProductsReadOnly = mobileProductsReadOnly,
                     mobileProductsNoAccess = mobileProductsNoAccess,
-                    onRefresh = onRefresh,
+                    onRefresh = { onDashboardAction(DashboardAction.Refresh) },
                     onProductsSearchChange = onProductsSearchChange,
                     onProductsFilterChange = onProductsFilterChange,
                     onLoadMoreProducts = onLoadMoreProducts,
                     onToggleProductVariants = onToggleProductVariants,
                     onQuickEditProduct = onQuickEditProduct,
                     onQuickEditVariant = onQuickEditVariant,
-                    onTakePhoto = onTakePhoto,
-                    onPickPhoto = onPickPhoto,
-                    onCompletePhotoTask = onCompletePhotoTask,
+                    onTakePhoto = { taskId -> onDashboardAction(DashboardAction.TakePhoto(taskId)) },
+                    onPickPhoto = { taskId -> onDashboardAction(DashboardAction.PickPhoto(taskId)) },
+                    onCompletePhotoTask = { taskId -> onDashboardAction(DashboardAction.CompletePhotoTask(taskId)) },
                 )
-                MobileAssistantTab.MESSAGES -> MessagesTab(colors, dashboard, onOpenNotifications)
+                MobileAssistantTab.MESSAGES -> MessagesTab(
+                    colors = colors,
+                    dashboard = dashboard,
+                    onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
+                )
                 MobileAssistantTab.MORE -> MoreTab(
                     colors = colors,
                     session = session,
@@ -846,7 +844,7 @@ private fun OrdersTab(
     colors: DlaFlowComposeColors,
     apiUrl: String,
     mobileToken: String,
-    dashboard: MobileAssistantDashboard?,
+    dashboard: DashboardContent?,
     packageScanState: MobilePackageScanUiState,
     mobileOrders: List<MobileOrderListItem>,
     mobileOrdersNextOffset: Int?,
@@ -857,7 +855,7 @@ private fun OrdersTab(
     mobileOrdersNoAccess: Boolean,
     selectedMobileOrder: MobileOrderDetail?,
     selectedMobileOrderLoading: Boolean,
-    onQuickAction: (MobileAssistantQuickAction) -> Unit,
+    onDashboardAction: (DashboardAction) -> Unit,
     onOrdersSearchChange: (String) -> Unit,
     onOrdersFilterChange: (MobileOrderFilter) -> Unit,
     onLoadMoreOrders: () -> Unit,
@@ -894,7 +892,7 @@ private fun OrdersTab(
         colors = colors,
         scanState = packageScanState,
         onOpenOrder = onOpenScannedOrder,
-        onScanAgain = { onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE) },
+        onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
     )
     LegacyKpiGrid(colors, dashboard?.kpis)
 
@@ -1309,7 +1307,7 @@ private fun ProductsTab(
     colors: DlaFlowComposeColors,
     apiUrl: String,
     mobileToken: String,
-    dashboard: MobileAssistantDashboard?,
+    dashboard: DashboardContent?,
     photoTasks: List<MobilePhotoTask>,
     mobileProducts: List<MobileProduct>,
     mobileProductsNextCursor: String?,
@@ -2375,7 +2373,7 @@ private fun parseQuickEditInput(value: String): Double? {
     return normalized.toDoubleOrNull()?.takeIf { it.isFinite() }
 }
 
-private fun MobileAssistantPhotoTask.toMobilePhotoTask(): MobilePhotoTask {
+private fun DashboardPhotoTask.toMobilePhotoTask(): MobilePhotoTask {
     return MobilePhotoTask(
         id = id,
         productName = productName,
@@ -2520,26 +2518,25 @@ private fun PackageScannerCard(
 }
 
 @Composable
-private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?, onOpenNotifications: () -> Unit) {
+private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: DashboardContent?, onOpenNotifications: () -> Unit) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
     LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
 }
 
 @Composable
-private fun LegacyKpiGrid(colors: DlaFlowComposeColors, kpis: MobileAssistantKpis?) {
-    val visibleKpis = kpis ?: MobileAssistantKpis(0, 0, 0, 0)
+private fun LegacyKpiGrid(colors: DlaFlowComposeColors, kpis: DashboardKpis?) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), (kpis?.newOrders ?: 0).toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), (kpis?.toShip ?: 0).toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), (kpis?.overdueOrProblems ?: 0).toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_messages), (kpis?.messages ?: 0).toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun LegacyNotificationsList(
     colors: DlaFlowComposeColors,
-    notifications: List<MobileAssistantNotification>,
+    notifications: List<DashboardNotification>,
     onOpenNotifications: () -> Unit,
 ) {
     DlaFlowNotificationPreviewCard(
@@ -2572,7 +2569,7 @@ private fun LegacyNotificationsList(
 private fun MoreTab(
     colors: DlaFlowComposeColors,
     session: MobileSession,
-    dashboard: MobileAssistantDashboard?,
+    dashboard: DashboardContent?,
     statusMessage: String,
     callerIdTestPhone: String,
     callerIdPreview: MobileCallerIdLookup?,
@@ -2928,7 +2925,7 @@ private fun MoreDetailRow(colors: DlaFlowComposeColors, label: String, value: St
 private fun MoreAccountCard(
     colors: DlaFlowComposeColors,
     session: MobileSession,
-    dashboard: MobileAssistantDashboard?,
+    dashboard: DashboardContent?,
 ) {
     val displayName = dashboard?.userName?.takeIf { it.isNotBlank() }
         ?: session.userEmail.substringBefore("@").replaceFirstChar { char -> char.uppercase(Locale("pl", "PL")) }
@@ -3319,7 +3316,7 @@ private fun AssistantPhotoTaskCard(
 @Composable
 private fun NotificationsScreen(
     colors: DlaFlowComposeColors,
-    notifications: List<MobileAssistantNotification>,
+    notifications: List<DashboardNotification>,
     loading: Boolean,
     selectedFilter: MobileNotificationFilter,
     onFilterChange: (MobileNotificationFilter) -> Unit,
@@ -3351,7 +3348,7 @@ private fun NotificationsScreen(
             DlaFlowScreenHeader(colors, "Powiadomienia", "Sprawy z panelu i telefonu")
         }
         NotificationFilterTabs(colors, selectedFilter, onFilterChange)
-        val visible = filterNotifications(notifications, selectedFilter)
+        val visible = filterDashboardNotifications(notifications, selectedFilter)
         DlaFlowCard(colors, accent = visible.any { toneColorKey(it.tone) == "attention" }) {
             if (loading && notifications.isEmpty()) {
                 NotificationEmptyRow(colors, "Ładujemy powiadomienia", "Za chwilę pokażemy najnowsze sprawy z panelu.")
@@ -3427,7 +3424,7 @@ private fun NotificationFilterTabs(
 }
 
 @Composable
-private fun NotificationRow(colors: DlaFlowComposeColors, notification: MobileAssistantNotification) {
+private fun NotificationRow(colors: DlaFlowComposeColors, notification: DashboardNotification) {
     DlaFlowNotificationRow(
         colors = colors,
         title = notification.title,
@@ -3471,7 +3468,7 @@ private fun TrendPill(colors: DlaFlowComposeColors, value: Double) {
 private fun BottomNavigation(
     colors: DlaFlowComposeColors,
     selectedTab: MobileAssistantTab,
-    dashboard: MobileAssistantDashboard?,
+    dashboard: DashboardContent?,
     onSelectTab: (MobileAssistantTab) -> Unit,
 ) {
     Column(
@@ -3575,7 +3572,7 @@ private fun tabIcon(tab: MobileAssistantTab): ImageVector {
     }
 }
 
-private fun navBadge(tab: MobileAssistantTab, dashboard: MobileAssistantDashboard?): Int {
+private fun navBadge(tab: MobileAssistantTab, dashboard: DashboardContent?): Int {
     val kpis = dashboard?.kpis ?: return 0
     return when (tab) {
         MobileAssistantTab.ORDERS -> kpis.newOrders
