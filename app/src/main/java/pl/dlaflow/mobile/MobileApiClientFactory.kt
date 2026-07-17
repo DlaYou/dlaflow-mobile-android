@@ -15,3 +15,11 @@ internal fun mobileApiClientForBaseUrl(baseUrl: String, sessionStore: MobileSess
         deviceIdProvider = { sessionStore?.readDeviceId().orEmpty() },
     )
 }
+
+internal fun mobileApiClientForDevice(baseUrl: String, deviceId: String): MobileApiClient {
+    return MobileApiClient(
+        baseUrl = baseUrl,
+        requestSigner = AndroidKeystoreMobileRequestSigner(),
+        deviceIdProvider = { deviceId },
+    )
+}
