@@ -8,9 +8,13 @@ internal class DashboardCoordinator(
     private val executor: Executor,
     private val postToMain: (() -> Unit) -> Unit,
     private val onFeedback: (DashboardFeedback) -> Unit,
-    private val onUnauthorized: (Throwable) -> Unit,
+    private val onUnauthorized: (Throwable, Boolean) -> Unit,
 ) {
-    fun refresh(token: String, showFeedback: Boolean) {
+    fun refresh(
+        token: String,
+        showFeedback: Boolean,
+        allowUnauthorizedRetry: Boolean = true,
+    ) {
         val request = stateHolder.beginLoad(token)
         if (showFeedback) onFeedback(DashboardFeedback.REFRESHING)
 
@@ -28,7 +32,9 @@ internal class DashboardCoordinator(
                 postToMain {
                     when (failure) {
                         DashboardFailure.Unauthorized -> {
-                            if (stateHolder.acceptUnauthorized(request)) onUnauthorized(error)
+                            if (stateHolder.acceptUnauthorized(request)) {
+                                onUnauthorized(error, allowUnauthorizedRetry)
+                            }
                         }
 
                         DashboardFailure.NoAccess -> {

@@ -120,20 +120,7 @@ class MainActivity : ComponentActivity() {
             executor = executor,
             postToMain = { action -> runOnUiThread(action) },
             onFeedback = ::handleDashboardFeedback,
-            onUnauthorized = { error ->
-                val allowSingleRetry = !dashboardUnauthorizedRetryPending
-                dashboardUnauthorizedRetryPending = false
-                confirmRevokedSession(
-                    error = error,
-                    fallbackMessage = "Nie udało się odświeżyć pulpitu.",
-                    showNonAuthStatus = true,
-                    onSessionValid = {
-                        if (allowSingleRetry) {
-                            retryDashboardAfterConfirmedSession()
-                        }
-                    },
-                )
-            },
+            onUnauthorized = ::handleDashboardUnauthorized,
         )
     }
     private val pairingStateHolder = PairingStateHolder()
@@ -157,7 +144,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var callerIdTestPhoneInput: EditText
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
     private var sessionTransitionStartedAt: Long = 0L
-    private var dashboardUnauthorizedRetryPending = false
     private var callerIdPreview by mutableStateOf<MobileCallerIdLookup?>(null)
     private var focusedPhotoTaskId: String? = null
     private var focusedPhotoTaskView: View? = null
@@ -913,9 +899,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDashboardFeedback(feedback: DashboardFeedback) {
-        if (feedback != DashboardFeedback.REFRESHING) {
-            dashboardUnauthorizedRetryPending = false
-        }
         setStatus(
             when (feedback) {
                 DashboardFeedback.REFRESHING -> "Odświeżam pulpit asystenta..."
@@ -925,10 +908,26 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun handleDashboardUnauthorized(error: Throwable, allowRetry: Boolean) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się odświeżyć pulpitu.",
+            showNonAuthStatus = true,
+            onSessionValid = {
+                if (allowRetry) {
+                    retryDashboardAfterConfirmedSession()
+                }
+            },
+        )
+    }
+
     private fun retryDashboardAfterConfirmedSession() {
         val currentSession = session ?: return
-        dashboardUnauthorizedRetryPending = true
-        dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
+        dashboardCoordinator.refresh(
+            token = currentSession.token,
+            showFeedback = true,
+            allowUnauthorizedRetry = false,
+        )
     }
 
     private fun handlePairingQrResult(rawValue: String?) {
@@ -2184,7 +2183,6 @@ class MainActivity : ComponentActivity() {
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
-        dashboardUnauthorizedRetryPending = false
         dashboardCoordinator.reset()
         photoTasks = emptyList()
         callerIdPreview = null

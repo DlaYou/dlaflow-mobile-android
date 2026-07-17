@@ -138,6 +138,7 @@ internal data class DashboardLayoutPolicy(
     val quickActionLabelMaxLines: Int,
     val quickActionSubtitleMaxLines: Int,
     val stackRevenueComparison: Boolean,
+    val kpiColumns: Int,
 )
 
 internal fun dashboardLayoutPolicy(widthDp: Int, fontScale: Float): DashboardLayoutPolicy {
@@ -150,6 +151,7 @@ internal fun dashboardLayoutPolicy(widthDp: Int, fontScale: Float): DashboardLay
             quickActionLabelMaxLines = 2,
             quickActionSubtitleMaxLines = 2,
             stackRevenueComparison = true,
+            kpiColumns = 2,
         )
     } else {
         DashboardLayoutPolicy(
@@ -159,6 +161,7 @@ internal fun dashboardLayoutPolicy(widthDp: Int, fontScale: Float): DashboardLay
             quickActionLabelMaxLines = 1,
             quickActionSubtitleMaxLines = 1,
             stackRevenueComparison = false,
+            kpiColumns = 4,
         )
     }
 }

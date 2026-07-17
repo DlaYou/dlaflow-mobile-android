@@ -4,6 +4,7 @@ Set-StrictMode -Version Latest
 $root = Split-Path -Parent $PSScriptRoot
 $activityPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/MainActivity.kt"
 $legacyScreenPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt"
+$mobileApiPath = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/mobile_api.kt"
 $featureRoot = Join-Path $root "app/src/main/java/pl/dlaflow/mobile/feature/dashboard"
 $requiredFeatureFiles = @(
     "DashboardContract.kt",
@@ -22,7 +23,7 @@ foreach ($fileName in $requiredFeatureFiles) {
     }
 }
 
-foreach ($path in @($activityPath, $legacyScreenPath)) {
+foreach ($path in @($activityPath, $legacyScreenPath, $mobileApiPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Required dashboard host file is missing: $path"
     }
@@ -34,6 +35,12 @@ $featureSource = (
 ) -join [Environment]::NewLine
 $activitySource = Get-Content -LiteralPath $activityPath -Raw
 $legacyScreenSource = Get-Content -LiteralPath $legacyScreenPath -Raw
+$mobileApiSource = Get-Content -LiteralPath $mobileApiPath -Raw
+
+$canonicalDashboardTransport = 'getJson("/api/mobile/assistant/dashboard", token)'
+if (-not $mobileApiSource.Contains($canonicalDashboardTransport)) {
+    throw "Canonical mobile dashboard endpoint marker is missing: $canonicalDashboardTransport"
+}
 
 $forbiddenFeatureDependencies = @(
     "MainActivity",

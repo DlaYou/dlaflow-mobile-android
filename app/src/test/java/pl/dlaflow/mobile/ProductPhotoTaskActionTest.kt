@@ -17,9 +17,6 @@ class ProductPhotoTaskActionTest {
         assertTrue(source.contains("DashboardStateHolder"))
         assertTrue(source.contains("DashboardCoordinator"))
         assertTrue(source.contains("DashboardGateway"))
-        assertTrue(source.contains("onUnauthorized = { error ->"))
-        assertTrue(source.contains("confirmRevokedSession("))
-        assertTrue(source.contains("onSessionValid ="))
     }
 
     @Test

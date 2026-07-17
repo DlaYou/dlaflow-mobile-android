@@ -1,6 +1,4 @@
 package pl.dlaflow.mobile.feature.dashboard
-
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -17,6 +15,7 @@ class DashboardLayoutPolicyTest {
         assertEquals(1, policy.quickActionLabelMaxLines)
         assertEquals(1, policy.quickActionSubtitleMaxLines)
         assertFalse(policy.stackRevenueComparison)
+        assertEquals(4, policy.kpiColumns)
     }
 
     @Test
@@ -29,17 +28,6 @@ class DashboardLayoutPolicyTest {
         assertEquals(2, policy.quickActionLabelMaxLines)
         assertEquals(2, policy.quickActionSubtitleMaxLines)
         assertTrue(policy.stackRevenueComparison)
-    }
-
-    @Test
-    fun `dashboard applies responsive policy to every owned fixed height area`() {
-        val source = File("src/main/java/pl/dlaflow/mobile/feature/dashboard/DashboardScreen.kt").readText()
-
-        assertTrue(source.contains("dashboardLayoutPolicy("))
-        assertTrue(source.contains("layoutPolicy.revenueCardHeightDp.dp"))
-        assertTrue(source.contains("layoutPolicy.kpiTileHeightDp.dp"))
-        assertTrue(source.contains("layoutPolicy.quickActionHeightDp.dp"))
-        assertTrue(source.contains("maxLines = layoutPolicy.quickActionLabelMaxLines"))
-        assertTrue(source.contains("maxLines = layoutPolicy.quickActionSubtitleMaxLines"))
+        assertEquals(2, policy.kpiColumns)
     }
 }

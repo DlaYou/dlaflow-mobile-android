@@ -585,9 +585,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-pairing-featu
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-dashboard-feature-boundary.ps1
 $env:ANDROID_HOME='C:\Users\Maciej\AppData\Local\Android\Sdk'
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon
 ```
 
-Expected: four boundary scripts report OK and Gradle reports `BUILD SUCCESSFUL`.
+Expected: four boundary scripts report OK, unit/lint/assemble report `BUILD SUCCESSFUL`, and the official Compose UI instrumentation suite passes on the selected emulator/device.
 
 - [ ] **Step 2: Verify scope and release metadata**
 
@@ -597,7 +598,7 @@ git diff --check origin/main..HEAD
 git status --short --branch
 ```
 
-Expected: no version/workflow diff, no whitespace errors and no uncommitted files.
+Expected: `versionCode`/`versionName` and workflow remain unchanged. The review-driven `app/build.gradle.kts` diff may contain only the instrumentation runner plus `androidTest`/debug Compose test dependencies. There are no whitespace errors or uncommitted files.
 
 - [ ] **Step 3: Perform visual and interaction smoke**
 

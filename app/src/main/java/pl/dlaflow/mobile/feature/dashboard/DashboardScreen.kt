@@ -443,13 +443,44 @@ private fun KpiGrid(
     layoutPolicy: DashboardLayoutPolicy,
 ) {
     val visibleKpis = kpis ?: DashboardKpis(0, 0, 0, 0)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, layoutPolicy, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, layoutPolicy, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, layoutPolicy, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, layoutPolicy, Modifier.weight(1f))
+    val items = listOf(
+        DashboardKpiItem(stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary),
+        DashboardKpiItem(stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange),
+        DashboardKpiItem(stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success),
+        DashboardKpiItem(stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info),
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        items.chunked(layoutPolicy.kpiColumns).forEach { rowItems ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                rowItems.forEach { item ->
+                    KpiTile(
+                        colors = colors,
+                        label = item.label,
+                        value = item.value,
+                        icon = item.icon,
+                        iconColor = item.iconColor,
+                        layoutPolicy = layoutPolicy,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                repeat(layoutPolicy.kpiColumns - rowItems.size) {
+                    Spacer(Modifier.weight(1f))
+                }
+            }
+        }
     }
 }
+
+private data class DashboardKpiItem(
+    val label: String,
+    val value: String,
+    val icon: ImageVector,
+    val iconColor: Color,
+)
 
 @Composable
 private fun KpiTile(

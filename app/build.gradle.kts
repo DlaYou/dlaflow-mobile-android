@@ -14,6 +14,7 @@ android {
         targetSdk = 35
         versionCode = 17
         versionName = "0.4.3"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
 
@@ -81,6 +82,11 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
     debugImplementation(composeBom)
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

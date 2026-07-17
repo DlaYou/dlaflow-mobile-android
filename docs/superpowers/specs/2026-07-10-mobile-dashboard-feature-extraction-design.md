@@ -187,6 +187,8 @@ Implementation follows TDD. Focused unit tests cover:
 
 Existing notification and photo-task tests must be updated away from brittle source-string assertions where practical. They must continue proving the same user behavior.
 
+Review-driven acceptance hardening added on 2026-07-17 uses the official Compose UI instrumentation stack. Device tests render real dashboard states and verify retry/open-notifications clicks, retained content, no-access action suppression, refresh progress, and a 48 dp notification action with button semantics. Focused unit tests enforce the responsive two-column KPI policy and request-chain-scoped unauthorized retry allowance; neither decision is stored as activity-global state.
+
 A new `scripts/verify-dashboard-feature-boundary.ps1` gate verifies at minimum:
 
 - required dashboard feature files exist;
@@ -205,6 +207,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-design-system
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-pairing-feature-boundary.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-dashboard-feature-boundary.ps1
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon
 ```
 
 Required visual/interaction verification:

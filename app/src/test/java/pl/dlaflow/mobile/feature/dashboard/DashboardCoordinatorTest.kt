@@ -60,7 +60,7 @@ class DashboardCoordinatorTest {
 
         assertEquals(300.0, harness.holder.state.contentOrNull()!!.todayRevenue, 0.0)
         assertTrue(harness.feedback.isEmpty())
-        assertTrue(harness.unauthorizedErrors.isEmpty())
+        assertTrue(harness.unauthorizedEvents.isEmpty())
     }
 
     @Test
@@ -113,7 +113,7 @@ class DashboardCoordinatorTest {
             listOf(DashboardFeedback.REFRESHING, DashboardFeedback.LOAD_FAILED),
             harness.feedback,
         )
-        assertTrue(harness.unauthorizedErrors.isEmpty())
+        assertTrue(harness.unauthorizedEvents.isEmpty())
     }
 
     @Test
@@ -133,9 +133,61 @@ class DashboardCoordinatorTest {
         harness.mainQueue.runAll()
 
         assertEquals(DashboardUiState(), harness.holder.state)
-        assertEquals(1, harness.unauthorizedErrors.size)
-        assertSame(currentError, harness.unauthorizedErrors.single())
+        assertEquals(1, harness.unauthorizedEvents.size)
+        assertSame(currentError, harness.unauthorizedEvents.single().error)
+        assertTrue(harness.unauthorizedEvents.single().allowRetry)
         assertTrue(harness.feedback.isEmpty())
+    }
+
+    @Test
+    fun `second unauthorized in the same retry chain carries exhausted retry budget`() {
+        val firstError = MobileApiException(401, "AUTH_REQUIRED", "first")
+        val retryError = MobileApiException(401, "AUTH_REQUIRED", "retry")
+        val harness = CoordinatorHarness(
+            gateway = DashboardGateway { token ->
+                throw if (token == "initial") firstError else retryError
+            },
+        )
+
+        harness.coordinator.refresh("initial", showFeedback = false)
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        harness.coordinator.refresh(
+            token = "retry",
+            showFeedback = false,
+            allowUnauthorizedRetry = false,
+        )
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(listOf(true, false), harness.unauthorizedEvents.map { it.allowRetry })
+        assertSame(firstError, harness.unauthorizedEvents.first().error)
+        assertSame(retryError, harness.unauthorizedEvents.last().error)
+    }
+
+    @Test
+    fun `stale retry chain cannot consume retry budget of next independent request`() {
+        val staleRetryError = MobileApiException(401, "AUTH_REQUIRED", "stale-retry")
+        val independentError = MobileApiException(401, "AUTH_REQUIRED", "independent")
+        val harness = CoordinatorHarness(
+            gateway = DashboardGateway { token ->
+                throw if (token == "retry-chain") staleRetryError else independentError
+            },
+        )
+
+        harness.coordinator.refresh(
+            token = "retry-chain",
+            showFeedback = false,
+            allowUnauthorizedRetry = false,
+        )
+        harness.coordinator.refresh("independent", showFeedback = false)
+        harness.executor.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runAll()
+
+        assertEquals(1, harness.unauthorizedEvents.size)
+        assertSame(independentError, harness.unauthorizedEvents.single().error)
+        assertTrue(harness.unauthorizedEvents.single().allowRetry)
     }
 
     @Test
@@ -151,7 +203,7 @@ class DashboardCoordinatorTest {
 
         assertEquals(DashboardUiState(), harness.holder.state)
         assertEquals(listOf(DashboardFeedback.REFRESHING), harness.feedback)
-        assertTrue(harness.unauthorizedErrors.isEmpty())
+        assertTrue(harness.unauthorizedEvents.isEmpty())
     }
 
     @Test
@@ -188,7 +240,7 @@ private class CoordinatorHarness(gateway: DashboardGateway) {
     val executor = QueuedExecutor()
     val mainQueue = MainQueue()
     val feedback = mutableListOf<DashboardFeedback>()
-    val unauthorizedErrors = mutableListOf<Throwable>()
+    val unauthorizedEvents = mutableListOf<UnauthorizedEvent>()
 
     val coordinator = DashboardCoordinator(
         stateHolder = holder,
@@ -196,9 +248,16 @@ private class CoordinatorHarness(gateway: DashboardGateway) {
         executor = executor,
         postToMain = mainQueue::post,
         onFeedback = feedback::add,
-        onUnauthorized = unauthorizedErrors::add,
+        onUnauthorized = { error, allowRetry ->
+            unauthorizedEvents += UnauthorizedEvent(error, allowRetry)
+        },
     )
 }
+
+private data class UnauthorizedEvent(
+    val error: Throwable,
+    val allowRetry: Boolean,
+)
 
 private class QueuedExecutor : Executor {
     private val tasks = ArrayDeque<Runnable>()
