@@ -90,9 +90,14 @@ internal fun DashboardFeatureScreen(
 @Suppress("UNUSED_PARAMETER")
 @Composable
 private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefresh: () -> Unit) {
+    val firstName = displayFirstName(
+        value = userName,
+        displayFallback = stringResource(R.string.dashboard_name_fallback_display),
+        firstNameFallback = stringResource(R.string.dashboard_name_fallback_first),
+    )
     DlaFlowScreenHeader(
         colors = colors,
-        title = stringResource(R.string.dashboard_greeting, displayFirstName(userName)),
+        title = stringResource(R.string.dashboard_greeting, firstName),
         subtitle = stringResource(R.string.dashboard_greeting_subtitle),
     )
 }
@@ -424,14 +429,18 @@ private fun ActivePhotoTaskSection(
     )
 }
 
-private fun displayFirstName(value: String): String {
+private fun displayFirstName(
+    value: String,
+    displayFallback: String,
+    firstNameFallback: String,
+): String {
     val clean = value.trim()
     val name = if (clean.isBlank()) {
-        "DlaFlow"
+        displayFallback
     } else {
         clean.substringBefore("@").replaceFirstChar { it.titlecase(Locale.getDefault()) }
     }
-    return name.substringBefore(" ").ifBlank { "Maciek" }
+    return name.substringBefore(" ").ifBlank { firstNameFallback }
 }
 
 private fun formatMoney(value: Double): String {
@@ -444,14 +453,17 @@ private fun shortTime(value: String): String {
     }.getOrDefault("")
 }
 
+@Composable
 private fun relativeTime(value: String): String {
-    return runCatching {
-        val minutes = Duration.between(OffsetDateTime.parse(value), OffsetDateTime.now()).toMinutes().coerceAtLeast(0)
-        when {
-            minutes < 1 -> "teraz"
-            minutes < 60 -> "$minutes min temu"
-            minutes < 24 * 60 -> "${minutes / 60}h"
-            else -> "${minutes / (24 * 60)}d"
-        }
-    }.getOrDefault(shortTime(value))
+    val minutes = runCatching {
+        Duration.between(OffsetDateTime.parse(value), OffsetDateTime.now()).toMinutes().coerceAtLeast(0)
+    }.getOrNull()
+
+    return when {
+        minutes == null -> shortTime(value)
+        minutes < 1 -> stringResource(R.string.dashboard_time_now)
+        minutes < 60 -> stringResource(R.string.dashboard_time_minutes_ago, minutes)
+        minutes < 24 * 60 -> stringResource(R.string.dashboard_time_hours_ago, minutes / 60)
+        else -> stringResource(R.string.dashboard_time_days_ago, minutes / (24 * 60))
+    }
 }

@@ -84,6 +84,8 @@
     <string name="pairing_help_mock_code">ABC-123</string>
     <string name="dashboard_greeting">Dzień dobry, %1$s! 👋</string>
     <string name="dashboard_greeting_subtitle">Oto co dzieje się w Twoim sklepie</string>
+    <string name="dashboard_name_fallback_display">DlaFlow</string>
+    <string name="dashboard_name_fallback_first">Maciek</string>
     <string name="dashboard_revenue_today">Przychód dzisiaj</string>
     <string name="dashboard_revenue_change_up">↑ %1$s%%</string>
     <string name="dashboard_revenue_change_down">↓ %1$s%%</string>
@@ -114,4 +116,8 @@
     <string name="dashboard_photo_task_take">Zrób</string>
     <string name="dashboard_photo_task_pick">Wybierz</string>
     <string name="dashboard_photo_task_complete">Zakończ zadanie</string>
+    <string name="dashboard_time_now">teraz</string>
+    <string name="dashboard_time_minutes_ago">%1$d min temu</string>
+    <string name="dashboard_time_hours_ago">%1$dh</string>
+    <string name="dashboard_time_days_ago">%1$dd</string>
 </resources>
