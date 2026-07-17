@@ -44,11 +44,11 @@ class MobileNotificationsTest {
 
     @Test
     fun `dashboard notification entry points are clickable`() {
-        val source = File("src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt").readText()
+        val source = File("src/main/java/pl/dlaflow/mobile/feature/dashboard/DashboardScreen.kt").readText()
 
-        assertTrue(source.contains("private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<MobileAssistantNotification>, onOpenNotifications: () -> Unit)"))
-        assertTrue(source.contains(".clickable { onOpenNotifications() }"))
-        assertTrue(source.contains("NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)"))
+        assertTrue(source.contains("DashboardAction.OpenNotifications"))
+        assertFalse(source.contains("import pl.dlaflow.mobile.MainActivity"))
+        assertFalse(source.contains("import pl.dlaflow.mobile.MobileApiClient"))
     }
 
     @Test

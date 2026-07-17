@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -94,14 +93,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -130,6 +127,11 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
+import pl.dlaflow.mobile.core.designsystem.DlaFlowKpiTile
+import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationEmptyRow
+import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationPreviewCard
+import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationRow
+import pl.dlaflow.mobile.core.designsystem.DlaFlowPhotoTaskCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowPrimaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
@@ -137,10 +139,15 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusBadge
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusStrip
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTextField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
+import pl.dlaflow.mobile.core.state.DlaFlowUiState
+import pl.dlaflow.mobile.feature.dashboard.DashboardAction
+import pl.dlaflow.mobile.feature.dashboard.DashboardFeatureScreen
+import pl.dlaflow.mobile.feature.dashboard.DashboardPhotoTask
+import pl.dlaflow.mobile.feature.dashboard.DashboardUiState
+import pl.dlaflow.mobile.feature.dashboard.toDashboardContent
 import pl.dlaflow.mobile.feature.pairing.PairingFeatureScreen
 import pl.dlaflow.mobile.feature.pairing.PairingStep
 import pl.dlaflow.mobile.feature.pairing.PairingUiState
-import kotlin.math.sqrt
 
 enum class MobileAssistantQuickAction {
     SCAN_PACKAGE,
@@ -702,7 +709,39 @@ private fun AssistantContent(
             )
         } else {
             when (selectedTab) {
-                MobileAssistantTab.DASHBOARD -> DashboardTab(colors, session, dashboard, photoTasks, onRefresh, onQuickAction, onOpenNotifications, onTakePhoto, onPickPhoto, onCompletePhotoTask)
+                MobileAssistantTab.DASHBOARD -> DashboardFeatureScreen(
+                    colors = colors,
+                    sessionUserName = session.userEmail,
+                    state = DashboardUiState(
+                        contentState = dashboard?.let { DlaFlowUiState.Content(it.toDashboardContent()) }
+                            ?: DlaFlowUiState.Loading,
+                    ),
+                    fallbackPhotoTask = photoTasks.firstOrNull()?.let { task ->
+                        DashboardPhotoTask(
+                            id = task.id,
+                            productName = task.productName,
+                            productSku = task.productSku,
+                            productImage = "",
+                            status = task.status,
+                            mediaCount = task.mediaCount,
+                            maxPhotos = task.maxPhotos,
+                            expiresAt = task.expiresAt,
+                        )
+                    },
+                    onAction = { action ->
+                        when (action) {
+                            DashboardAction.Refresh -> onRefresh()
+                            DashboardAction.ScanPackage -> onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE)
+                            DashboardAction.OpenProductWork -> onQuickAction(MobileAssistantQuickAction.ADD_PRODUCT)
+                            DashboardAction.OpenStatistics -> onQuickAction(MobileAssistantQuickAction.STATS)
+                            DashboardAction.OpenProducts -> onQuickAction(MobileAssistantQuickAction.PRODUCTS)
+                            DashboardAction.OpenNotifications -> onOpenNotifications()
+                            is DashboardAction.TakePhoto -> onTakePhoto(action.taskId)
+                            is DashboardAction.PickPhoto -> onPickPhoto(action.taskId)
+                            is DashboardAction.CompletePhotoTask -> onCompletePhotoTask(action.taskId)
+                        }
+                    },
+                )
                 MobileAssistantTab.ORDERS -> OrdersTab(
                     colors = colors,
                     apiUrl = apiUrl,
@@ -803,47 +842,6 @@ private fun shouldShowAssistantStatus(message: String): Boolean {
 }
 
 @Composable
-private fun DashboardTab(
-    colors: DlaFlowComposeColors,
-    session: MobileSession,
-    dashboard: MobileAssistantDashboard?,
-    photoTasks: List<MobilePhotoTask>,
-    onRefresh: () -> Unit,
-    onQuickAction: (MobileAssistantQuickAction) -> Unit,
-    onOpenNotifications: () -> Unit,
-    onTakePhoto: (String) -> Unit,
-    onPickPhoto: (String) -> Unit,
-    onCompletePhotoTask: (String) -> Unit,
-) {
-    GreetingRow(colors, dashboard?.userName ?: session.userEmail, onRefresh)
-    RevenueCard(colors, dashboard)
-    KpiGrid(colors, dashboard)
-    NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
-    QuickActions(colors, onQuickAction)
-    val activeTask = dashboard?.activePhotoTask
-    if (activeTask != null) {
-        AssistantPhotoTaskCard(
-            colors = colors,
-            task = MobilePhotoTask(
-                id = activeTask.id,
-                productName = activeTask.productName,
-                productSku = activeTask.productSku,
-                status = activeTask.status,
-                mediaCount = activeTask.mediaCount,
-                maxPhotos = activeTask.maxPhotos,
-                expiresAt = activeTask.expiresAt,
-            ),
-            highlighted = true,
-            onTakePhoto = onTakePhoto,
-            onPickPhoto = onPickPhoto,
-            onCompletePhotoTask = onCompletePhotoTask,
-        )
-    } else if (photoTasks.isNotEmpty()) {
-        AssistantPhotoTaskCard(colors, photoTasks.first(), true, onTakePhoto, onPickPhoto, onCompletePhotoTask)
-    }
-}
-
-@Composable
 private fun OrdersTab(
     colors: DlaFlowComposeColors,
     apiUrl: String,
@@ -898,7 +896,7 @@ private fun OrdersTab(
         onOpenOrder = onOpenScannedOrder,
         onScanAgain = { onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE) },
     )
-    KpiGrid(colors, dashboard)
+    LegacyKpiGrid(colors, dashboard?.kpis)
 
     when {
         mobileOrdersLoading && mobileOrders.isEmpty() -> OrderListSkeleton(colors)
@@ -2524,7 +2522,50 @@ private fun PackageScannerCard(
 @Composable
 private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?, onOpenNotifications: () -> Unit) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
-    NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
+    LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
+}
+
+@Composable
+private fun LegacyKpiGrid(colors: DlaFlowComposeColors, kpis: MobileAssistantKpis?) {
+    val visibleKpis = kpis ?: MobileAssistantKpis(0, 0, 0, 0)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun LegacyNotificationsList(
+    colors: DlaFlowComposeColors,
+    notifications: List<MobileAssistantNotification>,
+    onOpenNotifications: () -> Unit,
+) {
+    DlaFlowNotificationPreviewCard(
+        colors = colors,
+        heading = stringResource(R.string.dashboard_notifications_heading),
+        openAllLabel = stringResource(R.string.dashboard_notifications_open_all),
+        emptyTitle = stringResource(R.string.dashboard_notifications_empty_title),
+        emptySubtitle = stringResource(R.string.dashboard_notifications_empty_subtitle),
+        isEmpty = notifications.isEmpty(),
+        onOpenNotifications = onOpenNotifications,
+    ) {
+        Column {
+            notifications.take(4).forEachIndexed { index, notification ->
+                NotificationRow(colors, notification)
+                if (index < notifications.take(4).lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 40.dp)
+                            .height(1.dp)
+                            .background(colors.borderSubtle),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -3201,15 +3242,6 @@ private fun AppHeader(
 }
 
 @Composable
-private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefresh: () -> Unit) {
-    DlaFlowScreenHeader(
-        colors = colors,
-        title = "Dzień dobry, ${displayFirstName(userName)}! 👋",
-        subtitle = "Oto co dzieje się w Twoim sklepie",
-    )
-}
-
-@Composable
 private fun NotificationBell(
     colors: DlaFlowComposeColors,
     unreadCount: Int,
@@ -3257,264 +3289,6 @@ private fun NotificationBell(
 }
 
 @Composable
-private fun RevenueCard(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?) {
-    val changePercent = dashboard?.revenueChangePercent ?: 0.0
-    val positive = changePercent >= 0.0
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(104.dp)
-            .clip(RoundedCornerShape(15.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(colors.primaryDeep, colors.primary, colors.primaryGlow),
-                    start = Offset(0f, 0f),
-                    end = Offset(760f, 440f),
-                ),
-            )
-            .padding(horizontal = 17.dp, vertical = 13.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxWidth(0.62f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = "Przychód dzisiaj",
-                color = Color.White.copy(alpha = 0.78f),
-                fontSize = 10.5.sp,
-                fontFamily = DlaFlowInter,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = formatMoney(dashboard?.todayRevenue ?: 0.0),
-                color = Color.White,
-                fontSize = 21.5.sp,
-                fontFamily = DlaFlowInter,
-                fontWeight = FontWeight.ExtraBold,
-                lineHeight = 24.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (positive) {
-                        "↑ ${String.format(Locale.US, "%.1f", changePercent)}%"
-                    } else {
-                        "↓ ${String.format(Locale.US, "%.1f", kotlin.math.abs(changePercent))}%"
-                    },
-                    color = if (positive) colors.heroPositive else colors.heroNegative,
-                    fontSize = 8.5.sp,
-                    fontFamily = DlaFlowInter,
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 11.sp,
-                    maxLines = 1,
-                )
-                Text(
-                    text = if (positive) " więcej niż wczoraj" else " mniej niż wczoraj",
-                    color = Color.White.copy(alpha = 0.84f),
-                    fontSize = 8.5.sp,
-                    fontFamily = DlaFlowInter,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .width(76.dp)
-                .height(30.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color.White.copy(alpha = 0.13f))
-                .padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Text("Szczegóły", color = Color.White, fontSize = 8.5.sp, fontFamily = DlaFlowInter, fontWeight = FontWeight.ExtraBold)
-            Spacer(Modifier.width(1.dp))
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(13.dp),
-            )
-        }
-        RevenueTrendChart(
-            colors = colors,
-            trend = dashboard?.trend.orEmpty(),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .width(154.dp)
-                .height(44.dp)
-                .padding(end = 12.dp, bottom = 4.dp),
-        )
-    }
-}
-
-@Composable
-private fun RevenueTrendChart(colors: DlaFlowComposeColors, trend: List<MobileAssistantTrendPoint>, modifier: Modifier = Modifier) {
-    val points = revenueSparklinePoints(trend)
-
-    Canvas(modifier = modifier) {
-        val topInset = 3.dp.toPx()
-        val bottomInset = 7.dp.toPx()
-        val drawingHeight = (size.height - topInset - bottomInset).coerceAtLeast(1f)
-        val baselineY = size.height - 3.dp.toPx()
-        drawLine(
-            color = Color.White.copy(alpha = 0.16f),
-            start = Offset(0f, baselineY),
-            end = Offset(size.width, baselineY),
-            strokeWidth = 1.dp.toPx(),
-        )
-        if (points.isEmpty()) {
-            return@Canvas
-        }
-        val step = size.width / (points.size - 1).coerceAtLeast(1)
-        val path = Path()
-        points.forEachIndexed { index, value ->
-            val x = if (points.size == 1) size.width else step * index
-            val y = topInset + drawingHeight - (drawingHeight * value.toFloat())
-            if (index == 0) {
-                path.moveTo(x, y)
-            } else {
-                val previousX = step * (index - 1)
-                val previousY = topInset + drawingHeight - (drawingHeight * points[index - 1].toFloat())
-                val controlOffset = step * 0.45f
-                path.cubicTo(previousX + controlOffset, previousY, x - controlOffset, y, x, y)
-            }
-        }
-        drawPath(
-            path = path,
-            color = Color.White.copy(alpha = 0.9f),
-            style = Stroke(width = 1.55.dp.toPx(), cap = StrokeCap.Round),
-        )
-        drawCircle(
-            color = Color.White,
-            radius = 2.35.dp.toPx(),
-            center = Offset(
-                if (points.size == 1) size.width else step * (points.size - 1),
-                topInset + drawingHeight - (drawingHeight * points.last().toFloat()),
-            ),
-        )
-    }
-}
-
-private fun revenueSparklinePoints(trend: List<MobileAssistantTrendPoint>): List<Double> {
-    val values = trend.takeLast(14).map { it.revenue.coerceAtLeast(0.0) }
-
-    if (values.isEmpty() || values.all { it == 0.0 }) {
-        return emptyList()
-    }
-
-    val min = values.minOrNull() ?: return emptyList()
-    val max = values.maxOrNull() ?: return emptyList()
-    if (max <= min) {
-        return values.map { 0.56 }
-    }
-
-    return values.map { value ->
-        val normalized = ((value - min) / (max - min)).coerceIn(0.0, 1.0)
-        (0.18 + sqrt(normalized) * 0.56).coerceIn(0.18, 0.74)
-    }
-}
-
-@Composable
-private fun KpiGrid(colors: DlaFlowComposeColors, dashboard: MobileAssistantDashboard?) {
-    val kpis = dashboard?.kpis ?: MobileAssistantKpis(0, 0, 0, 0)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        KpiTile(colors, "Nowe zamówienia", kpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
-        KpiTile(colors, "Do wysyłki", kpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
-        KpiTile(colors, "Po terminie", kpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
-        KpiTile(colors, "Wiadomości", kpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun KpiTile(
-    colors: DlaFlowComposeColors,
-    label: String,
-    value: String,
-    icon: ImageVector,
-    iconColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .height(98.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surface)
-            .border(1.dp, colors.border.copy(alpha = 0.78f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 9.dp, vertical = 9.dp),
-    ) {
-        DlaFlowIcon(icon, iconColor, modifier = Modifier.size(25.dp))
-        Spacer(Modifier.height(6.dp))
-        Text(value, color = colors.textStrong, fontSize = 18.5.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 20.sp)
-        Spacer(Modifier.height(2.dp))
-        Text(label, color = colors.textMuted, fontSize = 8.4.sp, fontWeight = FontWeight.SemiBold, lineHeight = 9.2.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-private fun QuickActions(colors: DlaFlowComposeColors, onQuickAction: (MobileAssistantQuickAction) -> Unit) {
-    Text(
-        text = "Szybkie akcje",
-        color = colors.textStrong,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.ExtraBold,
-        lineHeight = 15.5.sp,
-    )
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        QuickActionButton(colors, "Skanuj paczkę", "Szybkie nadanie", Icons.Rounded.QrCodeScanner, colors.primary, Modifier.weight(1f)) { onQuickAction(MobileAssistantQuickAction.SCAN_PACKAGE) }
-        QuickActionButton(colors, "Dodaj produkt", "Nowa oferta", Icons.Rounded.AddBox, colors.success, Modifier.weight(1f)) { onQuickAction(MobileAssistantQuickAction.ADD_PRODUCT) }
-        QuickActionButton(colors, "Statystyki", "Zobacz wyniki", Icons.AutoMirrored.Rounded.ShowChart, colors.orange, Modifier.weight(1f)) { onQuickAction(MobileAssistantQuickAction.STATS) }
-        QuickActionButton(colors, "Produkty", "Zarządzaj", Icons.Rounded.Inventory2, colors.info, Modifier.weight(1f)) { onQuickAction(MobileAssistantQuickAction.PRODUCTS) }
-    }
-}
-
-@Composable
-private fun QuickActionButton(
-    colors: DlaFlowComposeColors,
-    label: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconColor: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = colors.surface,
-            contentColor = colors.textStrong,
-        ),
-        border = BorderStroke(1.dp, colors.border.copy(alpha = 0.76f)),
-        contentPadding = PaddingValues(0.dp),
-        modifier = modifier
-            .height(84.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 7.dp, vertical = 9.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            DlaFlowIcon(icon, iconColor, modifier = Modifier.size(37.dp))
-            Spacer(Modifier.height(7.dp))
-            Text(label, color = colors.textStrong, fontSize = 8.2.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 9.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = colors.textMuted, fontSize = 7.4.sp, fontWeight = FontWeight.SemiBold, lineHeight = 8.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
 private fun AssistantPhotoTaskCard(
     colors: DlaFlowComposeColors,
     task: MobilePhotoTask,
@@ -3523,114 +3297,23 @@ private fun AssistantPhotoTaskCard(
     onPickPhoto: (String) -> Unit,
     onCompletePhotoTask: (String) -> Unit,
 ) {
-    DlaFlowCard(colors, accent = highlighted) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(colors.primarySoft),
-                contentAlignment = Alignment.Center,
-            ) {
-                DlaFlowIcon(Icons.Rounded.PhotoCamera, colors.primary, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Zadanie zdjęciowe", color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(task.productName, color = colors.textStrong, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 21.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (task.productSku.isNotBlank()) {
-                    Text("SKU: ${task.productSku}", color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        ProgressLine(colors, task.mediaCount, task.maxPhotos)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            DlaFlowPrimaryButton(colors, Icons.Rounded.PhotoCamera, "Zrób", modifier = Modifier.weight(1f)) { onTakePhoto(task.id) }
-            DlaFlowSecondaryButton(colors, Icons.Rounded.PhotoLibrary, "Wybierz", modifier = Modifier.weight(1f)) { onPickPhoto(task.id) }
-        }
-        Spacer(Modifier.height(10.dp))
-        DlaFlowSecondaryButton(colors, Icons.Rounded.CheckCircle, "Zakończ zadanie") { onCompletePhotoTask(task.id) }
-    }
-}
-
-@Composable
-private fun ProgressLine(colors: DlaFlowComposeColors, current: Int, max: Int) {
-    val safeMax = max.coerceAtLeast(1)
-    val ratio = current.coerceIn(0, safeMax).toFloat() / safeMax.toFloat()
-    Column {
-        Row {
-            Text("Zdjęcia", color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Text("$current/$max", color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(7.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(colors.borderSubtle),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(ratio)
-                    .height(7.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(colors.primary),
-            )
-        }
-    }
-}
-
-@Composable
-private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<MobileAssistantNotification>, onOpenNotifications: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surface)
-            .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-            .padding(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Ostatnie powiadomienia", color = colors.textStrong, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { onOpenNotifications() }
-                    .padding(horizontal = 6.dp, vertical = 5.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Zobacz wszystkie", color = colors.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                Icon(
-                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = colors.primary,
-                    modifier = Modifier.size(15.dp),
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        if (notifications.isEmpty()) {
-            NotificationEmptyRow(colors)
-            return
-        }
-        Column {
-            notifications.take(4).forEachIndexed { index, notification ->
-                NotificationRow(colors, notification)
-                if (index < notifications.take(4).lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 40.dp)
-                            .height(1.dp)
-                            .background(colors.borderSubtle),
-                    )
-                }
-            }
-        }
-    }
+    DlaFlowPhotoTaskCard(
+        colors = colors,
+        title = stringResource(R.string.dashboard_photo_task_title),
+        productName = task.productName,
+        skuText = if (task.productSku.isBlank()) "" else stringResource(R.string.dashboard_photo_task_sku, task.productSku),
+        photosLabel = stringResource(R.string.dashboard_photo_task_photos),
+        photosProgress = stringResource(R.string.dashboard_photo_task_photo_count, task.mediaCount, task.maxPhotos),
+        mediaCount = task.mediaCount,
+        maxPhotos = task.maxPhotos,
+        takePhotoLabel = stringResource(R.string.dashboard_photo_task_take),
+        pickPhotoLabel = stringResource(R.string.dashboard_photo_task_pick),
+        completeTaskLabel = stringResource(R.string.dashboard_photo_task_complete),
+        highlighted = highlighted,
+        onTakePhoto = { onTakePhoto(task.id) },
+        onPickPhoto = { onPickPhoto(task.id) },
+        onCompletePhotoTask = { onCompletePhotoTask(task.id) },
+    )
 }
 
 @Composable
@@ -3745,76 +3428,13 @@ private fun NotificationFilterTabs(
 
 @Composable
 private fun NotificationRow(colors: DlaFlowComposeColors, notification: MobileAssistantNotification) {
-    val color = toneColor(colors, notification.tone)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(60.dp)
-            .padding(top = 7.dp, bottom = 7.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        NotificationToneIcon(notificationIcon(notification), color)
-        Spacer(Modifier.width(11.dp))
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(top = 1.dp),
-        ) {
-            Text(
-                notification.title,
-                color = colors.textStrong,
-                fontSize = 10.4.sp,
-                fontWeight = FontWeight.ExtraBold,
-                lineHeight = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(1.dp))
-            Text(
-                notification.description,
-                color = colors.textMuted,
-                fontSize = 8.3.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 10.3.sp,
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Column(
-            modifier = Modifier
-                .height(42.dp)
-                .padding(top = 1.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.5.dp)
-                    .clip(CircleShape)
-                    .background(color),
-            )
-            Text(relativeTime(notification.occurredAt), color = colors.textMuted, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-        }
-    }
-}
-
-@Composable
-private fun NotificationToneIcon(icon: ImageVector, color: Color) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(color.copy(alpha = 0.13f)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(18.5.dp),
-        )
-    }
+    DlaFlowNotificationRow(
+        colors = colors,
+        title = notification.title,
+        description = notification.description,
+        tone = notification.tone,
+        occurredLabel = relativeTime(notification.occurredAt),
+    )
 }
 
 @Composable
@@ -3823,14 +3443,7 @@ private fun NotificationEmptyRow(
     title: String = "Brak pilnych spraw",
     subtitle: String = "Gdy pojawi się wiadomość albo problem, zobaczysz go tutaj.",
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        DlaFlowIcon(Icons.Rounded.CheckCircle, colors.success, modifier = Modifier.size(38.dp))
-        Spacer(Modifier.width(11.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = colors.textStrong, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-            Text(subtitle, color = colors.textMuted, fontSize = 11.sp, maxLines = 2, lineHeight = 15.sp)
-        }
-    }
+    DlaFlowNotificationEmptyRow(colors, title, subtitle)
 }
 
 @Composable
@@ -3980,11 +3593,6 @@ private fun displayName(value: String): String {
     return clean.substringBefore("@").replaceFirstChar { it.titlecase(Locale.getDefault()) }
 }
 
-private fun displayFirstName(value: String): String {
-    val name = displayName(value)
-    return name.substringBefore(" ").ifBlank { "Maciek" }
-}
-
 private fun formatMoney(value: Double): String {
     return NumberFormat.getCurrencyInstance(Locale("pl", "PL")).format(value)
 }
@@ -4005,17 +3613,6 @@ private fun relativeTime(value: String): String {
             else -> "${minutes / (24 * 60)}d"
         }
     }.getOrDefault(shortTime(value))
-}
-
-private fun notificationIcon(notification: MobileAssistantNotification): ImageVector {
-    val text = "${notification.title} ${notification.description}".lowercase(Locale.ROOT)
-    return when {
-        "nowe zamówienie" in text || "nowe zamowienie" in text -> Icons.Rounded.ShoppingCart
-        "wiadomo" in text || "klient" in text -> Icons.Rounded.ChatBubbleOutline
-        "wysy" in text || "pacz" in text -> Icons.Rounded.LocalShipping
-        "problem" in text || "błąd" in text || "blad" in text -> Icons.Rounded.Warning
-        else -> Icons.Rounded.ShoppingCart
-    }
 }
 
 private fun toneColor(colors: DlaFlowComposeColors, tone: String): Color {
