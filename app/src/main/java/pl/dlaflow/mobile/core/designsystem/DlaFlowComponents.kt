@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -280,10 +281,11 @@ internal fun DlaFlowKpiTile(
     icon: ImageVector,
     iconColor: Color,
     modifier: Modifier = Modifier,
+    height: Dp = 98.dp,
 ) {
     Column(
         modifier = modifier
-            .height(98.dp)
+            .height(height)
             .clip(RoundedCornerShape(8.dp))
             .background(colors.surface)
             .border(1.dp, colors.border.copy(alpha = 0.78f), RoundedCornerShape(8.dp))

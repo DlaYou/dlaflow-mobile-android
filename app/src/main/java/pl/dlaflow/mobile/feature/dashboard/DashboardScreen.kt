@@ -25,9 +25,11 @@ import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,8 +43,11 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,6 +58,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.sqrt
 import pl.dlaflow.mobile.R
+import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
@@ -61,6 +67,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationPreviewCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationRow
 import pl.dlaflow.mobile.core.designsystem.DlaFlowPhotoTaskCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
+import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 
 internal fun dashboardQuickAction(index: Int): DashboardAction = when (index) {
     0 -> DashboardAction.ScanPackage
@@ -78,18 +85,75 @@ internal fun DashboardFeatureScreen(
     fallbackPhotoTask: DashboardPhotoTask?,
     onAction: (DashboardAction) -> Unit,
 ) {
-    val content = state.contentOrNull()
-    GreetingRow(colors, content?.userName ?: sessionUserName) { onAction(DashboardAction.Refresh) }
-    RevenueCard(colors, content)
-    KpiGrid(colors, content?.kpis)
-    NotificationsList(colors, content?.notifications.orEmpty()) { onAction(DashboardAction.OpenNotifications) }
-    QuickActions(colors, onAction)
-    ActivePhotoTaskSection(colors, content?.activePhotoTask, fallbackPhotoTask, onAction)
+    val surface = state.toDashboardSurface()
+    val density = LocalDensity.current
+    val layoutPolicy = dashboardLayoutPolicy(
+        widthDp = (LocalWindowInfo.current.containerSize.width / density.density).toInt(),
+        fontScale = density.fontScale,
+    )
+
+    when (surface) {
+        is DashboardSurface.Dashboard -> {
+            val content = surface.content
+            GreetingRow(colors, content?.userName ?: sessionUserName)
+            if (surface.isRefreshing) {
+                DashboardStateNotice(
+                    colors = colors,
+                    title = stringResource(R.string.dashboard_refreshing_title),
+                    description = stringResource(R.string.dashboard_refreshing_description),
+                    showRetry = false,
+                    showProgress = true,
+                    onRetry = { onAction(DashboardAction.Refresh) },
+                )
+            } else {
+                surface.notice?.let { notice ->
+                    DashboardStateNotice(
+                        colors = colors,
+                        title = stringResource(notice.message.titleRes),
+                        description = stringResource(notice.message.descriptionRes),
+                        showRetry = notice.showRetry,
+                        showProgress = false,
+                        onRetry = { onAction(DashboardAction.Refresh) },
+                    )
+                }
+            }
+            RevenueCard(colors, content, layoutPolicy)
+            KpiGrid(colors, content?.kpis, layoutPolicy)
+            NotificationsList(colors, content?.notifications.orEmpty()) { onAction(DashboardAction.OpenNotifications) }
+            QuickActions(colors, layoutPolicy, onAction)
+            ActivePhotoTaskSection(colors, content?.activePhotoTask, fallbackPhotoTask, onAction)
+        }
+
+        is DashboardSurface.Failure -> {
+            GreetingRow(colors, sessionUserName)
+            DashboardStateNotice(
+                colors = colors,
+                title = surface.message?.let { stringResource(it.titleRes) }
+                    ?: stringResource(if (surface.isOffline) R.string.mobile_error_offline_title else R.string.mobile_error_unknown_title),
+                description = surface.message?.let { stringResource(it.descriptionRes) }
+                    ?: stringResource(if (surface.isOffline) R.string.mobile_error_offline_description else R.string.mobile_error_unknown_description),
+                showRetry = surface.showRetry,
+                showProgress = false,
+                onRetry = { onAction(DashboardAction.Refresh) },
+            )
+        }
+
+        DashboardSurface.NoAccess -> {
+            GreetingRow(colors, sessionUserName)
+            DashboardStateNotice(
+                colors = colors,
+                title = stringResource(R.string.mobile_error_no_access_title),
+                description = stringResource(R.string.mobile_error_no_access_description),
+                showRetry = false,
+                showProgress = false,
+                onRetry = { onAction(DashboardAction.Refresh) },
+            )
+        }
+    }
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefresh: () -> Unit) {
+private fun GreetingRow(colors: DlaFlowComposeColors, userName: String) {
     val firstName = displayFirstName(
         value = userName,
         displayFallback = stringResource(R.string.dashboard_name_fallback_display),
@@ -103,14 +167,72 @@ private fun GreetingRow(colors: DlaFlowComposeColors, userName: String, onRefres
 }
 
 @Composable
-private fun RevenueCard(colors: DlaFlowComposeColors, content: DashboardContent?) {
+private fun DashboardStateNotice(
+    colors: DlaFlowComposeColors,
+    title: String,
+    description: String,
+    showRetry: Boolean,
+    showProgress: Boolean,
+    onRetry: () -> Unit,
+) {
+    DlaFlowCard(colors) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (showProgress) {
+                CircularProgressIndicator(
+                    color = colors.primary,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = colors.textStrong,
+                    fontFamily = DlaFlowInter,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 18.sp,
+                )
+                Text(
+                    text = description,
+                    color = colors.textMuted,
+                    fontFamily = DlaFlowInter,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 16.sp,
+                )
+            }
+        }
+        if (showRetry) {
+            Spacer(Modifier.height(10.dp))
+            DlaFlowSecondaryButton(
+                colors = colors,
+                icon = Icons.Rounded.Refresh,
+                text = stringResource(R.string.dashboard_retry),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onRetry,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RevenueCard(
+    colors: DlaFlowComposeColors,
+    content: DashboardContent?,
+    layoutPolicy: DashboardLayoutPolicy,
+) {
     val changePercent = content?.revenueChangePercent ?: 0.0
     val positive = changePercent >= 0.0
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(104.dp)
+            .height(layoutPolicy.revenueCardHeightDp.dp)
             .clip(RoundedCornerShape(15.dp))
             .background(
                 Brush.linearGradient(
@@ -144,44 +266,13 @@ private fun RevenueCard(colors: DlaFlowComposeColors, content: DashboardContent?
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = if (positive) {
-                        stringResource(R.string.dashboard_revenue_change_up, String.format(Locale.US, "%.1f", changePercent))
-                    } else {
-                        stringResource(
-                            R.string.dashboard_revenue_change_down,
-                            String.format(Locale.US, "%.1f", kotlin.math.abs(changePercent)),
-                        )
-                    },
-                    color = if (positive) colors.heroPositive else colors.heroNegative,
-                    fontSize = 8.5.sp,
-                    fontFamily = DlaFlowInter,
-                    fontWeight = FontWeight.ExtraBold,
-                    lineHeight = 11.sp,
-                    maxLines = 1,
-                )
-                Text(
-                    text = if (positive) {
-                        stringResource(R.string.dashboard_revenue_more_than_yesterday)
-                    } else {
-                        stringResource(R.string.dashboard_revenue_less_than_yesterday)
-                    },
-                    color = Color.White.copy(alpha = 0.84f),
-                    fontSize = 8.5.sp,
-                    fontFamily = DlaFlowInter,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            RevenueComparison(colors, changePercent, positive, layoutPolicy.stackRevenueComparison)
         }
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .width(76.dp)
-                .height(30.dp)
+                .width(if (layoutPolicy.stackRevenueComparison) 88.dp else 76.dp)
+                .height(if (layoutPolicy.stackRevenueComparison) 34.dp else 30.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color.White.copy(alpha = 0.13f))
                 .padding(horizontal = 8.dp),
@@ -194,6 +285,7 @@ private fun RevenueCard(colors: DlaFlowComposeColors, content: DashboardContent?
                 fontSize = 8.5.sp,
                 fontFamily = DlaFlowInter,
                 fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
             )
             Spacer(Modifier.width(1.dp))
             Icon(
@@ -212,6 +304,63 @@ private fun RevenueCard(colors: DlaFlowComposeColors, content: DashboardContent?
                 .height(44.dp)
                 .padding(end = 12.dp, bottom = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun RevenueComparison(
+    colors: DlaFlowComposeColors,
+    changePercent: Double,
+    positive: Boolean,
+    stacked: Boolean,
+) {
+    val changeText = if (positive) {
+        stringResource(R.string.dashboard_revenue_change_up, String.format(Locale.US, "%.1f", changePercent))
+    } else {
+        stringResource(
+            R.string.dashboard_revenue_change_down,
+            String.format(Locale.US, "%.1f", kotlin.math.abs(changePercent)),
+        )
+    }
+    val comparisonTextWithSpacing = if (positive) {
+        stringResource(R.string.dashboard_revenue_more_than_yesterday).trimStart()
+    } else {
+        stringResource(R.string.dashboard_revenue_less_than_yesterday).trimStart()
+    }
+    val comparisonText = if (stacked) comparisonTextWithSpacing else " $comparisonTextWithSpacing"
+    val change: @Composable () -> Unit = {
+                Text(
+                    text = changeText,
+                    color = if (positive) colors.heroPositive else colors.heroNegative,
+                    fontSize = 8.5.sp,
+                    fontFamily = DlaFlowInter,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 11.sp,
+                    maxLines = 1,
+                )
+    }
+    val comparison: @Composable () -> Unit = {
+                Text(
+                    text = comparisonText,
+                    color = Color.White.copy(alpha = 0.84f),
+                    fontSize = 8.5.sp,
+                    fontFamily = DlaFlowInter,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 11.sp,
+                    maxLines = if (stacked) 2 else 1,
+                    overflow = if (stacked) TextOverflow.Clip else TextOverflow.Ellipsis,
+                )
+    }
+    if (stacked) {
+        Column {
+            change()
+            comparison()
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            change()
+            comparison()
+        }
     }
 }
 
@@ -288,13 +437,17 @@ private fun revenueSparklinePoints(trend: List<DashboardTrendPoint>): List<Doubl
 }
 
 @Composable
-private fun KpiGrid(colors: DlaFlowComposeColors, kpis: DashboardKpis?) {
+private fun KpiGrid(
+    colors: DlaFlowComposeColors,
+    kpis: DashboardKpis?,
+    layoutPolicy: DashboardLayoutPolicy,
+) {
     val visibleKpis = kpis ?: DashboardKpis(0, 0, 0, 0)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
-        KpiTile(colors, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
+        KpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary, layoutPolicy, Modifier.weight(1f))
+        KpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange, layoutPolicy, Modifier.weight(1f))
+        KpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success, layoutPolicy, Modifier.weight(1f))
+        KpiTile(colors, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info, layoutPolicy, Modifier.weight(1f))
     }
 }
 
@@ -305,13 +458,26 @@ private fun KpiTile(
     value: String,
     icon: ImageVector,
     iconColor: Color,
+    layoutPolicy: DashboardLayoutPolicy,
     modifier: Modifier = Modifier,
 ) {
-    DlaFlowKpiTile(colors, label, value, icon, iconColor, modifier)
+    DlaFlowKpiTile(
+        colors = colors,
+        label = label,
+        value = value,
+        icon = icon,
+        iconColor = iconColor,
+        height = layoutPolicy.kpiTileHeightDp.dp,
+        modifier = modifier,
+    )
 }
 
 @Composable
-private fun QuickActions(colors: DlaFlowComposeColors, onAction: (DashboardAction) -> Unit) {
+private fun QuickActions(
+    colors: DlaFlowComposeColors,
+    layoutPolicy: DashboardLayoutPolicy,
+    onAction: (DashboardAction) -> Unit,
+) {
     Text(
         text = stringResource(R.string.dashboard_quick_actions),
         color = colors.textStrong,
@@ -321,10 +487,10 @@ private fun QuickActions(colors: DlaFlowComposeColors, onAction: (DashboardActio
     )
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        QuickActionButton(colors, stringResource(R.string.dashboard_quick_scan), stringResource(R.string.dashboard_quick_scan_subtitle), Icons.Rounded.QrCodeScanner, colors.primary, Modifier.weight(1f)) { onAction(dashboardQuickAction(0)) }
-        QuickActionButton(colors, stringResource(R.string.dashboard_quick_product_work), stringResource(R.string.dashboard_quick_product_work_subtitle), Icons.Rounded.AddBox, colors.success, Modifier.weight(1f)) { onAction(dashboardQuickAction(1)) }
-        QuickActionButton(colors, stringResource(R.string.dashboard_quick_statistics), stringResource(R.string.dashboard_quick_statistics_subtitle), Icons.AutoMirrored.Rounded.ShowChart, colors.orange, Modifier.weight(1f)) { onAction(dashboardQuickAction(2)) }
-        QuickActionButton(colors, stringResource(R.string.dashboard_quick_products), stringResource(R.string.dashboard_quick_products_subtitle), Icons.Rounded.Inventory2, colors.info, Modifier.weight(1f)) { onAction(dashboardQuickAction(3)) }
+        QuickActionButton(colors, stringResource(R.string.dashboard_quick_scan), stringResource(R.string.dashboard_quick_scan_subtitle), Icons.Rounded.QrCodeScanner, colors.primary, layoutPolicy, Modifier.weight(1f)) { onAction(dashboardQuickAction(0)) }
+        QuickActionButton(colors, stringResource(R.string.dashboard_quick_product_work), stringResource(R.string.dashboard_quick_product_work_subtitle), Icons.Rounded.AddBox, colors.success, layoutPolicy, Modifier.weight(1f)) { onAction(dashboardQuickAction(1)) }
+        QuickActionButton(colors, stringResource(R.string.dashboard_quick_statistics), stringResource(R.string.dashboard_quick_statistics_subtitle), Icons.AutoMirrored.Rounded.ShowChart, colors.orange, layoutPolicy, Modifier.weight(1f)) { onAction(dashboardQuickAction(2)) }
+        QuickActionButton(colors, stringResource(R.string.dashboard_quick_products), stringResource(R.string.dashboard_quick_products_subtitle), Icons.Rounded.Inventory2, colors.info, layoutPolicy, Modifier.weight(1f)) { onAction(dashboardQuickAction(3)) }
     }
 }
 
@@ -335,6 +501,7 @@ private fun QuickActionButton(
     subtitle: String,
     icon: ImageVector,
     iconColor: Color,
+    layoutPolicy: DashboardLayoutPolicy,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -347,7 +514,7 @@ private fun QuickActionButton(
         ),
         border = BorderStroke(1.dp, colors.border.copy(alpha = 0.76f)),
         contentPadding = PaddingValues(0.dp),
-        modifier = modifier.height(84.dp),
+        modifier = modifier.height(layoutPolicy.quickActionHeightDp.dp),
     ) {
         Column(
             modifier = Modifier
@@ -358,8 +525,26 @@ private fun QuickActionButton(
         ) {
             DlaFlowIcon(icon, iconColor, modifier = Modifier.size(37.dp))
             Spacer(Modifier.height(7.dp))
-            Text(label, color = colors.textStrong, fontSize = 8.2.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 9.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(subtitle, color = colors.textMuted, fontSize = 7.4.sp, fontWeight = FontWeight.SemiBold, lineHeight = 8.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = label,
+                color = colors.textStrong,
+                fontSize = 8.2.sp,
+                fontWeight = FontWeight.ExtraBold,
+                lineHeight = 9.6.sp,
+                maxLines = layoutPolicy.quickActionLabelMaxLines,
+                overflow = if (layoutPolicy.quickActionLabelMaxLines > 1) TextOverflow.Clip else TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = subtitle,
+                color = colors.textMuted,
+                fontSize = 7.4.sp,
+                fontWeight = FontWeight.SemiBold,
+                lineHeight = 8.6.sp,
+                maxLines = layoutPolicy.quickActionSubtitleMaxLines,
+                overflow = if (layoutPolicy.quickActionSubtitleMaxLines > 1) TextOverflow.Clip else TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }

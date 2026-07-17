@@ -38,6 +38,26 @@ class MobileSessionRevocationTest {
     }
 
     @Test
+    fun `session valid callback runs only after successful mobile session verification`() {
+        var validCallbackCount = 0
+
+        val validShouldClear = shouldClearMobileSessionAfterUnauthorized(
+            error = MobileApiException(401, "AUTH_REQUIRED", "Authentication is required."),
+            verifyCurrentSession = { Unit },
+            onSessionValid = { validCallbackCount++ },
+        )
+        val unconfirmedShouldClear = shouldClearMobileSessionAfterUnauthorized(
+            error = MobileApiException(401, "AUTH_REQUIRED", "Authentication is required."),
+            verifyCurrentSession = { throw MobileApiException(500, "SERVER_ERROR", "Temporary problem.") },
+            onSessionValid = { validCallbackCount++ },
+        )
+
+        assertFalse(validShouldClear)
+        assertFalse(unconfirmedShouldClear)
+        assertTrue(validCallbackCount == 1)
+    }
+
+    @Test
     fun `session clear requires same token used by failing request`() {
         assertTrue(isSameMobileSessionToken(currentToken = "token-new", requestToken = "token-new"))
         assertFalse(isSameMobileSessionToken(currentToken = "token-new", requestToken = "token-old"))

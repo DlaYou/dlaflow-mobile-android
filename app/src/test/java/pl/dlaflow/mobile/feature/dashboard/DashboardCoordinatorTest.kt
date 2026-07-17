@@ -6,6 +6,7 @@ import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.dlaflow.mobile.core.network.MobileApiException
@@ -59,7 +60,7 @@ class DashboardCoordinatorTest {
 
         assertEquals(300.0, harness.holder.state.contentOrNull()!!.todayRevenue, 0.0)
         assertTrue(harness.feedback.isEmpty())
-        assertEquals(0, harness.sessionRevokedCount)
+        assertTrue(harness.unauthorizedErrors.isEmpty())
     }
 
     @Test
@@ -112,14 +113,16 @@ class DashboardCoordinatorTest {
             listOf(DashboardFeedback.REFRESHING, DashboardFeedback.LOAD_FAILED),
             harness.feedback,
         )
-        assertEquals(0, harness.sessionRevokedCount)
+        assertTrue(harness.unauthorizedErrors.isEmpty())
     }
 
     @Test
-    fun `unauthorized response clears feature and emits session revoked once`() {
+    fun `only accepted current unauthorized response clears feature and emits original error`() {
+        val staleError = MobileApiException(401, "AUTH_REQUIRED", "stale")
+        val currentError = MobileApiException(401, "AUTH_REQUIRED", "current")
         val harness = CoordinatorHarness(
-            gateway = DashboardGateway {
-                throw MobileApiException(401, "AUTH_REQUIRED", "expired")
+            gateway = DashboardGateway { session ->
+                throw if (session == "session-old") staleError else currentError
             },
         )
 
@@ -130,7 +133,8 @@ class DashboardCoordinatorTest {
         harness.mainQueue.runAll()
 
         assertEquals(DashboardUiState(), harness.holder.state)
-        assertEquals(1, harness.sessionRevokedCount)
+        assertEquals(1, harness.unauthorizedErrors.size)
+        assertSame(currentError, harness.unauthorizedErrors.single())
         assertTrue(harness.feedback.isEmpty())
     }
 
@@ -147,7 +151,7 @@ class DashboardCoordinatorTest {
 
         assertEquals(DashboardUiState(), harness.holder.state)
         assertEquals(listOf(DashboardFeedback.REFRESHING), harness.feedback)
-        assertEquals(0, harness.sessionRevokedCount)
+        assertTrue(harness.unauthorizedErrors.isEmpty())
     }
 
     @Test
@@ -184,8 +188,7 @@ private class CoordinatorHarness(gateway: DashboardGateway) {
     val executor = QueuedExecutor()
     val mainQueue = MainQueue()
     val feedback = mutableListOf<DashboardFeedback>()
-    var sessionRevokedCount = 0
-        private set
+    val unauthorizedErrors = mutableListOf<Throwable>()
 
     val coordinator = DashboardCoordinator(
         stateHolder = holder,
@@ -193,7 +196,7 @@ private class CoordinatorHarness(gateway: DashboardGateway) {
         executor = executor,
         postToMain = mainQueue::post,
         onFeedback = feedback::add,
-        onSessionRevoked = { sessionRevokedCount++ },
+        onUnauthorized = unauthorizedErrors::add,
     )
 }
 

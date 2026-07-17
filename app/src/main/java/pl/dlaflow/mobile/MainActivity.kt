@@ -120,8 +120,19 @@ class MainActivity : ComponentActivity() {
             executor = executor,
             postToMain = { action -> runOnUiThread(action) },
             onFeedback = ::handleDashboardFeedback,
-            onSessionRevoked = {
-                clearDisconnectedSession("Telefon został odłączony w panelu. Sparuj go ponownie.")
+            onUnauthorized = { error ->
+                val allowSingleRetry = !dashboardUnauthorizedRetryPending
+                dashboardUnauthorizedRetryPending = false
+                confirmRevokedSession(
+                    error = error,
+                    fallbackMessage = "Nie udało się odświeżyć pulpitu.",
+                    showNonAuthStatus = true,
+                    onSessionValid = {
+                        if (allowSingleRetry) {
+                            retryDashboardAfterConfirmedSession()
+                        }
+                    },
+                )
             },
         )
     }
@@ -146,6 +157,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var callerIdTestPhoneInput: EditText
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
     private var sessionTransitionStartedAt: Long = 0L
+    private var dashboardUnauthorizedRetryPending = false
     private var callerIdPreview by mutableStateOf<MobileCallerIdLookup?>(null)
     private var focusedPhotoTaskId: String? = null
     private var focusedPhotoTaskView: View? = null
@@ -901,6 +913,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleDashboardFeedback(feedback: DashboardFeedback) {
+        if (feedback != DashboardFeedback.REFRESHING) {
+            dashboardUnauthorizedRetryPending = false
+        }
         setStatus(
             when (feedback) {
                 DashboardFeedback.REFRESHING -> "Odświeżam pulpit asystenta..."
@@ -908,6 +923,12 @@ class MainActivity : ComponentActivity() {
                 DashboardFeedback.LOAD_FAILED -> "Nie udało się pobrać pulpitu."
             },
         )
+    }
+
+    private fun retryDashboardAfterConfirmedSession() {
+        val currentSession = session ?: return
+        dashboardUnauthorizedRetryPending = true
+        dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
     }
 
     private fun handlePairingQrResult(rawValue: String?) {
@@ -2025,7 +2046,12 @@ class MainActivity : ComponentActivity() {
         return false
     }
 
-    private fun confirmRevokedSession(error: Throwable, fallbackMessage: String, showNonAuthStatus: Boolean) {
+    private fun confirmRevokedSession(
+        error: Throwable,
+        fallbackMessage: String,
+        showNonAuthStatus: Boolean,
+        onSessionValid: () -> Unit = {},
+    ) {
         val currentSession = session
         if (currentSession == null) {
             clearRevokedSession()
@@ -2037,9 +2063,14 @@ class MainActivity : ComponentActivity() {
         }
 
         executor.execute {
-            val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(error) {
-                mobileApiClientForSession(sessionStore).verifySession(currentSession.token)
-            }
+            var sessionConfirmedValid = false
+            val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(
+                error = error,
+                verifyCurrentSession = {
+                    mobileApiClientForSession(sessionStore).verifySession(currentSession.token)
+                },
+                onSessionValid = { sessionConfirmedValid = true },
+            )
 
             runOnUiThread {
                 if (!isCurrentSessionToken(currentSession.token)) {
@@ -2048,8 +2079,13 @@ class MainActivity : ComponentActivity() {
 
                 if (shouldClearSession) {
                     clearRevokedSession()
-                } else if (showNonAuthStatus) {
-                    setStatus(mobileApiBusinessMessage(error, fallbackMessage))
+                } else {
+                    if (showNonAuthStatus) {
+                        setStatus(mobileApiBusinessMessage(error, fallbackMessage))
+                    }
+                    if (sessionConfirmedValid) {
+                        onSessionValid()
+                    }
                 }
             }
         }
@@ -2148,6 +2184,7 @@ class MainActivity : ComponentActivity() {
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
+        dashboardUnauthorizedRetryPending = false
         dashboardCoordinator.reset()
         photoTasks = emptyList()
         callerIdPreview = null

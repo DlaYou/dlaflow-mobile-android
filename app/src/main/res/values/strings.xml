@@ -120,4 +120,7 @@
     <string name="dashboard_time_minutes_ago">%1$d min temu</string>
     <string name="dashboard_time_hours_ago">%1$dh</string>
     <string name="dashboard_time_days_ago">%1$dd</string>
+    <string name="dashboard_refreshing_title">Odświeżamy dane</string>
+    <string name="dashboard_refreshing_description">Aktualne informacje pozostają widoczne.</string>
+    <string name="dashboard_retry">Ponów</string>
 </resources>

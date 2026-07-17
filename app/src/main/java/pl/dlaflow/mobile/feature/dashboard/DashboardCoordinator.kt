@@ -8,7 +8,7 @@ internal class DashboardCoordinator(
     private val executor: Executor,
     private val postToMain: (() -> Unit) -> Unit,
     private val onFeedback: (DashboardFeedback) -> Unit,
-    private val onSessionRevoked: () -> Unit,
+    private val onUnauthorized: (Throwable) -> Unit,
 ) {
     fun refresh(token: String, showFeedback: Boolean) {
         val request = stateHolder.beginLoad(token)
@@ -28,7 +28,7 @@ internal class DashboardCoordinator(
                 postToMain {
                     when (failure) {
                         DashboardFailure.Unauthorized -> {
-                            if (stateHolder.acceptUnauthorized(request)) onSessionRevoked()
+                            if (stateHolder.acceptUnauthorized(request)) onUnauthorized(error)
                         }
 
                         DashboardFailure.NoAccess -> {

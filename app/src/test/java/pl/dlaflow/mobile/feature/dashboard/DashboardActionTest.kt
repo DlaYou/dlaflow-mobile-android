@@ -37,4 +37,15 @@ class DashboardActionTest {
         assertFalse(source.contains("minutes / 60}h"))
         assertFalse(source.contains("minutes / (24 * 60)}d"))
     }
+
+    @Test
+    fun `dashboard screen renders the typed surface and routes retry as refresh`() {
+        val source = File("src/main/java/pl/dlaflow/mobile/feature/dashboard/DashboardScreen.kt").readText()
+
+        assertTrue(source.contains("state.toDashboardSurface()"))
+        assertTrue(source.contains("DashboardSurface.NoAccess"))
+        assertTrue(source.contains("is DashboardSurface.Failure"))
+        assertTrue(source.contains("DashboardStateNotice("))
+        assertTrue(source.contains("onAction(DashboardAction.Refresh)"))
+    }
 }

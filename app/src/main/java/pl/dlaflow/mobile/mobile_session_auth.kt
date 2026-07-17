@@ -4,6 +4,7 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 
 internal fun shouldClearMobileSessionAfterUnauthorized(
     error: Throwable,
+    onSessionValid: () -> Unit = {},
     verifyCurrentSession: () -> Any?,
 ): Boolean {
     if (error !is MobileApiException || error.statusCode != 401) {
@@ -13,7 +14,10 @@ internal fun shouldClearMobileSessionAfterUnauthorized(
     return runCatching {
         verifyCurrentSession()
     }.fold(
-        onSuccess = { false },
+        onSuccess = {
+            onSessionValid()
+            false
+        },
         onFailure = { verificationError ->
             verificationError is MobileApiException && verificationError.statusCode == 401
         },

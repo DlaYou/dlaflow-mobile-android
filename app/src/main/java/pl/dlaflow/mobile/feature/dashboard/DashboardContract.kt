@@ -71,6 +71,98 @@ internal data class DashboardUiState(
     val transientMessage: DlaFlowUiMessage? = null,
 )
 
+internal data class DashboardNotice(
+    val message: DlaFlowUiMessage,
+    val showRetry: Boolean,
+)
+
+internal sealed interface DashboardSurface {
+    data class Dashboard(
+        val content: DashboardContent?,
+        val notice: DashboardNotice?,
+        val isRefreshing: Boolean,
+    ) : DashboardSurface
+
+    data class Failure(
+        val message: DlaFlowUiMessage?,
+        val showRetry: Boolean,
+        val isOffline: Boolean,
+    ) : DashboardSurface
+
+    data object NoAccess : DashboardSurface
+}
+
+internal fun DashboardUiState.toDashboardSurface(): DashboardSurface = when (val current = contentState) {
+    DlaFlowUiState.Loading -> DashboardSurface.Dashboard(
+        content = null,
+        notice = null,
+        isRefreshing = isRefreshing,
+    )
+
+    is DlaFlowUiState.Content -> DashboardSurface.Dashboard(
+        content = current.data,
+        notice = transientMessage?.let { DashboardNotice(it, showRetry = it.retryable) },
+        isRefreshing = isRefreshing,
+    )
+
+    is DlaFlowUiState.Offline -> current.lastContent?.let { content ->
+        DashboardSurface.Dashboard(
+            content = content,
+            notice = transientMessage?.let { DashboardNotice(it, showRetry = true) },
+            isRefreshing = isRefreshing,
+        )
+    } ?: DashboardSurface.Failure(
+        message = transientMessage,
+        showRetry = true,
+        isOffline = true,
+    )
+
+    is DlaFlowUiState.Error -> DashboardSurface.Failure(
+        message = current.message,
+        showRetry = current.message.retryable,
+        isOffline = false,
+    )
+
+    DlaFlowUiState.NoAccess -> DashboardSurface.NoAccess
+    DlaFlowUiState.Empty -> DashboardSurface.Failure(
+        message = transientMessage,
+        showRetry = false,
+        isOffline = false,
+    )
+}
+
+internal data class DashboardLayoutPolicy(
+    val revenueCardHeightDp: Int,
+    val kpiTileHeightDp: Int,
+    val quickActionHeightDp: Int,
+    val quickActionLabelMaxLines: Int,
+    val quickActionSubtitleMaxLines: Int,
+    val stackRevenueComparison: Boolean,
+)
+
+internal fun dashboardLayoutPolicy(widthDp: Int, fontScale: Float): DashboardLayoutPolicy {
+    val largeTextOnNarrowScreen = widthDp <= 380 && fontScale >= 1.2f
+    return if (largeTextOnNarrowScreen) {
+        DashboardLayoutPolicy(
+            revenueCardHeightDp = 124,
+            kpiTileHeightDp = 116,
+            quickActionHeightDp = 116,
+            quickActionLabelMaxLines = 2,
+            quickActionSubtitleMaxLines = 2,
+            stackRevenueComparison = true,
+        )
+    } else {
+        DashboardLayoutPolicy(
+            revenueCardHeightDp = 104,
+            kpiTileHeightDp = 98,
+            quickActionHeightDp = 84,
+            quickActionLabelMaxLines = 1,
+            quickActionSubtitleMaxLines = 1,
+            stackRevenueComparison = false,
+        )
+    }
+}
+
 internal fun DashboardUiState.contentOrNull(): DashboardContent? = when (val current = contentState) {
     is DlaFlowUiState.Content -> current.data
     is DlaFlowUiState.Offline -> current.lastContent
