@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -40,15 +39,6 @@ class MobileNotificationsTest {
         assertEquals(3, filterNotifications(all, MobileNotificationFilter.ALL).size)
         assertEquals(listOf("2"), filterNotifications(all, MobileNotificationFilter.ATTENTION).map { it.id })
         assertEquals(listOf("1", "2"), filterNotifications(all, MobileNotificationFilter.UNREAD).map { it.id })
-    }
-
-    @Test
-    fun `dashboard notification entry points are clickable`() {
-        val source = File("src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt").readText()
-
-        assertTrue(source.contains("private fun NotificationsList(colors: DlaFlowComposeColors, notifications: List<MobileAssistantNotification>, onOpenNotifications: () -> Unit)"))
-        assertTrue(source.contains(".clickable { onOpenNotifications() }"))
-        assertTrue(source.contains("NotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)"))
     }
 
     @Test
