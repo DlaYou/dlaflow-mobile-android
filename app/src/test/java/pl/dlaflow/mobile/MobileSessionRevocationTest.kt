@@ -29,12 +29,29 @@ class MobileSessionRevocationTest {
 
     @Test
     fun `temporary verification failure keeps session to avoid false logout`() {
+        var unconfirmedCallbackCount = 0
         val shouldClear = shouldClearMobileSessionAfterUnauthorized(
             error = MobileApiException(401, "AUTH_REQUIRED", "Authentication is required."),
             verifyCurrentSession = { throw MobileApiException(500, "SERVER_ERROR", "Temporary problem.") },
+            onSessionUnconfirmed = { unconfirmedCallbackCount++ },
         )
 
         assertFalse(shouldClear)
+        assertTrue(unconfirmedCallbackCount == 1)
+    }
+
+    @Test
+    fun `revoked verification does not report a temporary unconfirmed session`() {
+        var unconfirmedCallbackCount = 0
+
+        val shouldClear = shouldClearMobileSessionAfterUnauthorized(
+            error = MobileApiException(401, "AUTH_REQUIRED", "Authentication is required."),
+            verifyCurrentSession = { throw MobileApiException(401, "AUTH_REQUIRED", "Authentication is required.") },
+            onSessionUnconfirmed = { unconfirmedCallbackCount++ },
+        )
+
+        assertTrue(shouldClear)
+        assertTrue(unconfirmedCallbackCount == 0)
     }
 
     @Test

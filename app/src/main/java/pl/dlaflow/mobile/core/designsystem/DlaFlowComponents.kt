@@ -3,6 +3,8 @@ package pl.dlaflow.mobile.core.designsystem
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -20,6 +22,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,16 +35,25 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.LocalShipping
+import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.ShoppingCart
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -143,6 +155,229 @@ internal fun DlaFlowTextField(
         ),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun DlaFlowSearchField(
+    colors: DlaFlowComposeColors,
+    value: String,
+    placeholder: String,
+    modifier: Modifier = Modifier,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = colors.textMuted,
+                modifier = Modifier.size(19.dp),
+            )
+        },
+        placeholder = {
+            Text(placeholder, color = colors.textMuted, fontSize = 12.sp)
+        },
+        shape = RoundedCornerShape(DlaFlowDimensions.controlRadius),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = colors.primary,
+            unfocusedBorderColor = colors.border,
+            focusedLabelColor = colors.primary,
+            cursorColor = colors.primary,
+            focusedTextColor = colors.textStrong,
+            unfocusedTextColor = colors.textStrong,
+            focusedContainerColor = colors.surfaceSubtle,
+            unfocusedContainerColor = colors.surfaceSubtle,
+        ),
+        modifier = modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+internal fun DlaFlowFilterChip(
+    colors: DlaFlowComposeColors,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .heightIn(min = DlaFlowDimensions.minimumTouchTarget)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .clip(RoundedCornerShape(DlaFlowDimensions.pillRadius))
+                .background(if (selected) colors.primarySoft else colors.surface)
+                .border(
+                    DlaFlowDimensions.borderWidth,
+                    if (selected) colors.primarySoftBorder else colors.border,
+                    RoundedCornerShape(DlaFlowDimensions.pillRadius),
+                )
+                .padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                color = if (selected) colors.primary else colors.textMuted,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DlaFlowSkeletonBlock(
+    colors: DlaFlowComposeColors,
+    modifier: Modifier,
+    radius: Dp = DlaFlowDimensions.controlRadius,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(radius))
+            .background(colors.surfaceSubtle)
+            .border(
+                DlaFlowDimensions.borderWidth,
+                colors.borderSubtle.copy(alpha = 0.55f),
+                RoundedCornerShape(radius),
+            ),
+    )
+}
+
+@Composable
+internal fun DlaFlowStateCard(
+    colors: DlaFlowComposeColors,
+    icon: ImageVector,
+    iconColor: Color,
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        DlaFlowCard(colors) {
+            Row(verticalAlignment = Alignment.Top) {
+                DlaFlowIcon(icon, iconColor, modifier = Modifier.size(40.dp))
+                Spacer(Modifier.width(11.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        color = colors.textStrong,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 18.sp,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        description,
+                        color = colors.textMuted,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DlaFlowMetricBox(
+    colors: DlaFlowComposeColors,
+    label: String,
+    value: String,
+    note: String? = null,
+    editable: Boolean = false,
+    editLabel: String = "",
+    modifier: Modifier = Modifier,
+    onEdit: () -> Unit = {},
+) {
+    val boxModifier = if (editable) {
+        modifier
+            .heightIn(min = DlaFlowDimensions.minimumTouchTarget)
+            .clickable(role = Role.Button, onClick = onEdit)
+    } else {
+        modifier
+    }
+    Column(
+        modifier = boxModifier
+            .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
+            .background(colors.surfaceSubtle)
+            .border(DlaFlowDimensions.borderWidth, colors.borderSubtle, RoundedCornerShape(DlaFlowDimensions.controlRadius))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, color = colors.textMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            if (editable && editLabel.isNotBlank()) {
+                Text(editLabel, color = colors.primary, fontSize = 8.5.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            value,
+            color = colors.textStrong,
+            fontSize = 12.5.sp,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (note != null) {
+            Spacer(Modifier.height(1.dp))
+            Text(note, color = colors.textMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+        }
+    }
+}
+
+internal fun interface DlaFlowThumbnailLoader {
+    suspend fun load(url: String): ImageBitmap?
+}
+
+@Composable
+internal fun DlaFlowThumbnail(
+    colors: DlaFlowComposeColors,
+    url: String,
+    loader: DlaFlowThumbnailLoader,
+    modifier: Modifier = Modifier.size(38.dp),
+    placeholderIcon: ImageVector = Icons.Rounded.Inventory2,
+    contentDescription: String? = null,
+) {
+    var bitmap by remember(loader, url) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(loader, url) {
+        bitmap = null
+        if (url.isNotBlank()) {
+            bitmap = runCatching { loader.load(url) }.getOrNull()
+        }
+    }
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
+            .background(colors.primarySoft)
+            .border(DlaFlowDimensions.borderWidth, colors.primarySoftBorder, RoundedCornerShape(DlaFlowDimensions.controlRadius)),
+        contentAlignment = Alignment.Center,
+    ) {
+        bitmap?.let { image ->
+            Image(
+                bitmap = image,
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } ?: Icon(
+            imageVector = placeholderIcon,
+            contentDescription = contentDescription,
+            tint = colors.primary,
+            modifier = Modifier.size(21.dp),
+        )
+    }
 }
 
 @Composable

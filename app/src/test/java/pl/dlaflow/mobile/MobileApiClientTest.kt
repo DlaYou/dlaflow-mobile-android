@@ -484,6 +484,104 @@ class MobileApiClientTest {
         }
     }
 
+    @Test
+    fun `orders page parser preserves rows badges and pagination metadata`() {
+        withSingleJsonResponse(
+            """{
+                "data":[{
+                    "id":"order-1",
+                    "orderNumber":"ORD-1001",
+                    "amount":149.99,
+                    "currency":"PLN",
+                    "customer":"Jan Testowy",
+                    "itemCount":2,
+                    "status":"new",
+                    "statusTone":"brand",
+                    "paymentStatus":"paid",
+                    "paymentTone":"success",
+                    "badges":{"documents":1,"messages":2,"shipments":1}
+                }],
+                "meta":{"count":1,"limit":20,"offset":20,"nextOffset":"40","total":42}
+            }""".trimIndent(),
+        ) { client, requestPath ->
+            val page = client.listOrders(
+                token = "synthetic-token",
+                search = "ORD 1001",
+                filter = MobileOrderFilter.TO_SHIP,
+                offset = 20,
+            )
+
+            assertEquals(
+                "/api/mobile/orders?limit=20&offset=20&search=ORD+1001&filter=to-ship",
+                requestPath.get(),
+            )
+            assertEquals(42, page.total)
+            assertEquals(40, page.nextOffset)
+            assertEquals("ORD-1001", page.data.single().orderNumber)
+            assertEquals(2, page.data.single().badges.messages)
+            assertEquals("success", page.data.single().paymentTone)
+        }
+    }
+
+    @Test
+    fun `order detail parser applies safe defaults to partial response`() {
+        withSingleJsonResponse(
+            """{
+                "data":{
+                    "orderNumber":"ORD/1002",
+                    "customer":{},
+                    "delivery":{},
+                    "payment":{},
+                    "items":[{}]
+                }
+            }""".trimIndent(),
+        ) { client, requestPath ->
+            val detail = client.getOrder("synthetic-token", "ORD/1002")
+
+            assertEquals("/api/mobile/orders/ORD%2F1002", requestPath.get())
+            assertEquals("ORD/1002", detail.orderNumber)
+            assertEquals("ORD/1002", detail.id)
+            assertEquals("Klient", detail.customer.name)
+            assertEquals("PLN", detail.payment.currency)
+            assertEquals("neutral", detail.payment.tone)
+            assertEquals("Produkt", detail.items.single().name)
+            assertTrue(detail.documents.isEmpty())
+            assertTrue(detail.shipments.isEmpty())
+        }
+    }
+
+    private fun withSingleJsonResponse(
+        responseJson: String,
+        action: (MobileApiClient, AtomicReference<String>) -> Unit,
+    ) {
+        val requestPath = AtomicReference("")
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        val responseFuture = executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                val requestLine = reader.readLine().orEmpty().split(" ")
+                requestPath.set(requestLine.getOrElse(1) { "" })
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+
+                val body = responseJson.toByteArray(Charsets.UTF_8)
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            action(MobileApiClient("http://127.0.0.1:${server.localPort}"), requestPath)
+            responseFuture.get(2, TimeUnit.SECONDS)
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
     private class FakeMobileRequestSigner(
         private val publicKey: String = "PUBLIC_KEY_BASE64_VALUE_WITH_ENOUGH_LENGTH",
     ) : MobileRequestSigner {

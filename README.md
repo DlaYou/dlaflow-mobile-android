@@ -27,13 +27,14 @@ The Android app remains a single Gradle `app` module with explicit package bound
 - `core/network` owns transport-level error types and, in the next approved stage, signed transport;
 - `feature/pairing` owns the pairing form, help, code/QR validation and the required device name;
 - `feature/dashboard` owns dashboard presentation state, refresh coordination and the Compose dashboard screen;
+- `feature/orders` owns order-list and order-detail presentation state, pagination, refresh coordination and Compose surfaces;
 - feature extraction is performed one area at a time without changing `/api/mobile/*` contracts.
 
 The DlaFlow panel/API remains the source of truth for business models, tenant isolation, permissions, normalizers, storage and APK release metadata.
 
 `MainActivity` remains the platform adapter for launching ZXing, persisting the successful session and starting post-pair Android services. The custom name and code are sent together through the existing atomic `POST /api/mobile/devices/pair/complete`; this extraction does not add an endpoint, bump the Android version, create a tag or publish an APK.
 
-Dashboard transport still uses the current `MobileApiClient` through the host-owned `DashboardGateway` adapter until the approved transport phase.
+Dashboard and orders transport still use the current `MobileApiClient` through gateway boundaries instantiated by the host until the approved transport phase. Scanner and dashboard KPI content enter orders through a host compatibility slot, so `feature/orders` does not depend on other feature implementations.
 
 ## Required Local Verification
 
@@ -44,7 +45,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-repository-co
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-design-system-boundary.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-pairing-feature-boundary.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-dashboard-feature-boundary.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-orders-feature-boundary.ps1
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
+.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon
 ```
 
 Do not bump `versionCode`/`versionName`, create a `mobile-v*` tag or publish an APK without a separate release decision.

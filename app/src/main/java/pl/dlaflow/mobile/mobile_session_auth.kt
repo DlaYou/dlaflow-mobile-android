@@ -5,6 +5,7 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 internal fun shouldClearMobileSessionAfterUnauthorized(
     error: Throwable,
     onSessionValid: () -> Unit = {},
+    onSessionUnconfirmed: () -> Unit = {},
     verifyCurrentSession: () -> Any?,
 ): Boolean {
     if (error !is MobileApiException || error.statusCode != 401) {
@@ -19,7 +20,11 @@ internal fun shouldClearMobileSessionAfterUnauthorized(
             false
         },
         onFailure = { verificationError ->
-            verificationError is MobileApiException && verificationError.statusCode == 401
+            val revoked = verificationError is MobileApiException && verificationError.statusCode == 401
+            if (!revoked) {
+                onSessionUnconfirmed()
+            }
+            revoked
         },
     )
 }

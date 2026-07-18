@@ -54,6 +54,14 @@ import pl.dlaflow.mobile.feature.dashboard.DashboardFeedback
 import pl.dlaflow.mobile.feature.dashboard.DashboardGateway
 import pl.dlaflow.mobile.feature.dashboard.DashboardStateHolder
 import pl.dlaflow.mobile.feature.dashboard.contentOrNull
+import pl.dlaflow.mobile.feature.orders.MobileApiOrdersGateway
+import pl.dlaflow.mobile.feature.orders.OrdersAction
+import pl.dlaflow.mobile.feature.orders.OrdersCoordinator
+import pl.dlaflow.mobile.feature.orders.OrdersFeedback
+import pl.dlaflow.mobile.feature.orders.OrdersLoadOperation
+import pl.dlaflow.mobile.feature.orders.OrdersQuery
+import pl.dlaflow.mobile.feature.orders.OrdersRoute
+import pl.dlaflow.mobile.feature.orders.OrdersStateHolder
 import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
 import pl.dlaflow.mobile.feature.pairing.PairingGateway
 import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
@@ -123,6 +131,19 @@ class MainActivity : ComponentActivity() {
             onUnauthorized = ::handleDashboardUnauthorized,
         )
     }
+    private val ordersStateHolder = OrdersStateHolder()
+    private val ordersCoordinator by lazy {
+        OrdersCoordinator(
+            stateHolder = ordersStateHolder,
+            gateway = MobileApiOrdersGateway {
+                mobileApiClientForSession(sessionStore)
+            },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onFeedback = ::handleOrdersFeedback,
+            onUnauthorized = ::handleOrdersUnauthorized,
+        )
+    }
     private val pairingStateHolder = PairingStateHolder()
     private val pairingCoordinator by lazy {
         PairingCoordinator(
@@ -154,15 +175,6 @@ class MainActivity : ComponentActivity() {
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
     private var packageScanState by mutableStateOf<MobilePackageScanUiState>(MobilePackageScanUiState.Empty)
-    private var mobileOrders by mutableStateOf<List<MobileOrderListItem>>(emptyList())
-    private var mobileOrdersNextOffset by mutableStateOf<Int?>(null)
-    private var mobileOrdersTotal by mutableStateOf(0)
-    private var mobileOrdersLoading by mutableStateOf(false)
-    private var mobileOrdersSearch by mutableStateOf("")
-    private var mobileOrdersFilter by mutableStateOf(MobileOrderFilter.ALL)
-    private var mobileOrdersNoAccess by mutableStateOf(false)
-    private var selectedMobileOrder by mutableStateOf<MobileOrderDetail?>(null)
-    private var selectedMobileOrderLoading by mutableStateOf(false)
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -188,10 +200,7 @@ class MainActivity : ComponentActivity() {
     private var pendingInstallApkFile: File? = null
     private var pendingInstallUpdate: MobileAppUpdate? = null
     private var mobileProductsRequestVersion = 0
-    private var mobileOrdersRequestVersion = 0
-    private var mobileOrderDetailRequestVersion = 0
     private var mobileProductsStateVersion = 0
-    private var mobileOrdersStateVersion = 0
     private var pendingQrScanMode = QrScanMode.PAIRING
     private var pendingCameraPhotoFile: File? = null
     private var pendingCameraPhotoUri: Uri? = null
@@ -253,7 +262,7 @@ class MainActivity : ComponentActivity() {
         }
         refreshPhotoTasks(showLoading = false)
         if (selectedTab == MobileAssistantTab.ORDERS) {
-            ensureMobileOrdersLoaded()
+            ensureOrdersLoaded()
         }
     }
 
@@ -376,15 +385,7 @@ class MainActivity : ComponentActivity() {
                     appUpdateDownloading = appUpdateDownloading,
                     appUpdateDownloadProgress = appUpdateDownloadProgress,
                     appUpdateError = appUpdateError,
-                    mobileOrders = mobileOrders,
-                    mobileOrdersNextOffset = mobileOrdersNextOffset,
-                    mobileOrdersTotal = mobileOrdersTotal,
-                    mobileOrdersLoading = mobileOrdersLoading,
-                    mobileOrdersSearch = mobileOrdersSearch,
-                    mobileOrdersFilter = mobileOrdersFilter,
-                    mobileOrdersNoAccess = mobileOrdersNoAccess,
-                    selectedMobileOrder = selectedMobileOrder,
-                    selectedMobileOrderLoading = selectedMobileOrderLoading,
+                    ordersState = ordersStateHolder.state,
                     mobileProducts = mobileProducts,
                     mobileProductsNextCursor = mobileProductsNextCursor,
                     mobileProductsTotal = mobileProductsTotal,
@@ -413,31 +414,13 @@ class MainActivity : ComponentActivity() {
                     onSelectTab = {
                         selectedTab = it
                         if (it == MobileAssistantTab.ORDERS) {
-                            ensureMobileOrdersLoaded()
+                            ensureOrdersLoaded()
                         }
                         if (it == MobileAssistantTab.PRODUCTS) {
                             ensureMobileProductsLoaded()
                         }
                     },
-                    onOrdersSearchChange = {
-                        if (mobileOrdersSearch != it) {
-                            mobileOrdersSearch = it
-                            refreshMobileOrders(reset = true, showLoading = true)
-                        }
-                    },
-                    onOrdersFilterChange = {
-                        if (mobileOrdersFilter != it) {
-                            mobileOrdersFilter = it
-                            refreshMobileOrders(reset = true, showLoading = true)
-                        }
-                    },
-                    onLoadMoreOrders = { refreshMobileOrders(reset = false, showLoading = true) },
-                    onSelectOrder = { order -> loadMobileOrderDetail(order.orderNumber) },
-                    onOpenScannedOrder = { orderNumber ->
-                        selectedTab = MobileAssistantTab.ORDERS
-                        loadMobileOrderDetail(orderNumber)
-                    },
-                    onCloseOrderDetail = { selectedMobileOrder = null },
+                    onOrdersAction = ::handleOrdersAction,
                     onProductsSearchChange = {
                         if (mobileProductsSearch != it) {
                             mobileProductsSearch = it
@@ -688,7 +671,7 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
                         dashboardCoordinator.reset()
-                        clearMobileOrdersState()
+                        ordersCoordinator.reset()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
                     }
@@ -705,7 +688,7 @@ class MainActivity : ComponentActivity() {
                         refreshAppUpdate(showStatus = false)
                         consumePendingLaunchPackageScan()
                         if (selectedTab == MobileAssistantTab.ORDERS) {
-                            ensureMobileOrdersLoaded()
+                            ensureOrdersLoaded()
                         }
                     }
                 }
@@ -730,7 +713,7 @@ class MainActivity : ComponentActivity() {
         sessionStore.saveSession(baseUrl, nextSession)
         updateSessionTransition(activeStepIndex = 1, progress = 46)
         dashboardCoordinator.reset()
-        clearMobileOrdersState()
+        ordersCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
@@ -746,7 +729,7 @@ class MainActivity : ComponentActivity() {
             refreshPhotoTasks(showLoading = false)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
-                ensureMobileOrdersLoaded()
+                ensureOrdersLoaded()
             }
         }
     }
@@ -858,7 +841,7 @@ class MainActivity : ComponentActivity() {
                 dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
                 refreshPhotoTasks(showLoading = false)
                 if (selectedTab == MobileAssistantTab.ORDERS) {
-                    refreshMobileOrders(reset = true, showLoading = false)
+                    ordersCoordinator.refreshList(currentSession.token, showFeedback = false)
                 }
                 refreshAppUpdate(showStatus = false)
             }
@@ -883,7 +866,7 @@ class MainActivity : ComponentActivity() {
             }
             DashboardAction.OpenStatistics -> {
                 selectedTab = MobileAssistantTab.ORDERS
-                ensureMobileOrdersLoaded()
+                ensureOrdersLoaded()
                 setStatus("Pokazuję szybkie statystyki z dzisiejszego dashboardu.")
             }
             DashboardAction.OpenProducts -> {
@@ -930,6 +913,41 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun handleOrdersFeedback(feedback: OrdersFeedback) {
+        setStatus(
+            when (feedback) {
+                OrdersFeedback.LIST_LOADING -> "Odświeżam zamówienia..."
+                OrdersFeedback.LIST_READY -> "Zamówienia gotowe."
+                OrdersFeedback.LIST_EMPTY -> "Brak zamówień dla wybranego filtra."
+                OrdersFeedback.DETAIL_LOADING -> "Pobieram zamówienie..."
+                OrdersFeedback.DETAIL_READY -> "Zamówienie gotowe."
+                OrdersFeedback.DETAIL_CLOSED -> "Pokazuję listę zamówień."
+                OrdersFeedback.LOAD_FAILED -> "Nie udało się pobrać zamówień."
+            },
+        )
+    }
+
+    private fun handleOrdersUnauthorized(
+        error: Throwable,
+        operation: OrdersLoadOperation,
+        allowRetry: Boolean,
+        onSessionUnconfirmed: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się pobrać zamówień.",
+            showNonAuthStatus = true,
+            onSessionValid = {
+                if (allowRetry) {
+                    session?.token?.let { token ->
+                        ordersCoordinator.retry(token, operation, showFeedback = true)
+                    }
+                }
+            },
+            onSessionUnconfirmed = onSessionUnconfirmed,
+        )
+    }
+
     private fun handlePairingQrResult(rawValue: String?) {
         pairingStateHolder.acceptQrResult(rawValue)
     }
@@ -961,102 +979,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refreshMobileOrders(reset: Boolean = true, showLoading: Boolean = true) {
+    private fun ensureOrdersLoaded() {
         val currentSession = session ?: return
-        if (mobileOrdersLoading && !reset) {
-            return
+        val state = ordersStateHolder.state
+        if (state.activeListRequestId == null && state.listState == pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading) {
+            ordersCoordinator.resetList(
+                token = currentSession.token,
+                query = state.query,
+                showFeedback = true,
+            )
         }
-        if (!reset && mobileOrdersNextOffset == null) {
-            return
-        }
+    }
 
-        val offset = if (reset) 0 else mobileOrdersNextOffset ?: return
-        val search = mobileOrdersSearch
-        val filter = mobileOrdersFilter
-        val requestVersion = ++mobileOrdersRequestVersion
-        mobileOrdersLoading = true
-        if (reset) {
-            selectedMobileOrder = null
-            selectedMobileOrderLoading = false
-        }
-        if (showLoading) {
-            setStatus("Odświeżam zamówienia...")
-        }
-
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).listOrders(
-                    token = currentSession.token,
-                    search = search,
-                    filter = filter,
-                    offset = offset,
-                )
-            }.onSuccess { page ->
-                runOnUiThread {
-                    if (requestVersion != mobileOrdersRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileOrders = if (reset) page.data else mobileOrders + page.data
-                    mobileOrdersNextOffset = page.nextOffset
-                    mobileOrdersTotal = page.total
-                    mobileOrdersLoading = false
-                    mobileOrdersNoAccess = false
-                    setStatus(if (reset && page.data.isEmpty()) "Brak zamówień dla wybranego filtra." else "Zamówienia gotowe.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (requestVersion != mobileOrdersRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileOrdersLoading = false
-                    if (error is MobileApiException && error.statusCode == 403) {
-                        clearMobileOrdersData(invalidateCallbacks = true)
-                        mobileOrdersNoAccess = true
-                    }
-                    handleMobileApiFailure(error, "Nie udało się odświeżyć zamówień.")
+    private fun handleOrdersAction(action: OrdersAction) {
+        val currentSession = session ?: return
+        when (action) {
+            is OrdersAction.SearchChanged -> {
+                if (action.search != ordersStateHolder.state.query.search) {
+                    ordersCoordinator.resetList(
+                        token = currentSession.token,
+                        query = ordersStateHolder.state.query.copy(search = action.search),
+                        showFeedback = true,
+                    )
                 }
             }
-        }
-    }
 
-    private fun ensureMobileOrdersLoaded() {
-        if (session != null && mobileOrders.isEmpty() && !mobileOrdersLoading && !mobileOrdersNoAccess) {
-            refreshMobileOrders(reset = true)
-        }
-    }
-
-    private fun loadMobileOrderDetail(orderId: String) {
-        val currentSession = session ?: return
-        val requestVersion = ++mobileOrderDetailRequestVersion
-        selectedMobileOrder = null
-        selectedMobileOrderLoading = true
-        setStatus("Pobieram zamówienie...")
-
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).getOrder(currentSession.token, orderId)
-            }.onSuccess { order ->
-                runOnUiThread {
-                    if (requestVersion != mobileOrderDetailRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    selectedMobileOrder = order
-                    selectedMobileOrderLoading = false
-                    mobileOrdersNoAccess = false
-                    setStatus("Zamówienie gotowe.")
+            is OrdersAction.FilterChanged -> {
+                if (action.filter != ordersStateHolder.state.query.filter) {
+                    ordersCoordinator.resetList(
+                        token = currentSession.token,
+                        query = ordersStateHolder.state.query.copy(filter = action.filter),
+                        showFeedback = true,
+                    )
                 }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (requestVersion != mobileOrderDetailRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    selectedMobileOrderLoading = false
-                    if (error is MobileApiException && error.statusCode == 403) {
-                        clearMobileOrdersData(invalidateCallbacks = true)
-                        mobileOrdersNoAccess = true
-                    }
-                    handleMobileApiFailure(error, "Nie udało się pobrać zamówienia.")
-                }
+            }
+
+            OrdersAction.Refresh -> ordersCoordinator.refreshList(currentSession.token, showFeedback = true)
+            OrdersAction.LoadMore -> ordersCoordinator.loadMore(currentSession.token, showFeedback = true)
+            is OrdersAction.OpenOrder -> ordersCoordinator.loadDetail(
+                token = currentSession.token,
+                orderNumber = action.orderNumber,
+                showFeedback = true,
+            )
+
+            OrdersAction.CloseDetail -> ordersCoordinator.closeDetail()
+            OrdersAction.Retry -> when (val route = ordersStateHolder.state.route) {
+                OrdersRoute.List -> ordersCoordinator.refreshList(currentSession.token, showFeedback = true)
+                is OrdersRoute.Detail -> ordersCoordinator.loadDetail(
+                    token = currentSession.token,
+                    orderNumber = route.orderNumber,
+                    showFeedback = true,
+                )
             }
         }
     }
@@ -2050,6 +2023,7 @@ class MainActivity : ComponentActivity() {
         fallbackMessage: String,
         showNonAuthStatus: Boolean,
         onSessionValid: () -> Unit = {},
+        onSessionUnconfirmed: () -> Unit = {},
     ) {
         val currentSession = session
         if (currentSession == null) {
@@ -2063,12 +2037,14 @@ class MainActivity : ComponentActivity() {
 
         executor.execute {
             var sessionConfirmedValid = false
+            var sessionUnconfirmed = false
             val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(
                 error = error,
                 verifyCurrentSession = {
                     mobileApiClientForSession(sessionStore).verifySession(currentSession.token)
                 },
                 onSessionValid = { sessionConfirmedValid = true },
+                onSessionUnconfirmed = { sessionUnconfirmed = true },
             )
 
             runOnUiThread {
@@ -2084,6 +2060,8 @@ class MainActivity : ComponentActivity() {
                     }
                     if (sessionConfirmedValid) {
                         onSessionValid()
+                    } else if (sessionUnconfirmed) {
+                        onSessionUnconfirmed()
                     }
                 }
             }
@@ -2111,27 +2089,6 @@ class MainActivity : ComponentActivity() {
 
     private fun isCurrentSessionToken(token: String): Boolean {
         return session?.token == token
-    }
-
-    private fun clearMobileOrdersData(invalidateCallbacks: Boolean = false) {
-        if (invalidateCallbacks) {
-            mobileOrdersStateVersion += 1
-        }
-        mobileOrders = emptyList()
-        mobileOrdersNextOffset = null
-        mobileOrdersTotal = 0
-        mobileOrdersLoading = false
-        selectedMobileOrder = null
-        selectedMobileOrderLoading = false
-    }
-
-    private fun clearMobileOrdersState() {
-        mobileOrdersRequestVersion += 1
-        mobileOrderDetailRequestVersion += 1
-        clearMobileOrdersData(invalidateCallbacks = true)
-        mobileOrdersSearch = ""
-        mobileOrdersFilter = MobileOrderFilter.ALL
-        mobileOrdersNoAccess = false
     }
 
     private fun clearMobileProductsData(invalidateCallbacks: Boolean = false) {
@@ -2191,7 +2148,7 @@ class MainActivity : ComponentActivity() {
         lastDispatchedPhotoTaskId = null
         packageScanState = MobilePackageScanUiState.Empty
         clearAppUpdateState()
-        clearMobileOrdersState()
+        ordersCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         selectedTab = MobileAssistantTab.DASHBOARD
