@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -51,6 +52,14 @@ class OrdersFeatureScreenTest {
         composeRule.onAllNodesWithText("Brak dostępu")[0].assertIsDisplayed()
         composeRule.onNodeWithText("lead-content").assertDoesNotExist()
         composeRule.onNodeWithText("Spróbuj ponownie").assertDoesNotExist()
+    }
+
+    @Test
+    fun ownsAStableFeatureLayoutRoot() {
+        setOrders(contentState(), mutableListOf())
+
+        composeRule.onNodeWithTag("orders_feature_root")
+            .assertIsDisplayed()
     }
 
     @Test

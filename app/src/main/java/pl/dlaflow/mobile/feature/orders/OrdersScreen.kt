@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -56,93 +57,101 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiState
 @Composable
 internal fun OrdersFeatureScreen(
     colors: DlaFlowComposeColors,
+    modifier: Modifier = Modifier,
     state: OrdersUiState,
     thumbnailLoader: DlaFlowThumbnailLoader,
     leadContent: @Composable () -> Unit,
     onAction: (OrdersAction) -> Unit,
 ) {
     val content = state.listContentOrNull()
-    DlaFlowScreenHeader(
-        colors = colors,
-        title = stringResource(R.string.orders_title),
-        subtitle = ordersSummary(state, content),
-    )
-    DlaFlowSearchField(
-        colors = colors,
-        value = state.query.search,
-        placeholder = stringResource(R.string.orders_search_placeholder),
-        onValueChange = { onAction(OrdersAction.SearchChanged(it)) },
-    )
-    OrdersFilterChips(
-        colors = colors,
-        selected = state.query.filter,
-        onFilterChange = { onAction(OrdersAction.FilterChanged(it)) },
-    )
-
-    if (state.route is OrdersRoute.Detail) {
-        OrderDetailPanel(
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("orders_feature_root"),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        DlaFlowScreenHeader(
             colors = colors,
-            state = state.detailState,
-            onClose = { onAction(OrdersAction.CloseDetail) },
-            onRetry = { onAction(OrdersAction.Retry) },
+            title = stringResource(R.string.orders_title),
+            subtitle = ordersSummary(state, content),
         )
-        return
-    }
-
-    if (state.listState == DlaFlowUiState.NoAccess) {
-        DlaFlowStateCard(
+        DlaFlowSearchField(
             colors = colors,
-            icon = Icons.Rounded.Warning,
-            iconColor = colors.danger,
-            title = stringResource(R.string.orders_no_access_title),
-            description = stringResource(R.string.orders_no_access_description),
+            value = state.query.search,
+            placeholder = stringResource(R.string.orders_search_placeholder),
+            onValueChange = { onAction(OrdersAction.SearchChanged(it)) },
         )
-        return
-    }
-
-    leadContent()
-
-    when (val listState = state.listState) {
-        DlaFlowUiState.Loading -> OrdersListSkeleton(colors)
-        DlaFlowUiState.Empty -> OrdersEmptyState(colors)
-        is DlaFlowUiState.Content -> OrdersList(
+        OrdersFilterChips(
             colors = colors,
-            content = listState.data,
-            thumbnailLoader = thumbnailLoader,
-            onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
+            selected = state.query.filter,
+            onFilterChange = { onAction(OrdersAction.FilterChanged(it)) },
         )
 
-        is DlaFlowUiState.Offline -> listState.lastContent?.let { retained ->
-            OrdersList(
+        if (state.route is OrdersRoute.Detail) {
+            OrderDetailPanel(
                 colors = colors,
-                content = retained,
+                state = state.detailState,
+                onClose = { onAction(OrdersAction.CloseDetail) },
+                onRetry = { onAction(OrdersAction.Retry) },
+            )
+            return@Column
+        }
+
+        if (state.listState == DlaFlowUiState.NoAccess) {
+            DlaFlowStateCard(
+                colors = colors,
+                icon = Icons.Rounded.Warning,
+                iconColor = colors.danger,
+                title = stringResource(R.string.orders_no_access_title),
+                description = stringResource(R.string.orders_no_access_description),
+            )
+            return@Column
+        }
+
+        leadContent()
+
+        when (val listState = state.listState) {
+            DlaFlowUiState.Loading -> OrdersListSkeleton(colors)
+            DlaFlowUiState.Empty -> OrdersEmptyState(colors)
+            is DlaFlowUiState.Content -> OrdersList(
+                colors = colors,
+                content = listState.data,
                 thumbnailLoader = thumbnailLoader,
                 onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
             )
-            OrdersFailureState(colors, state, onAction)
-        } ?: OrdersFailureState(colors, state, onAction)
 
-        is DlaFlowUiState.Error -> OrdersFailureState(colors, state, onAction)
-        DlaFlowUiState.NoAccess -> Unit
-    }
+            is DlaFlowUiState.Offline -> listState.lastContent?.let { retained ->
+                OrdersList(
+                    colors = colors,
+                    content = retained,
+                    thumbnailLoader = thumbnailLoader,
+                    onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
+                )
+                OrdersFailureState(colors, state, onAction)
+            } ?: OrdersFailureState(colors, state, onAction)
 
-    if (state.isRefreshing && content != null) {
-        DlaFlowStateCard(
-            colors = colors,
-            icon = Icons.Rounded.Refresh,
-            iconColor = colors.primary,
-            title = stringResource(R.string.orders_refreshing_title),
-            description = stringResource(R.string.orders_refreshing_description),
-        )
-    }
-    if (content?.nextOffset != null && content.items.isNotEmpty()) {
-        DlaFlowSecondaryButton(
-            colors = colors,
-            icon = Icons.Rounded.Refresh,
-            text = stringResource(if (state.isLoadingMore) R.string.orders_loading_more else R.string.orders_load_more),
-            enabled = !state.isLoadingMore,
-            onClick = { onAction(OrdersAction.LoadMore) },
-        )
+            is DlaFlowUiState.Error -> OrdersFailureState(colors, state, onAction)
+            DlaFlowUiState.NoAccess -> Unit
+        }
+
+        if (state.isRefreshing && content != null) {
+            DlaFlowStateCard(
+                colors = colors,
+                icon = Icons.Rounded.Refresh,
+                iconColor = colors.primary,
+                title = stringResource(R.string.orders_refreshing_title),
+                description = stringResource(R.string.orders_refreshing_description),
+            )
+        }
+        if (content?.nextOffset != null && content.items.isNotEmpty()) {
+            DlaFlowSecondaryButton(
+                colors = colors,
+                icon = Icons.Rounded.Refresh,
+                text = stringResource(if (state.isLoadingMore) R.string.orders_loading_more else R.string.orders_load_more),
+                enabled = !state.isLoadingMore,
+                onClick = { onAction(OrdersAction.LoadMore) },
+            )
+        }
     }
 }
 
