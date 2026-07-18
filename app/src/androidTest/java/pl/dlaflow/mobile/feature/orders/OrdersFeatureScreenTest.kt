@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -19,9 +21,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +64,22 @@ class OrdersFeatureScreenTest {
 
         composeRule.onNodeWithTag("orders_feature_root")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun largeFontUsesTwoColumnFilterLayout() {
+        setOrders(contentState(), mutableListOf(), fontScale = 1.3f)
+
+        val problemsTop = composeRule.onNodeWithText("Problemy")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val messagesTop = composeRule.onNodeWithText("Wiadomości")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(messagesTop > problemsTop)
     }
 
     @Test
@@ -155,17 +175,24 @@ class OrdersFeatureScreenTest {
         composeRule.onNodeWithText("Spróbuj ponownie").assertDoesNotExist()
     }
 
-    private fun setOrders(state: OrdersUiState, actions: MutableList<OrdersAction>) {
+    private fun setOrders(
+        state: OrdersUiState,
+        actions: MutableList<OrdersAction>,
+        fontScale: Float = 1f,
+    ) {
         composeRule.setContent {
             DlaFlowTheme(dark = false) { colors ->
-                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    OrdersFeatureScreen(
-                        colors = colors,
-                        state = state,
-                        thumbnailLoader = DlaFlowThumbnailLoader { null },
-                        leadContent = { Text("lead-content") },
-                        onAction = actions::add,
-                    )
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        OrdersFeatureScreen(
+                            colors = colors,
+                            state = state,
+                            thumbnailLoader = DlaFlowThumbnailLoader { null },
+                            leadContent = { Text("lead-content") },
+                            onAction = actions::add,
+                        )
+                    }
                 }
             }
         }

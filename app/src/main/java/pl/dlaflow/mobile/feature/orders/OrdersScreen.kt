@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -161,8 +163,16 @@ private fun OrdersFilterChips(
     selected: OrdersFilter,
     onFilterChange: (OrdersFilter) -> Unit,
 ) {
+    val columnCount = if (
+        LocalConfiguration.current.screenWidthDp < 480 &&
+        LocalDensity.current.fontScale >= 1.2f
+    ) {
+        2
+    } else {
+        3
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OrdersFilter.entries.chunked(3).forEach { row ->
+        OrdersFilter.entries.chunked(columnCount).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { filter ->
                     DlaFlowFilterChip(
@@ -173,7 +183,7 @@ private fun OrdersFilterChips(
                         onClick = { onFilterChange(filter) },
                     )
                 }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(columnCount - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
