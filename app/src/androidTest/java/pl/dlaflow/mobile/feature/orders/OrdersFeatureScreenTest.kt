@@ -1,11 +1,13 @@
 package pl.dlaflow.mobile.feature.orders
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -68,7 +70,12 @@ class OrdersFeatureScreenTest {
 
     @Test
     fun largeFontUsesTwoColumnFilterLayout() {
-        setOrders(contentState(), mutableListOf(), fontScale = 1.3f)
+        setOrders(
+            state = contentState(),
+            actions = mutableListOf(),
+            screenWidthDp = 360,
+            fontScale = 1.3f,
+        )
 
         val problemsTop = composeRule.onNodeWithText("Problemy")
             .fetchSemanticsNode()
@@ -80,6 +87,33 @@ class OrdersFeatureScreenTest {
             .top
 
         assertTrue(messagesTop > problemsTop)
+    }
+
+    @Test
+    fun largeFontWideScreenKeepsThreeColumnFilterLayout() {
+        setOrders(
+            state = contentState(),
+            actions = mutableListOf(),
+            screenWidthDp = 600,
+            fontScale = 1.3f,
+        )
+
+        val newTop = composeRule.onNode(
+            hasText("Nowe") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+        )
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val shippingTop = composeRule.onNode(
+            hasText("Do wysyłki") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+        )
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertEquals(newTop, shippingTop, 0f)
     }
 
     @Test
@@ -179,11 +213,18 @@ class OrdersFeatureScreenTest {
         state: OrdersUiState,
         actions: MutableList<OrdersAction>,
         fontScale: Float = 1f,
+        screenWidthDp: Int? = null,
     ) {
         composeRule.setContent {
             DlaFlowTheme(dark = false) { colors ->
                 val density = LocalDensity.current
-                CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
+                val configuration = Configuration(LocalConfiguration.current).apply {
+                    screenWidthDp?.let { this.screenWidthDp = it }
+                }
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale),
+                    LocalConfiguration provides configuration,
+                ) {
                     Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                         OrdersFeatureScreen(
                             colors = colors,
