@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -310,6 +311,8 @@ private fun OrdersListCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    Spacer(Modifier.height(5.dp))
+                    OrderTimingLine(colors, order)
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         OrdersTinyPill(ordersStatusLabel(order.status), statusColor)
@@ -430,3 +433,60 @@ internal fun formatOrdersMoney(value: Double): String = NumberFormat.getCurrency
 private fun ordersShortTime(value: String): String = runCatching {
     OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("HH:mm"))
 }.getOrDefault("")
+
+
+
+
+@Composable
+internal fun ordersShippingDeadlineLabel(value: String): String {
+    val deadline = runCatching { OffsetDateTime.parse(value) }.getOrNull()
+        ?: return stringResource(R.string.orders_deadline_unavailable)
+    val remainingMinutes = Duration.between(OffsetDateTime.now(), deadline).toMinutes()
+    val exact = deadline.format(DateTimeFormatter.ofPattern("dd.MM, HH:mm", Locale("pl", "PL")))
+    return when {
+        remainingMinutes < 0 -> stringResource(R.string.orders_deadline_overdue, exact)
+        remainingMinutes < 60 -> stringResource(R.string.orders_deadline_minutes, remainingMinutes.coerceAtLeast(0), exact)
+        remainingMinutes < 24 * 60 -> stringResource(R.string.orders_deadline_hours, remainingMinutes / 60, exact)
+        else -> stringResource(R.string.orders_deadline_days, remainingMinutes / (24 * 60), exact)
+    }
+}
+
+internal fun ordersDisplayTimestamp(value: String): String = runCatching {
+    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm", Locale("pl", "PL")))
+}.getOrDefault("")
+
+
+
+@Composable
+private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem) {
+    val orderedAt = ordersDisplayTimestamp(order.createdAt)
+    val deadlineAt = order.shippingDeadlineAt.takeIf { it.isNotBlank() }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            text = stringResource(R.string.orders_list_ordered_at, orderedAt.ifBlank { stringResource(R.string.orders_value_missing) }),
+            color = colors.textMuted,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        deadlineAt?.let { deadline ->
+            Text(
+                text = stringResource(R.string.orders_list_shipping_deadline, ordersShippingDeadlineLabel(deadline)),
+                color = ordersShippingDeadlineColor(colors, deadline),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun ordersShippingDeadlineColor(colors: DlaFlowComposeColors, value: String): Color {
+    val remaining = runCatching { Duration.between(OffsetDateTime.now(), OffsetDateTime.parse(value)).toMinutes() }.getOrNull()
+        ?: return colors.textMuted
+    return when {
+        remaining < 0 -> colors.heroNegative
+        remaining < 24 * 60 -> colors.orange
+        else -> colors.textMuted
+    }
+}
