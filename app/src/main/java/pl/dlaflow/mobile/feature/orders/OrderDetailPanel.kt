@@ -112,7 +112,12 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
     Spacer(Modifier.height(10.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
         DlaFlowMetricBox(colors, stringResource(R.string.orders_metric_value), formatOrdersMoney(order.amount), modifier = Modifier.weight(1f))
-        DlaFlowMetricBox(colors, stringResource(R.string.orders_metric_status), ordersStatusLabel(order.status), modifier = Modifier.weight(1f))
+        DlaFlowMetricBox(
+            colors,
+            stringResource(R.string.orders_metric_status),
+            ordersStatusValue(order.status, stringResource(R.string.orders_status_check)),
+            modifier = Modifier.weight(1f),
+        )
     }
     OrderDetailSection(colors, stringResource(R.string.orders_section_timing)) {
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_ordered_at), ordersDisplayTimestamp(order.createdAt).ifBlank { stringResource(R.string.orders_value_missing) })

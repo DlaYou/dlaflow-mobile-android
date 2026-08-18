@@ -409,22 +409,6 @@ private fun ordersFilterLabel(filter: OrdersFilter): String = stringResource(
     },
 )
 
-@Composable
-internal fun ordersStatusLabel(status: String): String {
-    val trimmed = status.trim()
-    val labelRes = when (trimmed.lowercase(Locale.ROOT)) {
-        "" -> R.string.orders_status_missing
-        "nowe", "new" -> R.string.orders_status_new
-        "do wysyłki", "do wysylki", "to_ship", "to-ship" -> R.string.orders_status_to_ship
-        "w realizacji", "processing" -> R.string.orders_status_processing
-        "dostarczone", "delivered" -> R.string.orders_status_delivered
-        "zakończone", "zakonczone", "finished", "completed" -> R.string.orders_status_finished
-        else -> null
-    }
-    return labelRes?.let { stringResource(it) }
-        ?: trimmed.replaceFirstChar { it.titlecase(Locale.getDefault()) }
-}
-
 internal fun ordersStatusValue(value: String, fallback: String): String = value.trim().ifBlank { fallback }
 
 internal fun ordersStatusTone(value: String): DlaFlowStatusTone = when (value.trim().lowercase(Locale.ROOT)) {

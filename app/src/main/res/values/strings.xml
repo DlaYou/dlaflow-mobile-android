@@ -183,12 +183,6 @@
     <string name="orders_not_found_description">To zamówienie nie istnieje albo nie jest już dostępne.</string>
     <string name="orders_session_check_failed_title">Nie udało się sprawdzić połączenia telefonu</string>
     <string name="orders_session_check_failed_description">Sprawdź internet i spróbuj ponownie.</string>
-    <string name="orders_status_missing">Bez statusu</string>
-    <string name="orders_status_new">Nowe</string>
-    <string name="orders_status_to_ship">Do wysyłki</string>
-    <string name="orders_status_processing">W realizacji</string>
-    <string name="orders_status_delivered">Dostarczone</string>
-    <string name="orders_status_finished">Zakończone</string>
     <string name="orders_status_fulfillment_label">Realizacja</string>
     <string name="orders_status_payment_label">Płatność</string>
     <string name="orders_status_check">Do sprawdzenia</string>

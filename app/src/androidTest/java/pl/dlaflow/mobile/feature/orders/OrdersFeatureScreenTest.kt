@@ -274,6 +274,20 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun detailDisplaysCanonicalApiStatusWithoutAndroidTranslation() {
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(orderDetail(status = "mPOS gotowe")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("mPOS gotowe").assertIsDisplayed()
+        composeRule.onNodeWithText("MPOS gotowe").assertDoesNotExist()
+    }
+
+    @Test
     fun offlineRetainsRowsAndRetryEmitsTypedAction() {
         val actions = mutableListOf<OrdersAction>()
         val content = ordersContent()
@@ -346,6 +360,31 @@ class OrdersFeatureScreenTest {
 
     private fun contentState() = OrdersUiState(
         listState = DlaFlowUiState.Content(ordersContent()),
+    )
+
+    private fun orderDetail(status: String) = OrderDetailContent(
+        id = "order-1",
+        orderNumber = "ORD-1001",
+        amount = 100.0,
+        currency = "PLN",
+        createdAt = "2026-07-18T10:00:00Z",
+        shippingDeadlineAt = "",
+        status = status,
+        statusTone = "info",
+        productSummary = "Produkt testowy",
+        itemCount = 1,
+        customer = OrderCustomer("Klient testowy", "", "", "+48 100 200 300"),
+        delivery = OrderDelivery(
+            address = OrderAddress("Klient testowy", "", "", "", "", "", "", "+48 100 200 300"),
+            method = "Paczkomat",
+        ),
+        payment = OrderPayment("PLN", "", 100.0, "Opłacone", "success"),
+        items = emptyList(),
+        shipments = emptyList(),
+        messages = emptyList(),
+        documentsCount = 0,
+        internalNotesCount = 0,
+        statusHistoryCount = 0,
     )
 
     private fun ordersContent(
