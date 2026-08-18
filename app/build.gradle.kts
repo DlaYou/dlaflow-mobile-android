@@ -73,6 +73,12 @@ android {
                     systemImageSource = "google"
                     testedAbi = "x86_64"
                 }
+                maybeCreate<com.android.build.api.dsl.ManagedVirtualDevice>("dlaflowQaTabletApi35").apply {
+                    device = "Pixel Tablet"
+                    apiLevel = 35
+                    systemImageSource = "google"
+                    testedAbi = "x86_64"
+                }
             }
         }
     }

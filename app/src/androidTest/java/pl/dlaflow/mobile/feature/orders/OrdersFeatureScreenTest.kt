@@ -3,7 +3,6 @@ package pl.dlaflow.mobile.feature.orders
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,7 +17,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -33,6 +31,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -188,7 +187,9 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun statusFieldsStackAt600DpWithLargeFontWithoutOverflow() {
+    fun statusFieldsRespectActualViewportWithLargeFontWithoutOverflow() {
+        val actualWidthDp = InstrumentationRegistry.getInstrumentation()
+            .targetContext.resources.configuration.screenWidthDp
         setOrders(
             state = OrdersUiState(
                 listState = DlaFlowUiState.Content(
@@ -199,7 +200,6 @@ class OrdersFeatureScreenTest {
                 ),
             ),
             actions = mutableListOf(),
-            screenWidthDp = 600,
             fontScale = 1.3f,
         )
 
@@ -209,9 +209,16 @@ class OrdersFeatureScreenTest {
         val payment = composeRule.onNodeWithContentDescription(
             "Płatność, Płatność przy odbiorze",
         ).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val viewport = composeRule.onNodeWithTag("orders_test_viewport")
+            .fetchSemanticsNode().boundsInRoot
 
-        composeRule.onNodeWithTag("orders_test_viewport").assertWidthIsEqualTo(600.dp)
-        assertTrue(payment.top > fulfillment.top)
+        if (actualWidthDp >= 600) {
+            assertEquals(fulfillment.top, payment.top, 0f)
+        } else {
+            assertTrue(payment.top > fulfillment.top)
+        }
+        assertTrue(fulfillment.left >= viewport.left)
+        assertTrue(payment.right <= viewport.right)
         assertTextHasNoVisualOverflow("Gotowe do przekazania przewoźnikowi")
         assertTextHasNoVisualOverflow("Płatność przy odbiorze")
     }
@@ -380,9 +387,8 @@ class OrdersFeatureScreenTest {
                     LocalDensity provides Density(density.density, fontScale),
                     LocalConfiguration provides configuration,
                 ) {
-                    val viewportModifier = screenWidthDp?.let { Modifier.requiredWidth(it.dp) } ?: Modifier
                     Column(
-                        modifier = viewportModifier
+                        modifier = Modifier
                             .testTag("orders_test_viewport")
                             .verticalScroll(rememberScrollState()),
                     ) {

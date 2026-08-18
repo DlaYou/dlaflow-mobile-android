@@ -377,7 +377,8 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
 private fun ordersUsesStackedStatusLayout(): Boolean {
     val configuration = LocalConfiguration.current
     val fontScale = LocalDensity.current.fontScale
-    return configuration.screenWidthDp <= 360 || fontScale >= 1.2f
+    return configuration.screenWidthDp <= 360 ||
+        (configuration.screenWidthDp < 480 && fontScale >= 1.2f)
 }
 
 @Composable
