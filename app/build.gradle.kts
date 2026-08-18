@@ -61,6 +61,18 @@ android {
         buildConfig = true
         compose = true
     }
+
+    testOptions {
+        managedDevices {
+            devices {
+                maybeCreate<com.android.build.api.dsl.ManagedVirtualDevice>("dlaflowQaApi35").apply {
+                    device = "Pixel 6"
+                    apiLevel = 35
+                    systemImageSource = "google"
+                }
+            }
+        }
+    }
 }
 
 kotlin {
