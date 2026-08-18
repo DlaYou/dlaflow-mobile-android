@@ -2,7 +2,7 @@
 
 ## Decision
 
-The foreground-service notification keeps the Android-required ongoing-service presentation but uses a dedicated monochrome DlaFlow status-bar icon. Its title remains `DlaFlow działa w tle`; the content is an honest, dynamic summary of unread panel notifications: no new cases, one unread case, or the correctly inflected count.
+The foreground-service notification keeps the Android-required ongoing-service presentation. Its small status-bar icon is a monochrome mask derived from the canonical DlaFlow bitmap logo, as Android requires, while the expanded notification uses the unchanged full-color `dlaflow_app_icon.png`. Its title remains `DlaFlow działa w tle`; the content is an honest, dynamic summary of unread panel notifications: no new cases, one unread case, or the correctly inflected count.
 
 The count comes from the existing `/api/mobile/notifications` polling response. No new endpoint, order-list fetch, channel, permission, or background workload is introduced. Caller ID and product-photo notifications keep their own channels and actions, but use the same valid monochrome small icon.
 

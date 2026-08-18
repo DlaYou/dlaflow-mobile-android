@@ -9,6 +9,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -82,6 +83,7 @@ object DlaFlowNotifications {
 
         return NotificationCompat.Builder(context, backgroundChannelId)
             .setSmallIcon(R.drawable.ic_notification_dlaflow)
+            .setLargeIcon(BitmapFactory.decodeResource(context.resources, R.drawable.dlaflow_app_icon))
             .setContentTitle("DlaFlow działa w tle")
             .setContentText(backgroundServiceNotificationText(unreadPanelCount))
             .setContentIntent(PendingIntent.getActivity(context, 2700, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))

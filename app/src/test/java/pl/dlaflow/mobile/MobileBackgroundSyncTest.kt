@@ -62,5 +62,10 @@ class MobileBackgroundSyncTest {
 
         val notifications = File("src/main/java/pl/dlaflow/mobile/DlaFlowNotifications.kt").readText()
         assertTrue(notifications.contains("setSmallIcon(R.drawable.ic_notification_dlaflow)"))
+        assertTrue(notifications.contains("setLargeIcon(BitmapFactory.decodeResource(context.resources, R.drawable.dlaflow_app_icon))"))
+
+        val smallIcon = File("src/main/res/drawable-nodpi/ic_notification_dlaflow.png").readBytes()
+        assertTrue(smallIcon.size > 25)
+        assertEquals(6, smallIcon[25].toInt())
     }
 }
