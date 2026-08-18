@@ -78,6 +78,8 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -292,10 +294,11 @@ fun buildMobileMoreSettingsItems(
     callerIdLabel: String,
     canAutoOpenTasks: Boolean,
     updateAvailable: Boolean,
+    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
 ): List<MobileMoreSettingsItem> = listOf(
     MobileMoreSettingsItem(MobileMoreSettingsKind.ACCOUNT, "Dane konta", "Profil operatora i firma"),
     MobileMoreSettingsItem(MobileMoreSettingsKind.SECURITY, "Bezpieczeństwo", "Token telefonu chroniony"),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.NOTIFICATIONS, "Powiadomienia", "Zadania zdjęciowe i aktualizacje"),
+    MobileMoreSettingsItem(MobileMoreSettingsKind.NOTIFICATIONS, "Powiadomienia", mobileNotificationPreferenceSummary(notificationPreferences)),
     MobileMoreSettingsItem(
         MobileMoreSettingsKind.PREFERENCES,
         "Preferencje",
@@ -322,6 +325,7 @@ fun buildMobileMoreSettingsDetail(
     notificationAllowed: Boolean,
     canAutoOpenTasks: Boolean,
     updateAvailable: Boolean,
+    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
 ): MobileMoreSettingsDetail {
     return when (kind) {
         MobileMoreSettingsKind.ACCOUNT -> MobileMoreSettingsDetail(
@@ -349,11 +353,11 @@ fun buildMobileMoreSettingsDetail(
         MobileMoreSettingsKind.NOTIFICATIONS -> MobileMoreSettingsDetail(
             kind = kind,
             title = "Powiadomienia",
-            description = "Powiadomienia informują o zadaniach zdjęciowych, aktualizacjach i ważnych akcjach z panelu.",
+            description = "Wybierz, o których sprawach z panelu telefon ma Ci przypominać.",
             rows = listOf(
                 "Status" to if (notificationAllowed) "Włączone" else "Wymagają zgody Androida",
-                "Zadania zdjęciowe" to "Powiadomienie po wysłaniu z panelu",
-                "Aktualizacje" to "Informacja o nowej wersji aplikacji",
+                "Aktywne typy" to mobileNotificationPreferenceSummary(notificationPreferences),
+                "Działanie w tle" to "Sprawdzam nowe sprawy co kilka minut",
             ),
             primaryActionLabel = "Ustawienia powiadomień",
         )
@@ -456,6 +460,7 @@ internal fun MobileAssistantScreen(
     mobileNotifications: List<MobileAssistantNotification> = emptyList(),
     mobileNotificationsLoading: Boolean = false,
     mobileNotificationFilter: MobileNotificationFilter = MobileNotificationFilter.ALL,
+    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
     onPairingCodeChange: (String) -> Unit,
     onContinuePairing: () -> Unit,
     onScanPairingQr: () -> Unit,
@@ -476,6 +481,7 @@ internal fun MobileAssistantScreen(
     onCloseOverlay: () -> Unit = {},
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
     onMarkNotificationsRead: () -> Unit = {},
+    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit = { _, _ -> },
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
@@ -568,6 +574,7 @@ internal fun MobileAssistantScreen(
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
+                    notificationPreferences = notificationPreferences,
                         callerIdTestPhone = callerIdTestPhone,
                         callerIdPreview = callerIdPreview,
                     callerIdOperational = callerIdOperational,
@@ -593,6 +600,7 @@ internal fun MobileAssistantScreen(
                         onCloseOverlay = onCloseOverlay,
                         onNotificationFilterChange = onNotificationFilterChange,
                         onMarkNotificationsRead = onMarkNotificationsRead,
+                        onNotificationPreferenceChange = onNotificationPreferenceChange,
                         onEnableCallerId = onEnableCallerId,
                         onTestCallerId = onTestCallerId,
                         onShowCallerIdPreview = onShowCallerIdPreview,
@@ -647,6 +655,7 @@ private fun AssistantContent(
     mobileNotifications: List<MobileAssistantNotification>,
     mobileNotificationsLoading: Boolean,
     mobileNotificationFilter: MobileNotificationFilter,
+    notificationPreferences: MobileNotificationPreferences,
     callerIdTestPhone: String,
     callerIdPreview: MobileCallerIdLookup?,
     callerIdOperational: Boolean,
@@ -672,6 +681,7 @@ private fun AssistantContent(
     onCloseOverlay: () -> Unit,
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
+    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
     onEnableCallerId: () -> Unit,
     onTestCallerId: () -> Unit,
     onShowCallerIdPreview: () -> Unit,
@@ -802,6 +812,7 @@ private fun AssistantContent(
                     callerIdAvailable = callerIdAvailable,
                     canAutoOpenTasks = canAutoOpenTasks,
                     notificationAllowed = notificationAllowed,
+                    notificationPreferences = notificationPreferences,
                     appVersionName = appVersionName,
                     appUpdate = appUpdate,
                     appUpdateChecking = appUpdateChecking,
@@ -815,6 +826,7 @@ private fun AssistantContent(
                     onCheckAppUpdate = onCheckAppUpdate,
                     onInstallAppUpdate = onInstallAppUpdate,
                     onOpenNotificationSettings = onOpenNotificationSettings,
+                    onNotificationPreferenceChange = onNotificationPreferenceChange,
                     onOpenOverlaySettings = onOpenOverlaySettings,
                     onOpenAppSystemSettings = onOpenAppSystemSettings,
                     onDisconnect = onDisconnect,
@@ -1809,6 +1821,7 @@ private fun MoreTab(
     callerIdAvailable: Boolean,
     canAutoOpenTasks: Boolean,
     notificationAllowed: Boolean,
+    notificationPreferences: MobileNotificationPreferences,
     appVersionName: String,
     appUpdate: MobileAppUpdate?,
     appUpdateChecking: Boolean,
@@ -1822,6 +1835,7 @@ private fun MoreTab(
     onCheckAppUpdate: () -> Unit,
     onInstallAppUpdate: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
     onOpenOverlaySettings: () -> Unit,
     onOpenAppSystemSettings: () -> Unit,
     onDisconnect: () -> Unit,
@@ -1833,6 +1847,7 @@ private fun MoreTab(
         callerIdLabel = callerIdLabel,
         canAutoOpenTasks = canAutoOpenTasks,
         updateAvailable = appUpdate != null,
+        notificationPreferences = notificationPreferences,
     )
     val displayName = dashboard?.userName?.takeIf { it.isNotBlank() }
         ?: session.userEmail.substringBefore("@").replaceFirstChar { char -> char.uppercase(Locale("pl", "PL")) }
@@ -1855,6 +1870,7 @@ private fun MoreTab(
             notificationAllowed = notificationAllowed,
             canAutoOpenTasks = canAutoOpenTasks,
             updateAvailable = appUpdate != null,
+            notificationPreferences = notificationPreferences,
         )
 
         MoreSettingsDetailScreen(
@@ -1879,6 +1895,8 @@ private fun MoreTab(
             onCheckAppUpdate = onCheckAppUpdate,
             onInstallAppUpdate = onInstallAppUpdate,
             onOpenNotificationSettings = onOpenNotificationSettings,
+            notificationPreferences = notificationPreferences,
+            onNotificationPreferenceChange = onNotificationPreferenceChange,
             onOpenOverlaySettings = onOpenOverlaySettings,
             onOpenAppSystemSettings = onOpenAppSystemSettings,
             onDisconnect = onDisconnect,
@@ -1905,6 +1923,78 @@ private fun MoreTab(
 }
 
 @Composable
+private fun NotificationPreferenceSettings(
+    colors: DlaFlowComposeColors,
+    preferences: MobileNotificationPreferences,
+    onPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
+) {
+    DlaFlowCard(colors) {
+        Text(
+            text = "Co ma przychodzić na telefon",
+            color = colors.textStrong,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Text(
+            text = mobileNotificationPreferenceSummary(preferences),
+            color = colors.textMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            lineHeight = 15.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        MobileNotificationCategory.entries.forEachIndexed { index, category ->
+            if (index > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .height(1.dp)
+                        .background(colors.borderSubtle),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 58.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = category.label,
+                        color = colors.textStrong,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 16.sp,
+                    )
+                    Text(
+                        text = category.description,
+                        color = colors.textMuted,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 14.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Switch(
+                    checked = preferences.isEnabled(category),
+                    onCheckedChange = { enabled -> onPreferenceChange(category, enabled) },
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = colors.primary,
+                        uncheckedThumbColor = colors.textMuted,
+                        uncheckedTrackColor = colors.surfaceSubtle,
+                        uncheckedBorderColor = colors.border,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MoreSettingsDetailScreen(
     colors: DlaFlowComposeColors,
     detail: MobileMoreSettingsDetail,
@@ -1919,6 +2009,7 @@ private fun MoreSettingsDetailScreen(
     statusMessage: String,
     callerIdAvailable: Boolean,
     callerIdOperational: Boolean,
+    notificationPreferences: MobileNotificationPreferences,
     onBack: () -> Unit,
     onCallerIdTestPhoneChange: (String) -> Unit,
     onEnableCallerId: () -> Unit,
@@ -1927,6 +2018,7 @@ private fun MoreSettingsDetailScreen(
     onCheckAppUpdate: () -> Unit,
     onInstallAppUpdate: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
+    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
     onOpenOverlaySettings: () -> Unit,
     onOpenAppSystemSettings: () -> Unit,
     onDisconnect: () -> Unit,
@@ -1996,6 +2088,12 @@ private fun MoreSettingsDetailScreen(
 
     when (detail.kind) {
         MobileMoreSettingsKind.NOTIFICATIONS -> {
+            NotificationPreferenceSettings(
+                colors = colors,
+                preferences = notificationPreferences,
+                onPreferenceChange = onNotificationPreferenceChange,
+            )
+            Spacer(Modifier.height(10.dp))
             DlaFlowPrimaryButton(colors, Icons.Rounded.NotificationsNone, "Ustawienia powiadomień", onClick = onOpenNotificationSettings)
         }
         MobileMoreSettingsKind.PREFERENCES -> {

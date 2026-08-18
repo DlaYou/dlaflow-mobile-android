@@ -189,6 +189,7 @@ class MainActivity : ComponentActivity() {
     private var mobileNotifications by mutableStateOf<List<MobileAssistantNotification>>(emptyList())
     private var mobileNotificationsLoading by mutableStateOf(false)
     private var mobileNotificationFilter by mutableStateOf(MobileNotificationFilter.ALL)
+    private var notificationPreferences by mutableStateOf(MobileNotificationPreferences.defaults())
     private var appUpdate by mutableStateOf<MobileAppUpdate?>(null)
     private var appUpdateDismissalState by mutableStateOf(MobileAppUpdateDismissalState())
     private var appUpdateDialogVisible by mutableStateOf(false)
@@ -222,6 +223,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         sessionStore = MobileSessionStore(this)
         apiUrlValue = sessionStore.readBaseUrl()
+        notificationPreferences = sessionStore.readNotificationPreferences()
         DlaFlowNotifications.ensureChannels(this)
         handleLaunchIntent(intent)
         val hasSavedSession = sessionStore.readToken().isNotBlank()
@@ -400,6 +402,7 @@ class MainActivity : ComponentActivity() {
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
+                    notificationPreferences = notificationPreferences,
                     onPairingCodeChange = pairingStateHolder::updateCode,
                     onContinuePairing = { pairingStateHolder.continueToName() },
                     onScanPairingQr = { scanPairingQr() },
@@ -440,6 +443,10 @@ class MainActivity : ComponentActivity() {
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
                     onNotificationFilterChange = { mobileNotificationFilter = it },
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
+                    onNotificationPreferenceChange = { category, enabled ->
+                        notificationPreferences = notificationPreferences.withEnabled(category, enabled)
+                        sessionStore.saveNotificationPreferences(notificationPreferences)
+                    },
                     onEnableCallerId = { requestCallerIdRole() },
                     onTestCallerId = { testCallerIdLookup() },
                     onShowCallerIdPreview = {
@@ -1657,7 +1664,9 @@ class MainActivity : ComponentActivity() {
         }
 
         sessionStore.saveLastBackgroundPhotoTaskId(task.id)
-        DlaFlowNotifications.showPhotoTaskNotification(this, task)
+        if (shouldShowNativePhotoTaskNotification(notificationPreferences)) {
+            DlaFlowNotifications.showPhotoTaskNotification(this, task)
+        }
     }
 
     private fun createPhotoTaskIntent(taskId: String): Intent {

@@ -103,6 +103,18 @@ class MobileSessionStore(context: Context) {
         preferences.edit().putString("shown_panel_notification_ids", value).apply()
     }
 
+    fun readNotificationPreferences(): MobileNotificationPreferences {
+        return parseMobileNotificationPreferences(
+            preferences.getString("notification_preferences", "").orEmpty(),
+        )
+    }
+
+    fun saveNotificationPreferences(value: MobileNotificationPreferences) {
+        preferences.edit()
+            .putString("notification_preferences", serializeMobileNotificationPreferences(value))
+            .apply()
+    }
+
     fun clear() {
         preferences.edit().clear().apply()
     }

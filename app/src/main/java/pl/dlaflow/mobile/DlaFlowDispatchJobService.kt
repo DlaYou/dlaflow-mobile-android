@@ -32,7 +32,11 @@ class DlaFlowDispatchJobService : JobService() {
                 client to client.getPhotoTaskDispatch(token)
             }.onSuccess { (client, dispatch) ->
                 val task = dispatch.pendingOpenTask
-                if (task != null && sessionStore.readLastBackgroundPhotoTaskId() != task.id) {
+                if (
+                    task != null &&
+                    shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences()) &&
+                    sessionStore.readLastBackgroundPhotoTaskId() != task.id
+                ) {
                     sessionStore.saveLastBackgroundPhotoTaskId(task.id)
                     DlaFlowNotifications.showPhotoTaskNotification(this, task)
                 }

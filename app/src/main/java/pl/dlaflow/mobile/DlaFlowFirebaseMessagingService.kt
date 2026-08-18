@@ -16,25 +16,25 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
 
         val orderId = message.data["orderId"].orEmpty()
         val orderNumber = message.data["orderNumber"].orEmpty().ifBlank { "nowe zamówienie" }
-        DlaFlowNotifications.showPanelAlertNotification(
-            applicationContext,
-            MobileAssistantNotification(
-                id = "push-order:$orderId",
-                title = "Nowe zamówienie",
-                description = "Zamówienie $orderNumber oczekuje na obsługę.",
-                tone = "attention",
-                source = "push",
-                account = "",
-                occurredAt = Instant.ofEpochMilli(
-                    message.sentTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
-                ).toString(),
-                readAt = null,
-                mobileAction = MobileNotificationAction(
-                    type = "orders",
-                    label = "Otwórz zamówienia",
-                ),
+        val notification = MobileAssistantNotification(
+            id = "push-order:$orderId",
+            title = "Nowe zamówienie",
+            description = "Zamówienie $orderNumber oczekuje na obsługę.",
+            tone = "attention",
+            source = "push",
+            account = "",
+            occurredAt = Instant.ofEpochMilli(
+                message.sentTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            ).toString(),
+            readAt = null,
+            mobileAction = MobileNotificationAction(
+                type = "orders",
+                label = "Otwórz zamówienia",
             ),
         )
+        if (shouldShowNativePanelNotification(notification, MobileSessionStore(applicationContext).readNotificationPreferences())) {
+            DlaFlowNotifications.showPanelAlertNotification(applicationContext, notification)
+        }
     }
 
     override fun onNewToken(token: String) {

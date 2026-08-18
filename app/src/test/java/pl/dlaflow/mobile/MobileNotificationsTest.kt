@@ -61,6 +61,13 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `canonical orders actions open the orders screen`() {
+        assertTrue(isOrdersNotificationAction("OPEN_ORDERS"))
+        assertTrue(isOrdersNotificationAction("orders"))
+        assertFalse(isOrdersNotificationAction("OPEN_LOGS_SUMMARY"))
+    }
+
+    @Test
     fun `mobile notifications page parses summary actions and read state`() {
         val payload = """
             {

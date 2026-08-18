@@ -13,6 +13,7 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import java.util.Locale
 
 object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
@@ -157,7 +158,7 @@ object DlaFlowNotifications {
             return false
         }
 
-        val appIntent = if (notification.mobileAction.type == "orders") {
+        val appIntent = if (isOrdersNotificationAction(notification.mobileAction.type)) {
             DlaFlowDeepLinks.ordersIntent(context)
         } else {
             Intent(context, MainActivity::class.java)
@@ -190,6 +191,9 @@ object DlaFlowNotifications {
         return notifyIfAllowed(context, panelAlertNotificationId(notification.id), systemNotification)
     }
 }
+
+internal fun isOrdersNotificationAction(actionType: String): Boolean =
+    actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_ORDERS", "ORDERS")
 
 internal fun panelAlertNotificationId(id: String): Int {
     if (id.isBlank()) {

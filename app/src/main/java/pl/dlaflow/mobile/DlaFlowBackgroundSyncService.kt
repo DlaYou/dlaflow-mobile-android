@@ -74,7 +74,11 @@ class DlaFlowBackgroundSyncService : Service() {
                 client to client.getPhotoTaskDispatch(token)
             }.onSuccess { (client, dispatch) ->
                 val task = dispatch.pendingOpenTask
-                if (task != null && sessionStore.readLastBackgroundPhotoTaskId() != task.id) {
+                if (
+                    task != null &&
+                    shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences()) &&
+                    sessionStore.readLastBackgroundPhotoTaskId() != task.id
+                ) {
                     sessionStore.saveLastBackgroundPhotoTaskId(task.id)
                     DlaFlowNotifications.showPhotoTaskNotification(this, task)
                 }
@@ -131,10 +135,11 @@ internal fun pollUnreadPanelAlertNotifications(
     val notificationPage = client.listNotifications(token, limit = 10)
     DlaFlowNotifications.updateBackgroundServiceNotification(context, notificationPage.unreadCount)
     var shownIds = sessionStore.readShownPanelNotificationIds()
+    val preferences = sessionStore.readNotificationPreferences()
 
     notificationPage.notifications
         .filter { it.readAt.isNullOrBlank() }
-        .filter { shouldShowNativePanelNotification(it.tone, it.mobileAction.type) }
+        .filter { shouldShowNativePanelNotification(it, preferences) }
         .forEach { notification ->
             if (!hasShownNotificationId(shownIds, notification.id)) {
                 val shown = DlaFlowNotifications.showPanelAlertNotification(context, notification)
