@@ -181,6 +181,33 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun statusFieldsStaySideBySideAt600DpWithLargeFont() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(
+                    ordersContent(
+                        status = "Gotowe do przekazania przewoźnikowi",
+                        paymentStatus = "Płatność przy odbiorze",
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+            screenWidthDp = 600,
+            fontScale = 1.3f,
+        )
+
+        val fulfillment = composeRule.onNodeWithContentDescription(
+            "Realizacja, Gotowe do przekazania przewoźnikowi",
+        ).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val payment = composeRule.onNodeWithContentDescription(
+            "Płatność, Płatność przy odbiorze",
+        ).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+
+        assertEquals(fulfillment.top, payment.top, 0f)
+        assertTrue(fulfillment.right <= payment.left)
+    }
+
+    @Test
     fun missingShippingDeadlineStillShowsAnExplicitStatus() {
         setOrders(
             state = OrdersUiState(
@@ -390,6 +417,8 @@ class OrdersFeatureScreenTest {
     private fun ordersContent(
         shippingDeadlineAt: String = Instant.now().plus(Duration.ofHours(18)).toString(),
         phone: String = "",
+        status: String = "Nowe",
+        paymentStatus: String = "Opłacone",
     ) = OrdersListContent(
         items = listOf(
             OrdersListItem(
@@ -403,11 +432,11 @@ class OrdersFeatureScreenTest {
                 shippingDeadlineAt = shippingDeadlineAt,
                 itemCount = 1,
                 productSummary = "Produkt testowy",
-                paymentStatus = "Opłacone",
+                paymentStatus = paymentStatus,
                 paymentTone = "success",
                 phone = phone,
                 shippingMethod = "Paczkomat",
-                status = "Nowe",
+                status = status,
                 statusTone = "info",
                 thumbnailUrl = "",
                 badges = OrdersBadges(0, 0, 0),
