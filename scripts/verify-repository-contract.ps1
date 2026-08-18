@@ -35,5 +35,9 @@ Require-Text ".github/workflows/mobile-release.yml" "./scripts/verify-repository
 Require-Text ".github/workflows/mobile-release.yml" "./scripts/verify-design-system-boundary.ps1"
 Require-Text ".github/workflows/mobile-release.yml" "./scripts/verify-pairing-feature-boundary.ps1"
 Require-Text ".github/workflows/mobile-release.yml" "gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1"
+Require-Text ".github/workflows/mobile-release.yml" "Materialize Firebase Google Services configuration"
+Require-Text ".github/workflows/mobile-release.yml" 'GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}'
+Require-Text ".github/workflows/mobile-release.yml" "base64 --decode > app/google-services.json"
+Require-Text ".github/workflows/mobile-release.yml" "Remove Firebase Google Services configuration"
 
 Write-Host "Mobile repository contract: OK"
