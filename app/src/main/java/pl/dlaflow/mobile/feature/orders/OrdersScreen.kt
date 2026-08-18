@@ -174,7 +174,7 @@ private fun OrdersFilterChips(
         3
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OrdersFilter.entries.chunked(columnCount).forEach { row ->
+        visibleOrdersFilters.chunked(columnCount).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { filter ->
                     DlaFlowFilterChip(
