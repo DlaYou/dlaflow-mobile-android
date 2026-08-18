@@ -3,18 +3,22 @@ package pl.dlaflow.mobile.feature.orders
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -24,12 +28,15 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Duration
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -181,7 +188,7 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun statusFieldsStaySideBySideAt600DpWithLargeFont() {
+    fun statusFieldsStackAt600DpWithLargeFontWithoutOverflow() {
         setOrders(
             state = OrdersUiState(
                 listState = DlaFlowUiState.Content(
@@ -203,8 +210,10 @@ class OrdersFeatureScreenTest {
             "Płatność, Płatność przy odbiorze",
         ).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
 
-        assertEquals(fulfillment.top, payment.top, 0f)
-        assertTrue(fulfillment.right <= payment.left)
+        composeRule.onNodeWithTag("orders_test_viewport").assertWidthIsEqualTo(600.dp)
+        assertTrue(payment.top > fulfillment.top)
+        assertTextHasNoVisualOverflow("Gotowe do przekazania przewoźnikowi")
+        assertTextHasNoVisualOverflow("Płatność przy odbiorze")
     }
 
     @Test
@@ -371,7 +380,12 @@ class OrdersFeatureScreenTest {
                     LocalDensity provides Density(density.density, fontScale),
                     LocalConfiguration provides configuration,
                 ) {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    val viewportModifier = screenWidthDp?.let { Modifier.requiredWidth(it.dp) } ?: Modifier
+                    Column(
+                        modifier = viewportModifier
+                            .testTag("orders_test_viewport")
+                            .verticalScroll(rememberScrollState()),
+                    ) {
                         OrdersFeatureScreen(
                             colors = colors,
                             state = state,
@@ -388,6 +402,20 @@ class OrdersFeatureScreenTest {
     private fun contentState() = OrdersUiState(
         listState = DlaFlowUiState.Content(ordersContent()),
     )
+
+    private fun assertTextHasNoVisualOverflow(text: String) {
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule.onNodeWithText(text, useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { action ->
+                action(layouts)
+            }
+        val layout = layouts.single()
+        assertFalse(
+            "Text '$text' has visual overflow: size=${layout.size}, lines=${layout.lineCount}, " +
+                "width=${layout.didOverflowWidth}, height=${layout.didOverflowHeight}",
+            layout.hasVisualOverflow,
+        )
+    }
 
     private fun orderDetail(status: String) = OrderDetailContent(
         id = "order-1",
