@@ -66,7 +66,7 @@ android {
 
     testOptions {
         managedDevices {
-            devices {
+            allDevices {
                 maybeCreate<com.android.build.api.dsl.ManagedVirtualDevice>("dlaflowQaApi35").apply {
                     device = "Pixel 6"
                     apiLevel = 35
