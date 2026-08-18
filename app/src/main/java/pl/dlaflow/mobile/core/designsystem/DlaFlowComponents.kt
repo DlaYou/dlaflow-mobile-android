@@ -98,6 +98,29 @@ internal fun DlaFlowScreenHeader(
 }
 
 @Composable
+internal fun DlaFlowHeaderIconButton(
+    colors: DlaFlowComposeColors,
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(DlaFlowDimensions.minimumTouchTarget)
+            .clip(CircleShape)
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = colors.text,
+            modifier = Modifier.size(25.dp),
+        )
+    }
+}
+
+@Composable
 internal fun DlaFlowCard(
     colors: DlaFlowComposeColors,
     accent: Boolean = false,

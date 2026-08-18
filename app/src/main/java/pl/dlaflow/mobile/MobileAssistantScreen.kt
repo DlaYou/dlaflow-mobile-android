@@ -122,6 +122,7 @@ import pl.dlaflow.mobile.app.navigation.mobileAssistantBackAction
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowFilterChip
+import pl.dlaflow.mobile.core.designsystem.DlaFlowHeaderIconButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
@@ -176,6 +177,11 @@ data class PackageScannerResolvedCopy(
     val title: String,
     val supportingText: String,
 )
+
+internal fun shouldShowPackageScannerHeaderAction(
+    selectedTab: MobileAssistantTab,
+    overlayScreen: MobileAssistantOverlayScreen,
+): Boolean = selectedTab == MobileAssistantTab.ORDERS && overlayScreen == MobileAssistantOverlayScreen.NONE
 
 fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageScannerResolvedCopy {
     if (result.matched && result.order != null) {
@@ -678,6 +684,11 @@ private fun AssistantContent(
             status = "Połączono",
             unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
             unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
+            onScanPackage = if (shouldShowPackageScannerHeaderAction(selectedTab, mobileOverlayScreen)) {
+                { onDashboardAction(DashboardAction.ScanPackage) }
+            } else {
+                null
+            },
             onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
         )
         if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
@@ -2487,6 +2498,7 @@ private fun AppHeader(
     status: String,
     unreadCount: Int = 0,
     unreadAttentionCount: Int = 0,
+    onScanPackage: (() -> Unit)? = null,
     onOpenNotifications: () -> Unit = {},
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2499,6 +2511,14 @@ private fun AppHeader(
         )
         Spacer(Modifier.weight(1f))
         if (status == "Połączono") {
+            onScanPackage?.let { scan ->
+                DlaFlowHeaderIconButton(
+                    colors = colors,
+                    icon = Icons.Rounded.QrCodeScanner,
+                    contentDescription = stringResource(R.string.orders_scan_package),
+                    onClick = scan,
+                )
+            }
             NotificationBell(
                 colors = colors,
                 unreadCount = unreadCount,

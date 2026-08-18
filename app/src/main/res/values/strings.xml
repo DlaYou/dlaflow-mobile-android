@@ -99,6 +99,7 @@
     <string name="dashboard_quick_actions">Szybkie akcje</string>
     <string name="dashboard_quick_scan">Skanuj paczkę</string>
     <string name="dashboard_quick_scan_subtitle">Szybkie nadanie</string>
+    <string name="orders_scan_package">Skanuj paczkę</string>
     <string name="dashboard_quick_product_work">Dodaj produkt</string>
     <string name="dashboard_quick_product_work_subtitle">Nowa oferta</string>
     <string name="dashboard_quick_statistics">Statystyki</string>
