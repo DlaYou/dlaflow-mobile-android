@@ -1,3 +1,5 @@
+import com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -74,6 +76,11 @@ android {
             }
         }
     }
+}
+
+// AGP 8.13.0 does not propagate ManagedVirtualDevice.testedAbi to its setup task.
+tasks.withType<ManagedDeviceInstrumentationTestSetupTask>().configureEach {
+    testedAbi.set("x86_64")
 }
 
 kotlin {
