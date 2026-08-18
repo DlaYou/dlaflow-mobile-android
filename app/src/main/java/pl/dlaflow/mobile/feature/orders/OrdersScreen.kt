@@ -166,10 +166,7 @@ private fun OrdersFilterChips(
     selected: OrdersFilter,
     onFilterChange: (OrdersFilter) -> Unit,
 ) {
-    val columnCount = if (
-        LocalConfiguration.current.screenWidthDp < 480 &&
-        LocalDensity.current.fontScale >= 1.2f
-    ) {
+    val columnCount = if (ordersUsesCompactLayout()) {
         2
     } else {
         3
@@ -499,28 +496,59 @@ internal fun ordersDisplayTimestamp(value: String, zone: ZoneId = ZoneId.systemD
 private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem) {
     val orderedAt = ordersDisplayTimestamp(order.createdAt)
     val deadlineAt = order.shippingDeadlineAt.takeIf { it.isNotBlank() }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = stringResource(R.string.orders_list_ordered_at, orderedAt.ifBlank { stringResource(R.string.orders_value_missing) }),
-            modifier = Modifier.weight(1f),
-            color = colors.textMuted,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        deadlineAt?.let { deadline ->
-            Text(
-                text = stringResource(R.string.orders_list_shipping_deadline, ordersShippingDeadlineLabel(deadline)),
-                modifier = Modifier.weight(1f),
-                color = ordersShippingDeadlineColor(colors, deadline),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+    val orderedLabel = stringResource(
+        R.string.orders_list_ordered_at,
+        orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
+    )
+    val deadlineLabel = deadlineAt?.let {
+        stringResource(R.string.orders_list_shipping_deadline, ordersShippingDeadlineLabel(it))
+    }
+
+    if (ordersUsesCompactLayout()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium)
+            deadlineLabel?.let {
+                OrderTimingValue(it, ordersShippingDeadlineColor(colors, deadlineAt), FontWeight.ExtraBold)
+            }
+        }
+    } else {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium, Modifier.weight(1f))
+            deadlineLabel?.let {
+                OrderTimingValue(
+                    it,
+                    ordersShippingDeadlineColor(colors, deadlineAt),
+                    FontWeight.ExtraBold,
+                    Modifier.weight(1f),
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun ordersUsesCompactLayout(): Boolean =
+    LocalConfiguration.current.screenWidthDp < 480 && LocalDensity.current.fontScale >= 1.2f
+
+@Composable
+private fun OrderTimingValue(
+    text: String,
+    color: Color,
+    fontWeight: FontWeight,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        color = color,
+        fontSize = 10.sp,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 private fun ordersShippingDeadlineColor(colors: DlaFlowComposeColors, value: String): Color {

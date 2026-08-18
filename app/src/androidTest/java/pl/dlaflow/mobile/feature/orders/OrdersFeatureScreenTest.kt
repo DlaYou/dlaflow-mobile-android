@@ -26,6 +26,8 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.time.Duration
+import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -114,6 +116,35 @@ class OrdersFeatureScreenTest {
             .top
 
         assertEquals(newTop, shippingTop, 0f)
+    }
+
+    @Test
+    fun largeFontNarrowScreenStacksOrderTimingValues() {
+        setOrders(
+            state = contentState(),
+            actions = mutableListOf(),
+            screenWidthDp = 360,
+            fontScale = 1.3f,
+        )
+
+        val orderedTop = composeRule.onNodeWithText(
+            "Zamówiono:",
+            substring = true,
+            useUnmergedTree = true,
+        )
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val shippingTop = composeRule.onNodeWithText(
+            "Wyślij do:",
+            substring = true,
+            useUnmergedTree = true,
+        )
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(shippingTop > orderedTop)
     }
 
     @Test
@@ -252,7 +283,8 @@ class OrdersFeatureScreenTest {
                 currency = "PLN",
                 customer = "Klient testowy",
                 channel = "Panel",
-                createdAt = "",
+                createdAt = "2026-07-18T10:00:00Z",
+                shippingDeadlineAt = Instant.now().plus(Duration.ofHours(18)).toString(),
                 itemCount = 1,
                 productSummary = "Produkt testowy",
                 paymentStatus = "Opłacone",

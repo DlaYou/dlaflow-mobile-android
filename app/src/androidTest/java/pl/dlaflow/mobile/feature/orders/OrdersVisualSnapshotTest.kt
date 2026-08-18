@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.time.Duration
+import java.time.Instant
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -103,7 +105,7 @@ class OrdersVisualSnapshotTest {
         customer = customer,
         channel = "Panel",
         createdAt = "2026-07-18T10:00:00Z",
-        shippingDeadlineAt = "2099-07-18T10:00:00Z",
+        shippingDeadlineAt = Instant.now().plus(Duration.ofHours(18)).toString(),
         itemCount = 2,
         productSummary = product,
         paymentStatus = "Opłacone",
@@ -122,7 +124,7 @@ class OrdersVisualSnapshotTest {
         amount = 149.99,
         currency = "PLN",
         createdAt = "2026-07-18T10:00:00Z",
-        shippingDeadlineAt = "2099-07-18T10:00:00Z",
+        shippingDeadlineAt = Instant.now().plus(Duration.ofHours(18)).toString(),
         status = "processing",
         statusTone = "info",
         productSummary = "Koszulka testowa",
