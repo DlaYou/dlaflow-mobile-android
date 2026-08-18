@@ -17,21 +17,21 @@ Session backup and restore is not an acceptable workaround. The bearer token and
 Two AVDs have explicit, non-overlapping roles:
 
 - **Operator:** `DlaFlow_Task6_Dashboard_API35_20260717`. It keeps the existing package `pl.dlaflow.mobile`, account pairing, permissions, and Keystore. It may receive only a preserving APK update and normal manual smoke actions.
-- **QA:** `DlaFlow_QA_API35`. It runs `connectedDebugAndroidTest`, visual snapshots, permission-state tests, package clears, and test APK installs. No real customer account is paired there.
+- **QA:** Gradle Managed Virtual Device `dlaflowQaApi35`. It runs instrumentation, visual snapshots, permission-state tests, package clears, and test APK installs. No real customer account is paired there.
 
-The QA AVD uses the already installed `system-images;android-35;google_apis;x86_64` image and a Pixel 6 profile. Creating it is idempotent and does not clone the Operator data image.
+The QA device uses the already installed API 35 Google APIs x86_64 image and a Pixel 6 profile. Android Gradle Plugin creates, starts, snapshots, and removes its own managed device without enumerating connected devices. It never clones the Operator data image.
 
 ## Commands And Guardrails
 
 Repository-owned PowerShell scripts provide the only documented local paths:
 
-1. `scripts/setup-qa-emulator.ps1` creates `DlaFlow_QA_API35` when absent and verifies its API/image/profile contract when present.
-2. `scripts/run-connected-tests.ps1` starts or selects only `DlaFlow_QA_API35`, waits for Android boot completion, sets `ANDROID_SERIAL` for the child Gradle process, and runs `:app:connectedDebugAndroidTest --no-daemon`.
-3. `scripts/install-operator-apk.ps1` resolves only the Operator AVD and installs `app-debug.apk` with `adb install -r`. It refuses ambiguous devices, the QA AVD, missing APKs, and any operation requiring uninstall or package-data clearing.
+1. `app/build.gradle.kts` defines only the Gradle Managed Virtual Device `dlaflowQaApi35` for instrumentation.
+2. `scripts/run-qa-emulator-tests.ps1` runs only `:app:dlaflowQaApi35DebugAndroidTest --no-daemon`. It never invokes a connected-device task.
+3. `scripts/install-operator-apk.ps1` resolves only the Operator AVD and installs `app-debug.apk` with `adb install -r`. It refuses ambiguous devices, missing APKs, and any operation requiring uninstall or package-data clearing.
 
-The role resolver queries the AVD name through `adb -s <serial> emu avd name`. It fails closed when the expected AVD is unavailable, multiple matching devices exist, a physical phone is selected, or an AVD role cannot be proven. Serial numbers are runtime details and are never treated as stable role identities.
+The Operator role resolver queries the AVD name through `adb -s <serial> emu avd name`. It fails closed when the expected AVD is unavailable, multiple matching devices exist, a physical phone is selected, or the AVD role cannot be proven. Serial numbers are runtime details and are never treated as stable role identities.
 
-README verification commands change from raw `connectedDebugAndroidTest` to the guarded test script. A repository contract test requires both role names, the QA-only Gradle invocation, `ANDROID_SERIAL`, and the preserving `adb install -r` operator path. Raw destructive commands remain undocumented.
+README verification commands change from raw `connectedDebugAndroidTest` to the managed-device test script. A repository contract test requires the Operator AVD name, the managed QA device, the QA-only Gradle task, and the preserving `adb install -r` operator path. Raw connected-device and destructive commands remain undocumented.
 
 ## Data And Security
 
@@ -47,9 +47,8 @@ Every script stops before mutation when role detection is uncertain. The error s
 
 ## Verification
 
-- Static PowerShell contract tests cover Operator rejection in the QA runner, QA rejection in the Operator installer, physical-device rejection, ambiguity, boot waiting, and exact Gradle/ADB command construction.
-- `setup-qa-emulator.ps1` is run twice to prove idempotency.
-- QA runs the full connected suite successfully while the Operator remains paired before and after the run.
+- Static PowerShell contract tests require managed-device isolation, Operator AVD identity checks, physical-device rejection, ambiguity handling, and exact Gradle/ADB command construction.
+- QA runs the full managed-device suite successfully while the Operator remains paired before and after the run.
 - Operator receives the current debug APK through `install -r`, starts successfully, and retains its session.
 - Existing five boundary guards and `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` remain green.
 
