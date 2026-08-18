@@ -100,6 +100,12 @@
     <string name="dashboard_quick_scan">Skanuj paczkę</string>
     <string name="dashboard_quick_scan_subtitle">Szybkie nadanie</string>
     <string name="orders_scan_package">Skanuj paczkę</string>
+    <string name="orders_scanner_checking">Sprawdzam paczkę</string>
+    <string name="orders_scanner_checking_description">Szukam pasującego zamówienia.</string>
+    <string name="orders_scanner_failed">Nie udało się sprawdzić paczki</string>
+    <string name="orders_scanner_open_order">Otwórz zamówienie</string>
+    <string name="orders_scanner_retry">Skanuj ponownie</string>
+    <string name="orders_scanner_order_status">#%1$s · %2$s</string>
     <string name="dashboard_quick_product_work">Dodaj produkt</string>
     <string name="dashboard_quick_product_work_subtitle">Nowa oferta</string>
     <string name="dashboard_quick_statistics">Statystyki</string>
