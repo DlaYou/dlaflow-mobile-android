@@ -47,7 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-pairing-featu
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-dashboard-feature-boundary.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-orders-feature-boundary.ps1
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
-.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qa-emulator-tests.ps1
 ```
 
 Do not bump `versionCode`/`versionName`, create a `mobile-v*` tag or publish an APK without a separate release decision.
@@ -86,6 +86,27 @@ http://192.168.x.x:4000
 ```
 
 Production must use HTTPS.
+
+## Local Emulator Roles
+
+Local Android verification uses two isolated emulator roles:
+
+- `DlaFlow_Task6_Dashboard_API35_20260717` is the Operator emulator. It keeps the paired panel session, permissions and Android Keystore.
+- `dlaflowQaApi35` is a Gradle Managed Virtual Device. Only this device runs instrumentation and visual tests.
+
+Update the Operator app without removing its local data:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-operator-apk.ps1
+```
+
+Run the complete instrumentation suite on QA:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-qa-emulator-tests.ps1
+```
+
+Do not run connected-device instrumentation, package clearing, test APK installation or application removal on the Operator emulator. Both scripts fail closed when the required role cannot be proven.
 
 ## First Smoke
 
