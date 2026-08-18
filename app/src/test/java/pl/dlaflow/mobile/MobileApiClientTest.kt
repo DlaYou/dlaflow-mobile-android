@@ -497,6 +497,7 @@ class MobileApiClientTest {
                     "itemCount":2,
                     "status":"new",
                     "statusTone":"brand",
+                    "statusColor":"#112233",
                     "paymentStatus":"paid",
                     "paymentTone":"success",
                     "createdAt":"2026-06-27T08:30:00.000Z",
@@ -522,6 +523,7 @@ class MobileApiClientTest {
             assertEquals("ORD-1001", page.data.single().orderNumber)
             assertEquals(2, page.data.single().badges.messages)
             assertEquals("success", page.data.single().paymentTone)
+            assertEquals("#112233", page.data.single().statusColor)
             assertEquals("2026-06-28T16:00:00.000Z", page.data.single().shippingDeadlineAt)
         }
     }

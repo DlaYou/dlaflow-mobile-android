@@ -1,8 +1,11 @@
 package pl.dlaflow.mobile.feature.orders
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusTone
+import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 
 class OrdersStatusPresentationTest {
     @Test
@@ -22,5 +25,14 @@ class OrdersStatusPresentationTest {
         assertEquals(DlaFlowStatusTone.WARNING, ordersStatusTone("warning"))
         assertEquals(DlaFlowStatusTone.DANGER, ordersStatusTone("danger"))
         assertEquals(DlaFlowStatusTone.NEUTRAL, ordersStatusTone("provider-purple"))
+    }
+
+    @Test
+    fun `status color accepts exact six digit panel hex only`() {
+        assertNotNull(dlaFlowHexColor("#112233"))
+        assertNotNull(dlaFlowHexColor(" #AABBCC "))
+        assertNull(dlaFlowHexColor("provider-purple"))
+        assertNull(dlaFlowHexColor("#123"))
+        assertNull(dlaFlowHexColor(""))
     }
 }

@@ -35,9 +35,10 @@ internal fun DlaFlowStatusField(
     label: String,
     value: String,
     tone: DlaFlowStatusTone,
+    accentColor: Color? = null,
     modifier: Modifier = Modifier,
 ) {
-    val toneColor = tone.color(colors)
+    val toneColor = accentColor ?: tone.color(colors)
     val shape = RoundedCornerShape(DlaFlowDimensions.controlRadius)
     Column(
         modifier = modifier
@@ -71,6 +72,13 @@ internal fun DlaFlowStatusField(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+internal fun dlaFlowHexColor(value: String): Color? {
+    val normalized = value.trim()
+    if (!normalized.matches(Regex("^#[0-9a-fA-F]{6}$"))) return null
+    val rgb = normalized.drop(1).toLongOrNull(16) ?: return null
+    return Color(0xff000000L or rgb)
 }
 
 private fun DlaFlowStatusTone.color(colors: DlaFlowComposeColors): Color = when (this) {

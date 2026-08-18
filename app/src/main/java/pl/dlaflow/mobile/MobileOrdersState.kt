@@ -46,19 +46,7 @@ fun normalizeMobileOrdersNextOffset(value: String?): Int? {
 
 fun mobileOrderStatusLabel(status: String): String {
     val trimmedStatus = status.trim()
-    val normalized = trimmedStatus.lowercase(Locale.ROOT)
-    if (normalized.isBlank()) {
-        return "Bez statusu"
-    }
-
-    return when (normalized) {
-        "nowe", "new" -> "Nowe"
-        "do wysyłki", "do wysylki", "to_ship", "to-ship" -> "Do wysyłki"
-        "w realizacji", "processing" -> "W realizacji"
-        "dostarczone", "delivered" -> "Dostarczone"
-        "zakończone", "zakonczone", "finished", "completed" -> "Zakończone"
-        else -> trimmedStatus.replaceFirstChar { it.titlecase(Locale.getDefault()) }
-    }
+    return trimmedStatus.ifBlank { "Bez statusu" }
 }
 
 fun mobileOrderUiTone(tone: String): MobileOrderUiTone {

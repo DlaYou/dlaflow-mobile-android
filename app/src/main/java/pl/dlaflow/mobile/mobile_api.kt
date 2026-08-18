@@ -117,6 +117,7 @@ data class MobileOrderListItem(
     val shippingMethod: String,
     val status: String,
     val statusTone: String,
+    val statusColor: String = "",
     val thumbnailUrl: String,
     val updatedAt: String,
 )
@@ -267,6 +268,7 @@ data class MobileOrderDetail(
     val status: String,
     val statusHistory: List<MobileOrderStatusHistory>,
     val statusTone: String,
+    val statusColor: String = "",
     val updatedAt: String,
 )
 
@@ -959,6 +961,7 @@ class MobileApiClient(
             shippingMethod = item.optString("shippingMethod", ""),
             status = item.optString("status", ""),
             statusTone = item.optString("statusTone", "neutral"),
+            statusColor = item.optString("statusColor", ""),
             thumbnailUrl = item.optString("thumbnailUrl", ""),
             updatedAt = item.optString("updatedAt", ""),
         )
@@ -1008,6 +1011,7 @@ class MobileApiClient(
             status = item.optString("status", ""),
             statusHistory = parseMobileOrderStatusHistory(item.optJSONArray("statusHistory")),
             statusTone = item.optString("statusTone", "neutral"),
+            statusColor = item.optString("statusColor", ""),
             updatedAt = item.optString("updatedAt", ""),
         )
     }

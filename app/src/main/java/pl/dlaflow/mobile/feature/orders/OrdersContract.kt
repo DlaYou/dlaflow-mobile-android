@@ -45,6 +45,7 @@ internal data class OrdersListItem(
     val shippingMethod: String,
     val status: String,
     val statusTone: String,
+    val statusColor: String = "",
     val thumbnailUrl: String,
     val badges: OrdersBadges,
 )
@@ -119,6 +120,7 @@ internal data class OrderDetailContent(
     val shippingDeadlineAt: String = "",
     val status: String,
     val statusTone: String,
+    val statusColor: String = "",
     val productSummary: String,
     val itemCount: Int,
     val customer: OrderCustomer,

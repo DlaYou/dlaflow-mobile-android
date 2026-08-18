@@ -56,6 +56,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusField
+import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusTone
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnail
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
@@ -275,7 +276,7 @@ private fun OrdersListCard(
     thumbnailLoader: DlaFlowThumbnailLoader,
     onClick: () -> Unit,
 ) {
-    val statusColor = ordersToneColor(colors, order.statusTone)
+    val statusColor = dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -343,6 +344,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_fulfillment_label),
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
+                accentColor = dlaFlowHexColor(order.statusColor),
                 modifier = Modifier.fillMaxWidth(),
             )
             DlaFlowStatusField(
@@ -360,6 +362,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_fulfillment_label),
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
+                accentColor = dlaFlowHexColor(order.statusColor),
                 modifier = Modifier.weight(1f),
             )
             DlaFlowStatusField(
@@ -420,11 +423,12 @@ internal fun ordersStatusTone(value: String): DlaFlowStatusTone = when (value.tr
     else -> DlaFlowStatusTone.NEUTRAL
 }
 
-private fun ordersToneColor(colors: DlaFlowComposeColors, tone: String): Color = when (tone.trim().lowercase(Locale.ROOT)) {
+internal fun ordersToneColor(colors: DlaFlowComposeColors, tone: String): Color = when (tone.trim().lowercase(Locale.ROOT)) {
     "brand" -> colors.primary
     "info" -> colors.info
     "success" -> colors.success
     "warning" -> colors.orange
+    "danger" -> colors.danger
     else -> colors.textMuted
 }
 

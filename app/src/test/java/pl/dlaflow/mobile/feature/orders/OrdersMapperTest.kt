@@ -54,6 +54,7 @@ class OrdersMapperTest {
                 shippingMethod = "Paczkomat",
                 status = "processing",
                 statusTone = "info",
+                statusColor = "#112233",
                 thumbnailUrl = "/api/mobile/media/order-1",
                 badges = OrdersBadges(documents = 1, messages = 2, shipments = 1),
             ),
@@ -102,6 +103,7 @@ class OrdersMapperTest {
         assertEquals("PLN", detail.currency)
         assertEquals("processing", detail.status)
         assertEquals("info", detail.statusTone)
+        assertEquals("#112233", detail.statusColor)
         assertEquals("Produkt A + Produkt B", detail.productSummary)
         assertEquals(2, detail.itemCount)
         assertEquals(
@@ -156,6 +158,7 @@ internal fun orderListDto(
     shippingMethod = "Paczkomat",
     status = "processing",
     statusTone = "info",
+    statusColor = "#112233",
     thumbnailUrl = "/api/mobile/media/order-1",
     updatedAt = "2026-07-18T09:00:00Z",
 )
@@ -190,6 +193,7 @@ internal fun orderDetailDto(
     status = "processing",
     statusHistory = listOf(MobileOrderStatusHistory("2026-07-18", "panel", "processing")),
     statusTone = "info",
+    statusColor = "#112233",
     updatedAt = "2026-07-18T09:00:00Z",
 )
 

@@ -33,6 +33,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
 import pl.dlaflow.mobile.core.designsystem.DlaFlowMetricBox
+import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
@@ -116,6 +117,7 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
             colors,
             stringResource(R.string.orders_metric_status),
             ordersStatusValue(order.status, stringResource(R.string.orders_status_check)),
+            valueColor = dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone),
             modifier = Modifier.weight(1f),
         )
     }

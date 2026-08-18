@@ -64,11 +64,9 @@ class MobileOrdersStateTest {
 
     @Test
     fun `status labels normalize known business statuses`() {
-        assertEquals("Nowe", mobileOrderStatusLabel("new"))
-        assertEquals("Do wysyłki", mobileOrderStatusLabel("do wysylki"))
-        assertEquals("W realizacji", mobileOrderStatusLabel("w realizacji"))
-        assertEquals("Dostarczone", mobileOrderStatusLabel("delivered"))
-        assertEquals("Wstrzymane", mobileOrderStatusLabel("wstrzymane"))
+        assertEquals("Kontrola jakości", mobileOrderStatusLabel("Kontrola jakości"))
+        assertEquals("Nowe", mobileOrderStatusLabel(" Nowe "))
+        assertEquals("Bez statusu", mobileOrderStatusLabel("  "))
     }
 
     @Test

@@ -318,6 +318,7 @@ internal fun DlaFlowMetricBox(
     colors: DlaFlowComposeColors,
     label: String,
     value: String,
+    valueColor: Color = colors.textStrong,
     note: String? = null,
     editable: Boolean = false,
     editLabel: String = "",
@@ -347,7 +348,7 @@ internal fun DlaFlowMetricBox(
         Spacer(Modifier.height(2.dp))
         Text(
             value,
-            color = colors.textStrong,
+            color = valueColor,
             fontSize = 12.5.sp,
             fontWeight = FontWeight.ExtraBold,
             maxLines = 1,
