@@ -19,12 +19,32 @@ function Require-Text([string]$relativePath, [string]$needle) {
     }
 }
 
+function Reject-Text([string]$relativePath, [string]$needle) {
+    $path = Join-Path $root $relativePath
+    Require-File $relativePath
+    $content = Get-Content -LiteralPath $path -Raw
+    if ($content.Contains($needle)) {
+        throw "Forbidden text '$needle' remains in $relativePath"
+    }
+}
+
+function Reject-Pattern([string]$relativePath, [string]$pattern) {
+    $path = Join-Path $root $relativePath
+    Require-File $relativePath
+    $content = Get-Content -LiteralPath $path -Raw
+    if ($content -match $pattern) {
+        throw "Forbidden pattern '$pattern' remains in $relativePath"
+    }
+}
+
 Require-File "AGENTS.md"
 Require-File "gradlew"
 Require-File "gradlew.bat"
 Require-File "gradle/wrapper/gradle-wrapper.jar"
 Require-File "scripts/verify-design-system-boundary.ps1"
 Require-File "scripts/verify-pairing-feature-boundary.ps1"
+Require-File "scripts/run-qa-emulator-tests.ps1"
+Require-File "scripts/install-operator-apk.ps1"
 Require-Text "gradle/wrapper/gradle-wrapper.properties" "distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip"
 Require-Text "gradle/wrapper/gradle-wrapper.properties" "distributionSha256Sum=20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78"
 Require-Text ".github/workflows/mobile-release.yml" "./gradlew :app:testDebugUnitTest"
@@ -39,5 +59,13 @@ Require-Text ".github/workflows/mobile-release.yml" "Materialize Firebase Google
 Require-Text ".github/workflows/mobile-release.yml" 'GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}'
 Require-Text ".github/workflows/mobile-release.yml" "base64 --decode > app/google-services.json"
 Require-Text ".github/workflows/mobile-release.yml" "Remove Firebase Google Services configuration"
+Require-Text "app/build.gradle.kts" '"dlaflowQaApi35"'
+Require-Text "app/build.gradle.kts" "ManagedVirtualDevice"
+Require-Text "scripts/run-qa-emulator-tests.ps1" ":app:dlaflowQaApi35DebugAndroidTest"
+Require-Text "scripts/install-operator-apk.ps1" "DlaFlow_Task6_Dashboard_API35_20260717"
+Require-Text "scripts/install-operator-apk.ps1" '"install", "-r"'
+Reject-Text "scripts/run-qa-emulator-tests.ps1" ":app:connectedDebugAndroidTest"
+Reject-Pattern "scripts/install-operator-apk.ps1" '(?i)\b(?:uninstall|pm\s+clear|clear\s+data)\b'
+Reject-Text "README.md" '.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon'
 
 Write-Host "Mobile repository contract: OK"
