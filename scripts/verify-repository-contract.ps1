@@ -62,10 +62,12 @@ Require-Text ".github/workflows/mobile-release.yml" "Remove Firebase Google Serv
 Require-Text "app/build.gradle.kts" '"dlaflowQaApi35"'
 Require-Text "app/build.gradle.kts" "ManagedVirtualDevice"
 Require-Text "app/build.gradle.kts" 'testedAbi = "x86_64"'
+Require-Text "app/build.gradle.kts" "allDevices {"
 Require-Text "scripts/run-qa-emulator-tests.ps1" ":app:dlaflowQaApi35DebugAndroidTest"
 Require-Text "scripts/install-operator-apk.ps1" "DlaFlow_Task6_Dashboard_API35_20260717"
 Require-Text "scripts/install-operator-apk.ps1" '"install", "-r"'
 Reject-Text "scripts/run-qa-emulator-tests.ps1" ":app:connectedDebugAndroidTest"
+Reject-Pattern "app/build.gradle.kts" '(?m)^\s*devices\s*\{'
 Reject-Pattern "scripts/install-operator-apk.ps1" '(?i)\b(?:uninstall|pm\s+clear|clear\s+data)\b'
 Reject-Text "README.md" '.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon'
 
