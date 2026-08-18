@@ -148,6 +148,19 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun missingShippingDeadlineStillShowsAnExplicitStatus() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(ordersContent(shippingDeadlineAt = "")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Wyślij do: Brak terminu od integracji", substring = true)
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun filterHasRadioRoleMinimumTargetAndEmitsTypedAction() {
         val actions = mutableListOf<OrdersAction>()
         setOrders(contentState(), actions)
@@ -274,7 +287,9 @@ class OrdersFeatureScreenTest {
         listState = DlaFlowUiState.Content(ordersContent()),
     )
 
-    private fun ordersContent() = OrdersListContent(
+    private fun ordersContent(
+        shippingDeadlineAt: String = Instant.now().plus(Duration.ofHours(18)).toString(),
+    ) = OrdersListContent(
         items = listOf(
             OrdersListItem(
                 id = "order-1",
@@ -284,7 +299,7 @@ class OrdersFeatureScreenTest {
                 customer = "Klient testowy",
                 channel = "Panel",
                 createdAt = "2026-07-18T10:00:00Z",
-                shippingDeadlineAt = Instant.now().plus(Duration.ofHours(18)).toString(),
+                shippingDeadlineAt = shippingDeadlineAt,
                 itemCount = 1,
                 productSummary = "Produkt testowy",
                 paymentStatus = "Opłacone",

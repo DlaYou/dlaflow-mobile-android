@@ -499,6 +499,8 @@ class MobileApiClientTest {
                     "statusTone":"brand",
                     "paymentStatus":"paid",
                     "paymentTone":"success",
+                    "createdAt":"2026-06-27T08:30:00.000Z",
+                    "shippingDeadlineAt":"2026-06-28T16:00:00.000Z",
                     "badges":{"documents":1,"messages":2,"shipments":1}
                 }],
                 "meta":{"count":1,"limit":20,"offset":20,"nextOffset":"40","total":42}
@@ -520,6 +522,7 @@ class MobileApiClientTest {
             assertEquals("ORD-1001", page.data.single().orderNumber)
             assertEquals(2, page.data.single().badges.messages)
             assertEquals("success", page.data.single().paymentTone)
+            assertEquals("2026-06-28T16:00:00.000Z", page.data.single().shippingDeadlineAt)
         }
     }
 

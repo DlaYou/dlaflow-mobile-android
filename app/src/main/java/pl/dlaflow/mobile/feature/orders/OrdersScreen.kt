@@ -500,9 +500,11 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
         R.string.orders_list_ordered_at,
         orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
     )
-    val deadlineLabel = deadlineAt?.let {
-        stringResource(R.string.orders_list_shipping_deadline, ordersShippingDeadlineLabel(it))
-    }
+    val deadlineLabel = stringResource(
+        R.string.orders_list_shipping_deadline,
+        deadlineAt?.let { ordersShippingDeadlineLabel(it) }
+            ?: stringResource(R.string.orders_deadline_unavailable),
+    )
 
     if (ordersUsesCompactLayout()) {
         Column(
@@ -510,21 +512,17 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium)
-            deadlineLabel?.let {
-                OrderTimingValue(it, ordersShippingDeadlineColor(colors, deadlineAt), FontWeight.ExtraBold)
-            }
+            OrderTimingValue(deadlineLabel, ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()), FontWeight.ExtraBold)
         }
     } else {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium, Modifier.weight(1f))
-            deadlineLabel?.let {
-                OrderTimingValue(
-                    it,
-                    ordersShippingDeadlineColor(colors, deadlineAt),
-                    FontWeight.ExtraBold,
-                    Modifier.weight(1f),
-                )
-            }
+            OrderTimingValue(
+                deadlineLabel,
+                ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()),
+                FontWeight.ExtraBold,
+                Modifier.weight(1f),
+            )
         }
     }
 }
