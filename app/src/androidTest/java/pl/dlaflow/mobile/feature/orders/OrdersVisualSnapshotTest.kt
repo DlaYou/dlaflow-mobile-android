@@ -112,7 +112,11 @@ class OrdersVisualSnapshotTest {
         paymentTone = "success",
         phone = "+48 100 200 300",
         shippingMethod = "Paczkomat",
-        status = "processing",
+        status = when (tone) {
+            "warning" -> "Do wysyłki"
+            "success" -> "Wysłane"
+            else -> "W realizacji"
+        },
         statusTone = tone,
         thumbnailUrl = "",
         badges = OrdersBadges(documents = 1, messages = 1, shipments = 1),
@@ -125,7 +129,7 @@ class OrdersVisualSnapshotTest {
         currency = "PLN",
         createdAt = "2026-07-18T10:00:00Z",
         shippingDeadlineAt = Instant.now().plus(Duration.ofHours(18)).toString(),
-        status = "processing",
+        status = "W realizacji",
         statusTone = "info",
         productSummary = "Koszulka testowa",
         itemCount = 2,

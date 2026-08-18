@@ -19,6 +19,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -127,24 +128,56 @@ class OrdersFeatureScreenTest {
             fontScale = 1.3f,
         )
 
-        val orderedTop = composeRule.onNodeWithText(
-            "Zamówiono:",
-            substring = true,
-            useUnmergedTree = true,
-        )
+        val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
             .top
-        val shippingTop = composeRule.onNodeWithText(
-            "Wyślij do:",
-            substring = true,
-            useUnmergedTree = true,
-        )
+        val shippingTop = composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
             .top
 
         assertTrue(shippingTop > orderedTop)
+    }
+
+    @Test
+    fun orderCardExposesBothApiDrivenStatusesToTalkBack() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        composeRule.onNodeWithContentDescription("Realizacja, Nowe").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Płatność, Opłacone").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusFieldsStackAt360Dp() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 360)
+
+        val fulfillmentTop = composeRule.onNodeWithContentDescription("Realizacja, Nowe")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val paymentTop = composeRule.onNodeWithContentDescription("Płatność, Opłacone")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(paymentTop > fulfillmentTop)
+    }
+
+    @Test
+    fun statusFieldsStaySideBySideAt412Dp() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        val fulfillmentTop = composeRule.onNodeWithContentDescription("Realizacja, Nowe")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val paymentTop = composeRule.onNodeWithContentDescription("Płatność, Opłacone")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertEquals(fulfillmentTop, paymentTop, 0f)
     }
 
     @Test
@@ -156,8 +189,36 @@ class OrdersFeatureScreenTest {
             actions = mutableListOf(),
         )
 
-        composeRule.onNodeWithText("Wyślij do: Brak terminu od integracji", substring = true)
-            .assertIsDisplayed()
+        composeRule.onNodeWithText("Termin niedostępny").assertIsDisplayed()
+    }
+
+    @Test
+    fun orderTimingIsVerticalAtNormalWidth() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val shippingTop = composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(shippingTop > orderedTop)
+    }
+
+    @Test
+    fun orderCardKeepsDeliveryMethodButHidesPhoneNumber() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(ordersContent(phone = "+48 100 200 300")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Paczkomat", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("+48 100 200 300", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -210,6 +271,20 @@ class OrdersFeatureScreenTest {
         composeRule.runOnIdle {
             assertEquals(listOf(OrdersAction.CloseDetail), actions)
         }
+    }
+
+    @Test
+    fun detailDisplaysCanonicalApiStatusWithoutAndroidTranslation() {
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(orderDetail(status = "mPOS gotowe")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("mPOS gotowe").assertIsDisplayed()
+        composeRule.onNodeWithText("MPOS gotowe").assertDoesNotExist()
     }
 
     @Test
@@ -287,8 +362,34 @@ class OrdersFeatureScreenTest {
         listState = DlaFlowUiState.Content(ordersContent()),
     )
 
+    private fun orderDetail(status: String) = OrderDetailContent(
+        id = "order-1",
+        orderNumber = "ORD-1001",
+        amount = 100.0,
+        currency = "PLN",
+        createdAt = "2026-07-18T10:00:00Z",
+        shippingDeadlineAt = "",
+        status = status,
+        statusTone = "info",
+        productSummary = "Produkt testowy",
+        itemCount = 1,
+        customer = OrderCustomer("Klient testowy", "", "", "+48 100 200 300"),
+        delivery = OrderDelivery(
+            address = OrderAddress("Klient testowy", "", "", "", "", "", "", "+48 100 200 300"),
+            method = "Paczkomat",
+        ),
+        payment = OrderPayment("PLN", "", 100.0, "Opłacone", "success"),
+        items = emptyList(),
+        shipments = emptyList(),
+        messages = emptyList(),
+        documentsCount = 0,
+        internalNotesCount = 0,
+        statusHistoryCount = 0,
+    )
+
     private fun ordersContent(
         shippingDeadlineAt: String = Instant.now().plus(Duration.ofHours(18)).toString(),
+        phone: String = "",
     ) = OrdersListContent(
         items = listOf(
             OrdersListItem(
@@ -304,9 +405,9 @@ class OrdersFeatureScreenTest {
                 productSummary = "Produkt testowy",
                 paymentStatus = "Opłacone",
                 paymentTone = "success",
-                phone = "",
+                phone = phone,
                 shippingMethod = "Paczkomat",
-                status = "new",
+                status = "Nowe",
                 statusTone = "info",
                 thumbnailUrl = "",
                 badges = OrdersBadges(0, 0, 0),

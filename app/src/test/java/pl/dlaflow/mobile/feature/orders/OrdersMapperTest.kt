@@ -63,6 +63,30 @@ class OrdersMapperTest {
     }
 
     @Test
+    fun `list page preserves API status and payment presentation fields`() {
+        val transportItem = orderListDto().copy(
+            status = "Gotowe do odbioru",
+            statusTone = "warning",
+            paymentStatus = "Płatność przy odbiorze",
+            paymentTone = "info",
+        )
+
+        val item = MobileOrdersPage(
+            data = listOf(transportItem),
+            count = 1,
+            limit = 20,
+            nextOffset = null,
+            offset = 0,
+            total = 1,
+        ).toOrdersListContent().items.single()
+
+        assertEquals("Gotowe do odbioru", item.status)
+        assertEquals("warning", item.statusTone)
+        assertEquals("Płatność przy odbiorze", item.paymentStatus)
+        assertEquals("info", item.paymentTone)
+    }
+
+    @Test
     fun `detail maps only presentation projections and copies nested lists`() {
         val transportItems = mutableListOf(orderItemDto())
         val transportMessages = mutableListOf(orderMessageDto())
