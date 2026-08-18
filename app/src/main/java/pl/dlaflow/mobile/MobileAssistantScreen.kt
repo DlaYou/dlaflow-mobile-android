@@ -122,6 +122,7 @@ import pl.dlaflow.mobile.app.navigation.mobileAssistantBackAction
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowFilterChip
+import pl.dlaflow.mobile.core.designsystem.DlaFlowHeaderIconButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
@@ -152,6 +153,7 @@ import pl.dlaflow.mobile.feature.dashboard.DashboardUiState
 import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.orders.OrdersAction
 import pl.dlaflow.mobile.feature.orders.OrdersFeatureScreen
+import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerStrip
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersUiState
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
@@ -176,6 +178,11 @@ data class PackageScannerResolvedCopy(
     val title: String,
     val supportingText: String,
 )
+
+internal fun shouldShowPackageScannerHeaderAction(
+    selectedTab: MobileAssistantTab,
+    overlayScreen: MobileAssistantOverlayScreen,
+): Boolean = selectedTab == MobileAssistantTab.ORDERS && overlayScreen == MobileAssistantOverlayScreen.NONE
 
 fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageScannerResolvedCopy {
     if (result.matched && result.order != null) {
@@ -678,6 +685,11 @@ private fun AssistantContent(
             status = "Połączono",
             unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
             unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
+            onScanPackage = if (shouldShowPackageScannerHeaderAction(selectedTab, mobileOverlayScreen)) {
+                { onDashboardAction(DashboardAction.ScanPackage) }
+            } else {
+                null
+            },
             onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
         )
         if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
@@ -719,13 +731,13 @@ private fun AssistantContent(
                     state = ordersState,
                     thumbnailLoader = thumbnailLoader,
                     leadContent = {
-                        PackageScannerCard(
+                        LegacyKpiGrid(colors, dashboard?.kpis)
+                        OrdersPackageScannerStrip(
                             colors = colors,
                             scanState = packageScanState,
                             onOpenOrder = { onOrdersAction(OrdersAction.OpenOrder(it)) },
                             onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
                         )
-                        LegacyKpiGrid(colors, dashboard?.kpis)
                     },
                     onAction = onOrdersAction,
                 )
@@ -1720,77 +1732,6 @@ private fun ProductPhotoTaskMicroNotice(
 }
 
 @Composable
-private fun PackageScannerCard(
-    colors: DlaFlowComposeColors,
-    scanState: MobilePackageScanUiState,
-    onOpenOrder: (String) -> Unit,
-    onScanAgain: () -> Unit,
-) {
-    DlaFlowCard(colors, accent = scanState !is MobilePackageScanUiState.Empty) {
-        Row(verticalAlignment = Alignment.Top) {
-            DlaFlowIcon(Icons.Rounded.QrCodeScanner, colors.primary, modifier = Modifier.size(42.dp))
-            Spacer(Modifier.width(11.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                when (scanState) {
-                    MobilePackageScanUiState.Empty -> {
-                        Text("Skaner paczek", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                        Spacer(Modifier.height(3.dp))
-                        Text("Zeskanuj etykietę albo numer nadania. DlaFlow znajdzie pasujące zamówienie.", color = colors.textMuted, fontSize = 12.sp)
-                    }
-                    is MobilePackageScanUiState.Loading -> {
-                        Text("Sprawdzam paczkę", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                        Spacer(Modifier.height(3.dp))
-                        Text(scanState.code, color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    is MobilePackageScanUiState.Resolved -> {
-                        val copy = packageScannerResolvedCopy(scanState.result)
-                        if (scanState.result.matched && scanState.result.order != null) {
-                            Text(copy.title, color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                            Spacer(Modifier.height(3.dp))
-                            Text(copy.supportingText, color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                            Spacer(Modifier.height(3.dp))
-                            Text("#${scanState.result.order.orderNumber} · ${scanState.result.order.status}", color = colors.textMuted, fontSize = 12.sp)
-                            scanState.result.shipment?.let { shipment ->
-                                Spacer(Modifier.height(3.dp))
-                                Text("${shipment.carrier} · ${shipment.status}", color = colors.textMuted, fontSize = 12.sp)
-                            }
-                        } else {
-                            Text(copy.title, color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                copy.supportingText,
-                                color = colors.textMuted,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                    is MobilePackageScanUiState.Failed -> {
-                        Text("Nie udało się sprawdzić paczki", color = colors.textStrong, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
-                        Spacer(Modifier.height(3.dp))
-                        Text(scanState.message, color = colors.textMuted, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-
-        if (scanState is MobilePackageScanUiState.Resolved && scanState.result.matched && scanState.result.order != null) {
-            Spacer(Modifier.height(12.dp))
-            DlaFlowPrimaryButton(colors, Icons.AutoMirrored.Rounded.ReceiptLong, "Otwórz zamówienie") {
-                onOpenOrder(scanState.result.order.orderNumber)
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        DlaFlowSecondaryButton(
-            colors = colors,
-            icon = Icons.Rounded.QrCodeScanner,
-            text = if (scanState is MobilePackageScanUiState.Empty) "Skanuj kod paczki" else "Skanuj kolejny kod",
-            onClick = onScanAgain,
-        )
-    }
-}
-
-@Composable
 private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: DashboardContent?, onOpenNotifications: () -> Unit) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
     LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
@@ -2487,6 +2428,7 @@ private fun AppHeader(
     status: String,
     unreadCount: Int = 0,
     unreadAttentionCount: Int = 0,
+    onScanPackage: (() -> Unit)? = null,
     onOpenNotifications: () -> Unit = {},
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2499,6 +2441,14 @@ private fun AppHeader(
         )
         Spacer(Modifier.weight(1f))
         if (status == "Połączono") {
+            onScanPackage?.let { scan ->
+                DlaFlowHeaderIconButton(
+                    colors = colors,
+                    icon = Icons.Rounded.QrCodeScanner,
+                    contentDescription = stringResource(R.string.orders_scan_package),
+                    onClick = scan,
+                )
+            }
             NotificationBell(
                 colors = colors,
                 unreadCount = unreadCount,

@@ -10,6 +10,13 @@ internal enum class OrdersFilter {
     PROBLEMS,
     MESSAGES,
 }
+
+internal val visibleOrdersFilters = listOf(
+    OrdersFilter.ALL,
+    OrdersFilter.NEW,
+    OrdersFilter.TO_SHIP,
+)
+
 internal data class OrdersQuery(
     val search: String = "",
     val filter: OrdersFilter = OrdersFilter.ALL,

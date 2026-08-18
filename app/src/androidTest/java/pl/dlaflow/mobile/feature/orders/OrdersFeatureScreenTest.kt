@@ -2,6 +2,7 @@ package pl.dlaflow.mobile.feature.orders
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -78,7 +79,18 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun largeFontUsesTwoColumnFilterLayout() {
+    fun exposesOnlyOperatorFilters() {
+        setOrders(contentState(), mutableListOf())
+
+        listOf("Wszystkie", "Nowe", "Do wysyłki").forEach { label ->
+            filterNode(label).assertIsDisplayed()
+        }
+        composeRule.onNodeWithText("Problemy").assertDoesNotExist()
+        composeRule.onNodeWithText("Wiadomości").assertDoesNotExist()
+    }
+
+    @Test
+    fun largeFontUsesTwoColumnThreeFilterLayoutWithoutOverflow() {
         setOrders(
             state = contentState(),
             actions = mutableListOf(),
@@ -86,16 +98,31 @@ class OrdersFeatureScreenTest {
             fontScale = 1.3f,
         )
 
-        val problemsTop = composeRule.onNodeWithText("Problemy")
+        val allTop = filterNode("Wszystkie")
             .fetchSemanticsNode()
             .boundsInRoot
             .top
-        val messagesTop = composeRule.onNodeWithText("Wiadomości")
+        val newTop = filterNode("Nowe")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val toShipTop = filterNode("Do wysyłki")
             .fetchSemanticsNode()
             .boundsInRoot
             .top
 
-        assertTrue(messagesTop > problemsTop)
+        assertEquals(allTop, newTop, 0f)
+        assertTrue(toShipTop > allTop)
+        val viewport = composeRule.onNodeWithTag("orders_test_viewport")
+            .fetchSemanticsNode()
+            .boundsInRoot
+        listOf("Wszystkie", "Nowe", "Do wysyłki").forEach { label ->
+            val bounds = filterNode(label).fetchSemanticsNode().boundsInRoot
+            assertTrue("Filter '$label' extends left of viewport", bounds.left >= viewport.left)
+            assertTrue("Filter '$label' extends right of viewport", bounds.right <= viewport.right)
+        }
+        composeRule.onNodeWithText("Problemy").assertDoesNotExist()
+        composeRule.onNodeWithText("Wiadomości").assertDoesNotExist()
     }
 
     @Test
@@ -389,6 +416,7 @@ class OrdersFeatureScreenTest {
                 ) {
                     Column(
                         modifier = Modifier
+                            .then(screenWidthDp?.let { Modifier.width(it.dp) } ?: Modifier)
                             .testTag("orders_test_viewport")
                             .verticalScroll(rememberScrollState()),
                     ) {
@@ -422,6 +450,11 @@ class OrdersFeatureScreenTest {
             layout.hasVisualOverflow,
         )
     }
+
+    private fun filterNode(label: String) = composeRule.onNode(
+        hasText(label) and
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+    )
 
     private fun orderDetail(status: String) = OrderDetailContent(
         id = "order-1",

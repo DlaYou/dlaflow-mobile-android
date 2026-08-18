@@ -6,8 +6,17 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import pl.dlaflow.mobile.app.navigation.MobileAssistantOverlayScreen
+import pl.dlaflow.mobile.app.navigation.MobileAssistantTab
 
 class MobilePackageScannerTest {
+    @Test
+    fun packageScannerHeaderActionIsLimitedToVisibleOrdersContext() {
+        assertTrue(shouldShowPackageScannerHeaderAction(MobileAssistantTab.ORDERS, MobileAssistantOverlayScreen.NONE))
+        assertFalse(shouldShowPackageScannerHeaderAction(MobileAssistantTab.DASHBOARD, MobileAssistantOverlayScreen.NONE))
+        assertFalse(shouldShowPackageScannerHeaderAction(MobileAssistantTab.ORDERS, MobileAssistantOverlayScreen.NOTIFICATIONS))
+    }
+
     @Test
     fun launchPackageScanStartsLookupWhenNoSessionIsAvailable() {
         val action = resolveLaunchPackageScanAction(
