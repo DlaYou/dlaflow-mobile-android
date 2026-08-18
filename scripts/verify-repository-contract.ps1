@@ -61,6 +61,7 @@ Require-Text ".github/workflows/mobile-release.yml" "base64 --decode > app/googl
 Require-Text ".github/workflows/mobile-release.yml" "Remove Firebase Google Services configuration"
 Require-Text "app/build.gradle.kts" '"dlaflowQaApi35"'
 Require-Text "app/build.gradle.kts" "ManagedVirtualDevice"
+Require-Text "app/build.gradle.kts" 'testedAbi = "x86_64"'
 Require-Text "scripts/run-qa-emulator-tests.ps1" ":app:dlaflowQaApi35DebugAndroidTest"
 Require-Text "scripts/install-operator-apk.ps1" "DlaFlow_Task6_Dashboard_API35_20260717"
 Require-Text "scripts/install-operator-apk.ps1" '"install", "-r"'
