@@ -676,6 +676,7 @@ class MainActivity : ComponentActivity() {
                         clearMobileNotificationsState()
                     }
                     session = verifiedSession
+                    syncPushInstallation(verifiedSession)
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
                     setStatus("Telefon jest połączony.")
@@ -703,6 +704,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun syncPushInstallation(activeSession: MobileSession) {
+        DlaFlowPushInstallation.refreshAndReceive(this) { installationId ->
+            executor.execute {
+                runCatching {
+                    mobileApiClientForSession(sessionStore).updatePushInstallation(
+                        token = activeSession.token,
+                        deviceId = activeSession.deviceId,
+                        installationId = installationId,
+                    )
+                }
+            }
+        }
+    }
+
     private fun submitPairing() {
         val baseUrl = apiUrlValue.trim().ifBlank { sessionStore.readBaseUrl() }
         apiUrlValue = baseUrl
@@ -717,6 +732,7 @@ class MainActivity : ComponentActivity() {
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
+        syncPushInstallation(nextSession)
         pairingStateHolder.reset()
         render()
         showSessionTransition(activeStepIndex = 2, progress = 78)

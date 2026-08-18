@@ -519,6 +519,14 @@ class MobileApiClient(
         )
     }
 
+    fun updatePushInstallation(token: String, deviceId: String, installationId: String) {
+        putJson(
+            path = "/api/mobile/devices/${encodeQueryValue(deviceId)}/push-installation",
+            body = JSONObject().put("installationId", installationId),
+            token = token,
+        )
+    }
+
     fun revokeCurrentDevice(token: String) {
         postEmptyJson("/api/mobile/me/revoke", token)
     }
@@ -745,6 +753,26 @@ class MobileApiClient(
         }
 
         readEmptyResponse(connection)
+    }
+
+    private fun putJson(path: String, body: JSONObject, token: String): JSONObject {
+        val bodyBytes = body.toString().toByteArray(Charsets.UTF_8)
+        val connection = openConnection(path)
+        connection.requestMethod = "PUT"
+        connection.doOutput = true
+        connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        applyAuthorizationAndSignature(
+            connection = connection,
+            method = "PUT",
+            path = path,
+            token = token,
+            bodyBytes = bodyBytes,
+        )
+        connection.outputStream.use { stream ->
+            stream.write(bodyBytes)
+        }
+
+        return readJsonResponse(connection)
     }
 
     private fun patchJson(path: String, body: JSONObject, token: String): JSONObject {

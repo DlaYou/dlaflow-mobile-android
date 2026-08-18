@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -68,12 +69,15 @@ kotlin {
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.12.00")
+    val firebaseBom = platform("com.google.firebase:firebase-bom:34.17.0")
 
     implementation("androidx.activity:activity:1.8.2")
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.core:core:1.13.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation(composeBom)
+    implementation(firebaseBom)
+    implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
