@@ -2,6 +2,7 @@ package pl.dlaflow.mobile.feature.orders
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -415,6 +416,7 @@ class OrdersFeatureScreenTest {
                 ) {
                     Column(
                         modifier = Modifier
+                            .then(screenWidthDp?.let { Modifier.width(it.dp) } ?: Modifier)
                             .testTag("orders_test_viewport")
                             .verticalScroll(rememberScrollState()),
                     ) {
