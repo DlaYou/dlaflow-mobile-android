@@ -1,5 +1,6 @@
 package pl.dlaflow.mobile.feature.orders
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
@@ -23,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -46,6 +49,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowFilterChip
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
+import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
@@ -186,6 +190,10 @@ private fun OrdersFilterChips(
         }
     }
 }
+
+@Composable
+private fun ordersUsesCompactLayout(): Boolean =
+    LocalConfiguration.current.screenWidthDp < 480 && LocalDensity.current.fontScale >= 1.2f
 
 @Composable
 private fun OrdersListSkeleton(colors: DlaFlowComposeColors) {
@@ -445,13 +453,8 @@ private fun ordersIcon(order: OrdersListItem): ImageVector = when {
 
 @Composable
 private fun ordersQuickInfo(order: OrdersListItem): String {
-    val parts = mutableListOf<String>()
-    if (order.shippingMethod.isNotBlank()) parts += order.shippingMethod
-    if (order.phone.isNotBlank()) parts += stringResource(R.string.orders_value_phone_short, order.phone)
-    if (parts.isEmpty()) {
-        parts += stringResource(R.string.orders_value_products_short, order.itemCount.coerceAtLeast(1))
-    }
-    return parts.joinToString(" · ")
+    return order.shippingMethod.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.orders_value_products_short, order.itemCount.coerceAtLeast(1))
 }
 
 @Composable
@@ -535,57 +538,81 @@ internal fun ordersDisplayTimestamp(value: String, zone: ZoneId = ZoneId.systemD
 private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem) {
     val orderedAt = ordersDisplayTimestamp(order.createdAt)
     val deadlineAt = order.shippingDeadlineAt.takeIf { it.isNotBlank() }
-    val orderedLabel = stringResource(
-        R.string.orders_list_ordered_at,
-        orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
-    )
-    val deadlineLabel = stringResource(
-        R.string.orders_list_shipping_deadline,
-        deadlineAt?.let { ordersShippingDeadlineLabel(it) }
-            ?: stringResource(R.string.orders_deadline_unavailable),
-    )
-
-    if (ordersUsesCompactLayout()) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium)
-            OrderTimingValue(deadlineLabel, ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()), FontWeight.ExtraBold)
-        }
-    } else {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OrderTimingValue(orderedLabel, colors.textMuted, FontWeight.Medium, Modifier.weight(1f))
-            OrderTimingValue(
-                deadlineLabel,
-                ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()),
-                FontWeight.ExtraBold,
-                Modifier.weight(1f),
-            )
-        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        OrderTimelineEntry(
+            colors = colors,
+            label = stringResource(R.string.orders_label_ordered_at),
+            value = orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
+            tone = colors.textMuted,
+            showConnector = true,
+        )
+        OrderTimelineEntry(
+            colors = colors,
+            label = stringResource(R.string.orders_label_shipping_deadline),
+            value = deadlineAt?.let { ordersShippingDeadlineLabel(it) }
+                ?: stringResource(R.string.orders_deadline_unavailable),
+            tone = ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()),
+            showConnector = false,
+        )
     }
 }
 
 @Composable
-private fun ordersUsesCompactLayout(): Boolean =
-    LocalConfiguration.current.screenWidthDp < 480 && LocalDensity.current.fontScale >= 1.2f
-
-@Composable
-private fun OrderTimingValue(
-    text: String,
-    color: Color,
-    fontWeight: FontWeight,
-    modifier: Modifier = Modifier,
+private fun OrderTimelineEntry(
+    colors: DlaFlowComposeColors,
+    label: String,
+    value: String,
+    tone: Color,
+    showConnector: Boolean,
 ) {
-    Text(
-        text = text,
-        modifier = modifier,
-        color = color,
-        fontSize = 10.sp,
-        fontWeight = fontWeight,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.width(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 5.dp)
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(tone),
+            )
+            if (showConnector) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(24.dp)
+                        .background(colors.border),
+                )
+            }
+        }
+        Spacer(Modifier.width(6.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(bottom = if (showConnector) 5.dp else 0.dp),
+        ) {
+            Text(
+                text = label,
+                color = colors.textMuted,
+                fontFamily = DlaFlowInter,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.sp,
+            )
+            Text(
+                text = value,
+                color = tone,
+                fontFamily = DlaFlowInter,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.sp,
+                lineHeight = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 private fun ordersShippingDeadlineColor(colors: DlaFlowComposeColors, value: String): Color {

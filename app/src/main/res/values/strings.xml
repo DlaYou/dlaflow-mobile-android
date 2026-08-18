@@ -208,7 +208,7 @@
     <string name="orders_label_shipping_deadline">Wyślij do</string>
     <string name="orders_list_ordered_at">Zamówiono: %1$s</string>
     <string name="orders_list_shipping_deadline">Wyślij do: %1$s</string>
-    <string name="orders_deadline_unavailable">Brak terminu od integracji</string>
+    <string name="orders_deadline_unavailable">Termin niedostępny</string>
     <string name="orders_deadline_overdue">Po terminie · %1$s</string>
     <string name="orders_deadline_minutes">Za %1$d min · %2$s</string>
     <string name="orders_deadline_hours">Za %1$d h · %2$s</string>

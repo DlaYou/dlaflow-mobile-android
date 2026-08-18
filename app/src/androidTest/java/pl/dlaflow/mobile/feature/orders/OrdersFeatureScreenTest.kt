@@ -128,19 +128,11 @@ class OrdersFeatureScreenTest {
             fontScale = 1.3f,
         )
 
-        val orderedTop = composeRule.onNodeWithText(
-            "Zamówiono:",
-            substring = true,
-            useUnmergedTree = true,
-        )
+        val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
             .top
-        val shippingTop = composeRule.onNodeWithText(
-            "Wyślij do:",
-            substring = true,
-            useUnmergedTree = true,
-        )
+        val shippingTop = composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true)
             .fetchSemanticsNode()
             .boundsInRoot
             .top
@@ -197,8 +189,36 @@ class OrdersFeatureScreenTest {
             actions = mutableListOf(),
         )
 
-        composeRule.onNodeWithText("Wyślij do: Brak terminu od integracji", substring = true)
-            .assertIsDisplayed()
+        composeRule.onNodeWithText("Termin niedostępny").assertIsDisplayed()
+    }
+
+    @Test
+    fun orderTimingIsVerticalAtNormalWidth() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val shippingTop = composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(shippingTop > orderedTop)
+    }
+
+    @Test
+    fun orderCardKeepsDeliveryMethodButHidesPhoneNumber() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(ordersContent(phone = "+48 100 200 300")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Paczkomat", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("+48 100 200 300", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -330,6 +350,7 @@ class OrdersFeatureScreenTest {
 
     private fun ordersContent(
         shippingDeadlineAt: String = Instant.now().plus(Duration.ofHours(18)).toString(),
+        phone: String = "",
     ) = OrdersListContent(
         items = listOf(
             OrdersListItem(
@@ -345,7 +366,7 @@ class OrdersFeatureScreenTest {
                 productSummary = "Produkt testowy",
                 paymentStatus = "Opłacone",
                 paymentTone = "success",
-                phone = "",
+                phone = phone,
                 shippingMethod = "Paczkomat",
                 status = "Nowe",
                 statusTone = "info",
