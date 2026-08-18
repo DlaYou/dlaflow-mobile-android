@@ -129,6 +129,7 @@ internal fun pollUnreadPanelAlertNotifications(
     token: String,
 ) {
     val notificationPage = client.listNotifications(token, limit = 10)
+    DlaFlowNotifications.updateBackgroundServiceNotification(context, notificationPage.unreadCount)
     var shownIds = sessionStore.readShownPanelNotificationIds()
 
     notificationPage.notifications

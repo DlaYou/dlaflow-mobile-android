@@ -76,14 +76,14 @@ object DlaFlowNotifications {
         }
     }
 
-    fun backgroundServiceNotification(context: Context): Notification {
+    fun backgroundServiceNotification(context: Context, unreadPanelCount: Int? = null): Notification {
         val intent = Intent(context, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
 
         return NotificationCompat.Builder(context, backgroundChannelId)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_notification_dlaflow)
             .setContentTitle("DlaFlow działa w tle")
-            .setContentText("Caller ID i zadania z panelu są aktywne.")
+            .setContentText(backgroundServiceNotificationText(unreadPanelCount))
             .setContentIntent(PendingIntent.getActivity(context, 2700, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
             .setOngoing(true)
             .setShowWhen(false)
@@ -92,13 +92,17 @@ object DlaFlowNotifications {
             .build()
     }
 
+    fun updateBackgroundServiceNotification(context: Context, unreadPanelCount: Int) {
+        notifyIfAllowed(context, backgroundServiceNotificationId, backgroundServiceNotification(context, unreadPanelCount))
+    }
+
     fun showPhotoTaskNotification(context: Context, task: MobilePhotoTask) {
         if (!canPostNotifications(context)) {
             return
         }
 
         val notification = NotificationCompat.Builder(context, photoTaskChannelId)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_notification_dlaflow)
             .setContentTitle("Zrób zdjęcia produktu")
             .setContentText(task.productName)
             .setContentIntent(
@@ -127,7 +131,7 @@ object DlaFlowNotifications {
         val text = callerIdNotificationText(order)
 
         val notification = NotificationCompat.Builder(context, callerIdChannelId)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_notification_dlaflow)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(
@@ -165,7 +169,7 @@ object DlaFlowNotifications {
             .ifBlank { "Masz nową sprawę w panelu." }
 
         val systemNotification = NotificationCompat.Builder(context, panelAlertChannelId)
-            .setSmallIcon(context.applicationInfo.icon)
+            .setSmallIcon(R.drawable.ic_notification_dlaflow)
             .setContentTitle(notification.title.ifBlank { "DlaFlow" })
             .setContentText(notificationText)
             .setContentIntent(
@@ -211,4 +215,15 @@ internal fun callerIdNotificationText(order: MobileCallerIdOrder?): String {
         order?.status,
         order?.let { "${it.amount} ${it.currency}" },
     ).joinToString(" · ").ifBlank { "Dotknij, aby zobaczyć kartę DlaFlow." }
+}
+
+internal fun backgroundServiceNotificationText(unreadPanelCount: Int?): String {
+    if (unreadPanelCount == null) return "Sprawdzam nowe sprawy w panelu."
+    val count = unreadPanelCount.coerceAtLeast(0)
+    return when {
+        count == 0 -> "Brak nowych spraw w panelu."
+        count == 1 -> "1 nieprzeczytana sprawa w panelu."
+        count % 10 in 2..4 && count % 100 !in 12..14 -> "$count nieprzeczytane sprawy w panelu."
+        else -> "$count nieprzeczytanych spraw w panelu."
+    }
 }

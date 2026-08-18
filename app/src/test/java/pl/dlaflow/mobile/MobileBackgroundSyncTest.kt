@@ -50,4 +50,17 @@ class MobileBackgroundSyncTest {
         assertTrue(notifications.contains("panel-alerts"))
         assertTrue(notifications.contains("showPanelAlertNotification"))
     }
+
+    @Test
+    fun `background notification shows unread panel count and dedicated small icon`() {
+        assertEquals("Sprawdzam nowe sprawy w panelu.", backgroundServiceNotificationText(null))
+        assertEquals("Brak nowych spraw w panelu.", backgroundServiceNotificationText(0))
+        assertEquals("1 nieprzeczytana sprawa w panelu.", backgroundServiceNotificationText(1))
+        assertEquals("3 nieprzeczytane sprawy w panelu.", backgroundServiceNotificationText(3))
+        assertEquals("12 nieprzeczytanych spraw w panelu.", backgroundServiceNotificationText(12))
+        assertEquals("99 nieprzeczytanych spraw w panelu.", backgroundServiceNotificationText(99))
+
+        val notifications = File("src/main/java/pl/dlaflow/mobile/DlaFlowNotifications.kt").readText()
+        assertTrue(notifications.contains("setSmallIcon(R.drawable.ic_notification_dlaflow)"))
+    }
 }
