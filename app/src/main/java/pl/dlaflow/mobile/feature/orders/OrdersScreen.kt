@@ -55,6 +55,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
+import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusTone
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnail
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
@@ -387,6 +388,17 @@ internal fun ordersStatusLabel(status: String): String {
     }
     return labelRes?.let { stringResource(it) }
         ?: trimmed.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+}
+
+internal fun ordersStatusValue(value: String, fallback: String): String = value.trim().ifBlank { fallback }
+
+internal fun ordersStatusTone(value: String): DlaFlowStatusTone = when (value.trim().lowercase(Locale.ROOT)) {
+    "brand" -> DlaFlowStatusTone.BRAND
+    "info" -> DlaFlowStatusTone.INFO
+    "success" -> DlaFlowStatusTone.SUCCESS
+    "warning" -> DlaFlowStatusTone.WARNING
+    "danger" -> DlaFlowStatusTone.DANGER
+    else -> DlaFlowStatusTone.NEUTRAL
 }
 
 private fun ordersToneColor(colors: DlaFlowComposeColors, tone: String): Color = when (tone.trim().lowercase(Locale.ROOT)) {
