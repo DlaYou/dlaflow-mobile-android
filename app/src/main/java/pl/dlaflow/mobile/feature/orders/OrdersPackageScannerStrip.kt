@@ -22,31 +22,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import pl.dlaflow.mobile.MobilePackageScanUiState
 import pl.dlaflow.mobile.R
-import pl.dlaflow.mobile.packageScannerResolvedCopy
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 
-private data class ScannerStripPresentation(
-    val title: String,
-    val supportingText: String,
-    val orderStatus: String? = null,
-    val orderNumber: String? = null,
-    val loading: Boolean = false,
-    val retryable: Boolean = false,
-)
-
 @Composable
 internal fun OrdersPackageScannerStrip(
     colors: DlaFlowComposeColors,
-    scanState: MobilePackageScanUiState,
+    scanState: OrdersPackageScannerState,
     onOpenOrder: (String) -> Unit,
     onScanAgain: () -> Unit,
 ) {
-    if (scanState is MobilePackageScanUiState.Empty) return
+    if (scanState is OrdersPackageScannerState.Empty) return
 
     val presentation = scannerStripPresentation(scanState)
     DlaFlowCard(colors, accent = !presentation.loading) {
@@ -71,28 +60,35 @@ internal fun OrdersPackageScannerStrip(
     }
 }
 
+private data class ScannerStripPresentation(
+    val title: String,
+    val supportingText: String,
+    val orderStatus: String? = null,
+    val orderNumber: String? = null,
+    val loading: Boolean = false,
+    val retryable: Boolean = false,
+)
+
 @Composable
-private fun scannerStripPresentation(scanState: MobilePackageScanUiState): ScannerStripPresentation = when (scanState) {
-    MobilePackageScanUiState.Empty -> error("Empty is handled before presentation")
-    is MobilePackageScanUiState.Loading -> ScannerStripPresentation(
+private fun scannerStripPresentation(scanState: OrdersPackageScannerState): ScannerStripPresentation = when (scanState) {
+    OrdersPackageScannerState.Empty -> error("Empty is handled before presentation")
+    OrdersPackageScannerState.Loading -> ScannerStripPresentation(
         title = stringResource(R.string.orders_scanner_checking),
         supportingText = stringResource(R.string.orders_scanner_checking_description),
         loading = true,
     )
-    is MobilePackageScanUiState.Failed -> ScannerStripPresentation(
-            title = stringResource(R.string.orders_scanner_failed),
+    is OrdersPackageScannerState.Failed -> ScannerStripPresentation(
+        title = stringResource(R.string.orders_scanner_failed),
         supportingText = scanState.message,
-        retryable = true,
+        retryable = scanState.retryable,
     )
-    is MobilePackageScanUiState.Resolved -> {
-        val copy = packageScannerResolvedCopy(scanState.result)
-        val order = scanState.result.order.takeIf { scanState.result.matched }
+    is OrdersPackageScannerState.Resolved -> {
         ScannerStripPresentation(
-            title = copy.title,
-            supportingText = copy.supportingText,
-            orderStatus = order?.let { stringResource(R.string.orders_scanner_order_status, it.orderNumber, it.status) },
-            orderNumber = order?.orderNumber,
-            retryable = order == null,
+            title = scanState.title,
+            supportingText = scanState.supportingText,
+            orderStatus = scanState.orderStatus,
+            orderNumber = scanState.orderNumber,
+            retryable = scanState.retryable,
         )
     }
 }

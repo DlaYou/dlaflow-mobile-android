@@ -16,10 +16,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import pl.dlaflow.mobile.MobilePackageScanLookupResult
-import pl.dlaflow.mobile.MobilePackageScanOrder
-import pl.dlaflow.mobile.MobilePackageScanShipment
-import pl.dlaflow.mobile.MobilePackageScanUiState
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
 
 @RunWith(AndroidJUnit4::class)
@@ -29,7 +25,7 @@ class OrdersPackageScannerStripTest {
 
     @Test
     fun emptyStateRendersNoScannerSurface() {
-        setStrip(MobilePackageScanUiState.Empty)
+        setStrip(OrdersPackageScannerState.Empty)
         composeRule.onNodeWithTag("orders_package_scanner_strip").assertDoesNotExist()
     }
 
@@ -46,7 +42,7 @@ class OrdersPackageScannerStripTest {
     @Test
     fun failedStateOffersRetryWithoutShowingRawCode() {
         var retries = 0
-        setStrip(MobilePackageScanUiState.Failed("PRIVATE-CODE", "Sprawdź internet."), onScanAgain = { retries++ })
+        setStrip(OrdersPackageScannerState.Failed("Sprawdź internet."), onScanAgain = { retries++ })
 
         composeRule.onNodeWithText("Nie udało się sprawdzić paczki").assertIsDisplayed()
         composeRule.onNodeWithText("PRIVATE-CODE").assertDoesNotExist()
@@ -56,7 +52,7 @@ class OrdersPackageScannerStripTest {
 
     @Test
     fun loadingStateKeepsRawScanCodeOutOfTheStrip() {
-        setStrip(MobilePackageScanUiState.Loading("PRIVATE-CODE"))
+        setStrip(OrdersPackageScannerState.Loading)
 
         composeRule.onNodeWithText("Sprawdzam paczkę").assertIsDisplayed()
         composeRule.onNodeWithText("PRIVATE-CODE").assertDoesNotExist()
@@ -74,7 +70,7 @@ class OrdersPackageScannerStripTest {
     }
 
     private fun setStrip(
-        state: MobilePackageScanUiState,
+        state: OrdersPackageScannerState,
         onOpenOrder: (String) -> Unit = {},
         onScanAgain: () -> Unit = {},
     ) {
@@ -87,15 +83,10 @@ class OrdersPackageScannerStripTest {
         }
     }
 
-    private fun matchedState(orderNumber: String, ambiguous: Boolean = false) = MobilePackageScanUiState.Resolved(
-        MobilePackageScanLookupResult(
-            matched = true,
-            ambiguous = ambiguous,
-            scannedCode = "TRACKING",
-            matchType = "trackingNumber",
-            message = "",
-            order = MobilePackageScanOrder(100.0, "Allegro", "PLN", "Klient", "order-1", orderNumber, "Opłacone", "", "Produkt", "Nowe"),
-            shipment = MobilePackageScanShipment("InPost", "shipment-1", true, "Gotowa", "TRACKING", ""),
-        ),
+    private fun matchedState(orderNumber: String, ambiguous: Boolean = false) = OrdersPackageScannerState.Resolved(
+        title = if (ambiguous) "Znaleziono kilka możliwych paczek" else "Paczka znaleziona",
+        supportingText = "Klient",
+        orderStatus = "#$orderNumber · Nowe",
+        orderNumber = orderNumber,
     )
 }

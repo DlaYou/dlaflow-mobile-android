@@ -154,6 +154,7 @@ import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.orders.OrdersAction
 import pl.dlaflow.mobile.feature.orders.OrdersFeatureScreen
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerStrip
+import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerState
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersUiState
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
@@ -203,6 +204,23 @@ fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageSc
         title = "Nie znaleziono paczki",
         supportingText = result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
     )
+}
+
+internal fun MobilePackageScanUiState.toOrdersPackageScannerState(): OrdersPackageScannerState = when (this) {
+    MobilePackageScanUiState.Empty -> OrdersPackageScannerState.Empty
+    is MobilePackageScanUiState.Loading -> OrdersPackageScannerState.Loading
+    is MobilePackageScanUiState.Failed -> OrdersPackageScannerState.Failed(message)
+    is MobilePackageScanUiState.Resolved -> {
+        val copy = packageScannerResolvedCopy(result)
+        val order = result.order.takeIf { result.matched }
+        OrdersPackageScannerState.Resolved(
+            title = copy.title,
+            supportingText = copy.supportingText,
+            orderStatus = order?.let { "#${it.orderNumber} · ${it.status}" },
+            orderNumber = order?.orderNumber,
+            retryable = order == null,
+        )
+    }
 }
 
 fun filterNotifications(
@@ -734,7 +752,7 @@ private fun AssistantContent(
                         LegacyKpiGrid(colors, dashboard?.kpis)
                         OrdersPackageScannerStrip(
                             colors = colors,
-                            scanState = packageScanState,
+                            scanState = packageScanState.toOrdersPackageScannerState(),
                             onOpenOrder = { onOrdersAction(OrdersAction.OpenOrder(it)) },
                             onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
                         )

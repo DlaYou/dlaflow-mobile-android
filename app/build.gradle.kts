@@ -15,8 +15,8 @@ android {
         applicationId = "pl.dlaflow.mobile"
         minSdk = 28
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.4.4"
+        versionCode = 19
+        versionName = "0.4.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }

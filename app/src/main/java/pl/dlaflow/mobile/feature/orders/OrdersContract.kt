@@ -181,6 +181,25 @@ internal data class OrdersDetailRequest(
     val orderNumber: String,
 )
 
+internal sealed interface OrdersPackageScannerState {
+    data object Empty : OrdersPackageScannerState
+
+    data object Loading : OrdersPackageScannerState
+
+    data class Resolved(
+        val title: String,
+        val supportingText: String,
+        val orderStatus: String? = null,
+        val orderNumber: String? = null,
+        val retryable: Boolean = false,
+    ) : OrdersPackageScannerState
+
+    data class Failed(
+        val message: String,
+        val retryable: Boolean = true,
+    ) : OrdersPackageScannerState
+}
+
 internal sealed interface OrdersAction {
     data class SearchChanged(val search: String) : OrdersAction
     data class FilterChanged(val filter: OrdersFilter) : OrdersAction
