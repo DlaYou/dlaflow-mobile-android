@@ -40,7 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.NumberFormat
 import java.time.Duration
+import java.time.Instant
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import pl.dlaflow.mobile.R
@@ -430,47 +432,87 @@ private fun ordersBadgeSummary(order: OrdersListItem): String {
 
 internal fun formatOrdersMoney(value: Double): String = NumberFormat.getCurrencyInstance(Locale("pl", "PL")).format(value)
 
-private fun ordersShortTime(value: String): String = runCatching {
-    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("HH:mm"))
+private fun ordersShortTime(value: String, zone: ZoneId = ZoneId.systemDefault()): String = runCatching {
+    OffsetDateTime.parse(value)
+        .toInstant()
+        .atZone(zone)
+        .format(DateTimeFormatter.ofPattern("HH:mm", Locale("pl", "PL")))
 }.getOrDefault("")
 
+internal enum class OrdersDeadlineKind {
+    UNAVAILABLE,
+    OVERDUE,
+    MINUTES,
+    HOURS,
+    DAYS,
+}
 
+internal data class OrdersDeadlinePresentation(
+    val kind: OrdersDeadlineKind,
+    val amount: Long?,
+    val exact: String,
+)
 
-
-@Composable
-internal fun ordersShippingDeadlineLabel(value: String): String {
-    val deadline = runCatching { OffsetDateTime.parse(value) }.getOrNull()
-        ?: return stringResource(R.string.orders_deadline_unavailable)
-    val remainingMinutes = Duration.between(OffsetDateTime.now(), deadline).toMinutes()
-    val exact = deadline.format(DateTimeFormatter.ofPattern("dd.MM, HH:mm", Locale("pl", "PL")))
+internal fun ordersDeadlinePresentation(
+    value: String,
+    now: Instant = Instant.now(),
+    zone: ZoneId = ZoneId.systemDefault(),
+): OrdersDeadlinePresentation {
+    val deadline = runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: return OrdersDeadlinePresentation(OrdersDeadlineKind.UNAVAILABLE, null, "")
+    val remainingMinutes = Duration.between(now, deadline).toMinutes()
+    val exact = deadline
+        .atZone(zone)
+        .format(DateTimeFormatter.ofPattern("dd.MM, HH:mm", Locale("pl", "PL")))
     return when {
-        remainingMinutes < 0 -> stringResource(R.string.orders_deadline_overdue, exact)
-        remainingMinutes < 60 -> stringResource(R.string.orders_deadline_minutes, remainingMinutes.coerceAtLeast(0), exact)
-        remainingMinutes < 24 * 60 -> stringResource(R.string.orders_deadline_hours, remainingMinutes / 60, exact)
-        else -> stringResource(R.string.orders_deadline_days, remainingMinutes / (24 * 60), exact)
+        remainingMinutes < 0 -> OrdersDeadlinePresentation(OrdersDeadlineKind.OVERDUE, null, exact)
+        remainingMinutes < 60 -> OrdersDeadlinePresentation(OrdersDeadlineKind.MINUTES, remainingMinutes, exact)
+        remainingMinutes < 24 * 60 -> OrdersDeadlinePresentation(OrdersDeadlineKind.HOURS, remainingMinutes / 60, exact)
+        else -> OrdersDeadlinePresentation(OrdersDeadlineKind.DAYS, remainingMinutes / (24 * 60), exact)
     }
 }
 
-internal fun ordersDisplayTimestamp(value: String): String = runCatching {
-    OffsetDateTime.parse(value).format(DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm", Locale("pl", "PL")))
+@Composable
+internal fun ordersShippingDeadlineLabel(value: String): String {
+    val presentation = ordersDeadlinePresentation(value)
+    return when (presentation.kind) {
+        OrdersDeadlineKind.UNAVAILABLE -> stringResource(R.string.orders_deadline_unavailable)
+        OrdersDeadlineKind.OVERDUE -> stringResource(R.string.orders_deadline_overdue, presentation.exact)
+        OrdersDeadlineKind.MINUTES -> stringResource(
+            R.string.orders_deadline_minutes,
+            presentation.amount?.coerceAtLeast(0) ?: 0,
+            presentation.exact,
+        )
+        OrdersDeadlineKind.HOURS -> stringResource(R.string.orders_deadline_hours, presentation.amount ?: 0, presentation.exact)
+        OrdersDeadlineKind.DAYS -> stringResource(R.string.orders_deadline_days, presentation.amount ?: 0, presentation.exact)
+    }
+}
+
+internal fun ordersDisplayTimestamp(value: String, zone: ZoneId = ZoneId.systemDefault()): String = runCatching {
+    OffsetDateTime.parse(value)
+        .toInstant()
+        .atZone(zone)
+        .format(DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm", Locale("pl", "PL")))
 }.getOrDefault("")
-
-
 
 @Composable
 private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem) {
     val orderedAt = ordersDisplayTimestamp(order.createdAt)
     val deadlineAt = order.shippingDeadlineAt.takeIf { it.isNotBlank() }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             text = stringResource(R.string.orders_list_ordered_at, orderedAt.ifBlank { stringResource(R.string.orders_value_missing) }),
+            modifier = Modifier.weight(1f),
             color = colors.textMuted,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         deadlineAt?.let { deadline ->
             Text(
                 text = stringResource(R.string.orders_list_shipping_deadline, ordersShippingDeadlineLabel(deadline)),
+                modifier = Modifier.weight(1f),
                 color = ordersShippingDeadlineColor(colors, deadline),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.ExtraBold,
@@ -482,11 +524,13 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
 }
 
 private fun ordersShippingDeadlineColor(colors: DlaFlowComposeColors, value: String): Color {
-    val remaining = runCatching { Duration.between(OffsetDateTime.now(), OffsetDateTime.parse(value)).toMinutes() }.getOrNull()
-        ?: return colors.textMuted
-    return when {
-        remaining < 0 -> colors.heroNegative
-        remaining < 24 * 60 -> colors.orange
-        else -> colors.textMuted
+    return when (ordersDeadlinePresentation(value).kind) {
+        OrdersDeadlineKind.OVERDUE -> colors.heroNegative
+        OrdersDeadlineKind.MINUTES,
+        OrdersDeadlineKind.HOURS,
+        -> colors.orange
+        OrdersDeadlineKind.UNAVAILABLE,
+        OrdersDeadlineKind.DAYS,
+        -> colors.textMuted
     }
 }

@@ -1665,6 +1665,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenOrders, false) == true) {
+            selectedTab = MobileAssistantTab.ORDERS
+            statusMessage = "Otwieram zamówienia z powiadomienia."
+        }
         val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {
             focusedPhotoTaskId = taskId

@@ -15,11 +15,18 @@ import androidx.core.app.NotificationManagerCompat
 
 object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
+    const val extraOpenOrders = "pl.dlaflow.mobile.OPEN_ORDERS"
     const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
 
     fun photoTaskIntent(context: Context, taskId: String): Intent {
         return Intent(context, MainActivity::class.java)
             .putExtra(extraFocusPhotoTaskId, taskId)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+
+    fun ordersIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenOrders, true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 }
@@ -144,8 +151,12 @@ object DlaFlowNotifications {
             return false
         }
 
-        val appIntent = Intent(context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val appIntent = if (notification.mobileAction.type == "orders") {
+            DlaFlowDeepLinks.ordersIntent(context)
+        } else {
+            Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
 
         val notificationText = notification.description
             .lineSequence()

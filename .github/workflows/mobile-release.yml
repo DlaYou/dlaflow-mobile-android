@@ -74,6 +74,19 @@ jobs:
       - name: Validate Gradle Wrapper
         uses: gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
 
+      - name: Materialize Firebase Google Services configuration
+        shell: bash
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            echo "::error::GitHub secret GOOGLE_SERVICES_JSON_BASE64 is required to build the Firebase-enabled APK."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > app/google-services.json
+          test -s app/google-services.json
+
       - name: Verify mobile repository contract
         shell: pwsh
         run: ./scripts/verify-repository-contract.ps1
@@ -258,3 +271,8 @@ jobs:
           ssh -p "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST" "mkdir -p '$MOBILE_RELEASE_DIR' '$remote_tmp'"
           scp -P "$port" -i "$HOME/.ssh/mobile_release_key" "mobile-release/$apk_file" "mobile-release/latest.json" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST:$remote_tmp/"
           ssh -p "$port" -i "$HOME/.ssh/mobile_release_key" "$MOBILE_RELEASE_SSH_USER@$MOBILE_RELEASE_SSH_HOST" "cd '$remote_tmp' && test -s latest.json && test -s '$apk_file' && mv '$apk_file' '$MOBILE_RELEASE_DIR/$apk_file' && mv latest.json '$MOBILE_RELEASE_DIR/latest.json' && cd '$MOBILE_RELEASE_DIR' && echo '$apk_sha  $apk_file' | sha256sum -c - && rmdir '$remote_tmp'"
+
+      - name: Remove Firebase Google Services configuration
+        if: always()
+        shell: bash
+        run: rm -f app/google-services.json
