@@ -54,6 +54,25 @@ class OrdersPackageScannerStripTest {
         composeRule.runOnIdle { assertEquals(1, retries) }
     }
 
+    @Test
+    fun loadingStateKeepsRawScanCodeOutOfTheStrip() {
+        setStrip(MobilePackageScanUiState.Loading("PRIVATE-CODE"))
+
+        composeRule.onNodeWithText("Sprawdzam paczkę").assertIsDisplayed()
+        composeRule.onNodeWithText("PRIVATE-CODE").assertDoesNotExist()
+        composeRule.onNodeWithText("Skanuj ponownie").assertDoesNotExist()
+    }
+
+    @Test
+    fun ambiguousMatchKeepsWarningAndOpenOrderAction() {
+        val opened = mutableListOf<String>()
+        setStrip(matchedState("ORD-1001", ambiguous = true), onOpenOrder = opened::add)
+
+        composeRule.onNodeWithText("Znaleziono kilka możliwych paczek").assertIsDisplayed()
+        composeRule.onNodeWithText("Otwórz zamówienie").assertHeightIsAtLeast(48.dp).performClick()
+        composeRule.runOnIdle { assertEquals(listOf("ORD-1001"), opened) }
+    }
+
     private fun setStrip(
         state: MobilePackageScanUiState,
         onOpenOrder: (String) -> Unit = {},
@@ -68,9 +87,10 @@ class OrdersPackageScannerStripTest {
         }
     }
 
-    private fun matchedState(orderNumber: String) = MobilePackageScanUiState.Resolved(
+    private fun matchedState(orderNumber: String, ambiguous: Boolean = false) = MobilePackageScanUiState.Resolved(
         MobilePackageScanLookupResult(
             matched = true,
+            ambiguous = ambiguous,
             scannedCode = "TRACKING",
             matchType = "trackingNumber",
             message = "",
