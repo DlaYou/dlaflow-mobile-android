@@ -19,6 +19,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -145,6 +146,46 @@ class OrdersFeatureScreenTest {
             .top
 
         assertTrue(shippingTop > orderedTop)
+    }
+
+    @Test
+    fun orderCardExposesBothApiDrivenStatusesToTalkBack() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        composeRule.onNodeWithContentDescription("Realizacja, Nowe").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Płatność, Opłacone").assertIsDisplayed()
+    }
+
+    @Test
+    fun statusFieldsStackAt360Dp() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 360)
+
+        val fulfillmentTop = composeRule.onNodeWithContentDescription("Realizacja, Nowe")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val paymentTop = composeRule.onNodeWithContentDescription("Płatność, Opłacone")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertTrue(paymentTop > fulfillmentTop)
+    }
+
+    @Test
+    fun statusFieldsStaySideBySideAt412Dp() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        val fulfillmentTop = composeRule.onNodeWithContentDescription("Realizacja, Nowe")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val paymentTop = composeRule.onNodeWithContentDescription("Płatność, Opłacone")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertEquals(fulfillmentTop, paymentTop, 0f)
     }
 
     @Test
@@ -306,7 +347,7 @@ class OrdersFeatureScreenTest {
                 paymentTone = "success",
                 phone = "",
                 shippingMethod = "Paczkomat",
-                status = "new",
+                status = "Nowe",
                 statusTone = "info",
                 thumbnailUrl = "",
                 badges = OrdersBadges(0, 0, 0),

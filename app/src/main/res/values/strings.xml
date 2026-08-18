@@ -189,6 +189,9 @@
     <string name="orders_status_processing">W realizacji</string>
     <string name="orders_status_delivered">Dostarczone</string>
     <string name="orders_status_finished">Zakończone</string>
+    <string name="orders_status_fulfillment_label">Realizacja</string>
+    <string name="orders_status_payment_label">Płatność</string>
+    <string name="orders_status_check">Do sprawdzenia</string>
     <string name="orders_value_phone_short">tel. %1$s</string>
     <string name="orders_value_products_short">%1$d prod.</string>
     <string name="orders_value_messages_short">%1$d wiad.</string>

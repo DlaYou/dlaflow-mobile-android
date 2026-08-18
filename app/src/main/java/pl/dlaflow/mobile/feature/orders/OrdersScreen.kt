@@ -1,7 +1,5 @@
 package pl.dlaflow.mobile.feature.orders
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
@@ -26,7 +23,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -55,6 +51,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
+import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusTone
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnail
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
@@ -312,12 +309,9 @@ private fun OrdersListCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(5.dp))
-                    OrderTimingLine(colors, order)
+                    OrderStatusFields(colors, order)
                     Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OrdersTinyPill(ordersStatusLabel(order.status), statusColor)
-                        OrdersTinyPill(order.paymentStatus.ifBlank { stringResource(R.string.orders_value_payment) }, ordersToneColor(colors, order.paymentTone))
-                    }
+                    OrderTimingLine(colors, order)
                     Spacer(Modifier.height(7.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(ordersQuickInfo(order), color = colors.textMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -330,20 +324,53 @@ private fun OrdersListCard(
 }
 
 @Composable
-private fun OrdersTinyPill(text: String, tone: Color) {
-    Text(
-        text = text,
-        color = tone,
-        fontSize = 8.8.sp,
-        fontWeight = FontWeight.ExtraBold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(tone.copy(alpha = 0.12f))
-            .border(1.dp, tone.copy(alpha = 0.2f), RoundedCornerShape(999.dp))
-            .padding(horizontal = 6.dp, vertical = 3.dp),
-    )
+private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListItem) {
+    val fallback = stringResource(R.string.orders_status_check)
+    val fulfillment = ordersStatusValue(order.status, fallback)
+    val payment = ordersStatusValue(order.paymentStatus, fallback)
+    if (ordersUsesStackedStatusLayout()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            DlaFlowStatusField(
+                colors = colors,
+                label = stringResource(R.string.orders_status_fulfillment_label),
+                value = fulfillment,
+                tone = ordersStatusTone(order.statusTone),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            DlaFlowStatusField(
+                colors = colors,
+                label = stringResource(R.string.orders_status_payment_label),
+                value = payment,
+                tone = ordersStatusTone(order.paymentTone),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            DlaFlowStatusField(
+                colors = colors,
+                label = stringResource(R.string.orders_status_fulfillment_label),
+                value = fulfillment,
+                tone = ordersStatusTone(order.statusTone),
+                modifier = Modifier.weight(1f),
+            )
+            DlaFlowStatusField(
+                colors = colors,
+                label = stringResource(R.string.orders_status_payment_label),
+                value = payment,
+                tone = ordersStatusTone(order.paymentTone),
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ordersUsesStackedStatusLayout(): Boolean {
+    val configuration = LocalConfiguration.current
+    val fontScale = LocalDensity.current.fontScale
+    return configuration.screenWidthDp <= 360 ||
+        (configuration.screenWidthDp < 480 && fontScale >= 1.2f)
 }
 
 @Composable
