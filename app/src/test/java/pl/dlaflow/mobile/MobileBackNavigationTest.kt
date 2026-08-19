@@ -38,6 +38,18 @@ class MobileBackNavigationTest {
     }
 
     @Test
+    fun `android back closes settings detail and keeps settings list visible`() {
+        val action = mobileAssistantBackAction(
+            MobileRoute.Assistant(
+                selectedTab = MobileAssistantTab.MORE,
+                settingsDetailVisible = true,
+            ),
+        )
+
+        assertEquals(MobileAssistantBackAction.CLOSE_SETTINGS_DETAIL, action)
+    }
+
+    @Test
     fun `android back closes notification overlay before tab detail`() {
         val action = mobileAssistantBackAction(
             MobileRoute.Assistant(

@@ -8,6 +8,9 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
+import pl.dlaflow.mobile.core.session.NotificationSessionKey
+import pl.dlaflow.mobile.feature.notifications.NotificationsBackgroundDeliveryMemory
+import pl.dlaflow.mobile.feature.notifications.NotificationsBackgroundRuntime
 
 class DlaFlowBackgroundSyncService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -68,29 +71,41 @@ class DlaFlowBackgroundSyncService : Service() {
             return
         }
 
+        val capturedKey = NotificationSessionKey.create(sessionStore.readBaseUrl(), sessionStore.readDeviceId(), token)
+            ?: return
         executor.execute {
             runCatching {
                 val client = mobileApiClientForSession(sessionStore)
-                client to client.getPhotoTaskDispatch(token)
-            }.onSuccess { (client, dispatch) ->
-                val task = dispatch.pendingOpenTask
-                if (
-                    task != null &&
-                    shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences()) &&
-                    sessionStore.readLastBackgroundPhotoTaskId() != task.id
-                ) {
-                    sessionStore.saveLastBackgroundPhotoTaskId(task.id)
-                    DlaFlowNotifications.showPhotoTaskNotification(this, task)
-                }
-
-                runCatching {
-                    pollUnreadPanelAlertNotifications(this, sessionStore, client, token)
-                }.onFailure { error ->
-                    handleBackgroundSyncFailure(error, token)
-                }
-            }.onFailure { error ->
-                handleBackgroundSyncFailure(error, token)
-            }
+                NotificationsBackgroundRuntime.coordinator.poll(
+                    capturedSessionKey = capturedKey,
+                    currentSessionKey = {
+                        NotificationSessionKey.create(sessionStore.readBaseUrl(), sessionStore.readDeviceId(), sessionStore.readToken())
+                    },
+                    memory = object : NotificationsBackgroundDeliveryMemory {
+                        override fun readLastPhotoTaskId() = sessionStore.readLastBackgroundPhotoTaskId()
+                        override fun saveLastPhotoTaskId(taskId: String) = sessionStore.saveLastBackgroundPhotoTaskId(taskId)
+                        override fun readShownPanelAlertIds() = sessionStore.readShownPanelNotificationIds()
+                        override fun saveShownPanelAlertIds(ids: String) = sessionStore.saveShownPanelNotificationIds(ids)
+                    },
+                    loadPhotoTask = { client.getPhotoTaskDispatch(token).pendingOpenTask },
+                    loadPanelNotifications = {
+                        client.listNotifications(token, limit = 10).also { page ->
+                            DlaFlowNotifications.updateBackgroundServiceNotification(this, page.unreadCount)
+                        }.notifications
+                    },
+                    showPhotoTask = { task ->
+                        if (!shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences())) false
+                        else {
+                            DlaFlowNotifications.showPhotoTaskNotification(this, task)
+                            true
+                        }
+                    },
+                    showPanelAlert = { notification ->
+                        if (!shouldShowNativePanelNotification(notification, sessionStore.readNotificationPreferences())) false
+                        else DlaFlowNotifications.showPanelAlertNotification(this, notification)
+                    },
+                )
+            }.onFailure { error -> handleBackgroundSyncFailure(error, token) }
         }
     }
 
@@ -124,30 +139,4 @@ class DlaFlowBackgroundSyncService : Service() {
             context.stopService(Intent(context, DlaFlowBackgroundSyncService::class.java))
         }
     }
-}
-
-internal fun pollUnreadPanelAlertNotifications(
-    context: Context,
-    sessionStore: MobileSessionStore,
-    client: MobileApiClient,
-    token: String,
-) {
-    val notificationPage = client.listNotifications(token, limit = 10)
-    DlaFlowNotifications.updateBackgroundServiceNotification(context, notificationPage.unreadCount)
-    var shownIds = sessionStore.readShownPanelNotificationIds()
-    val preferences = sessionStore.readNotificationPreferences()
-
-    notificationPage.notifications
-        .filter { it.readAt.isNullOrBlank() }
-        .filter { shouldShowNativePanelNotification(it, preferences) }
-        .forEach { notification ->
-            if (!hasShownNotificationId(shownIds, notification.id)) {
-                val shown = DlaFlowNotifications.showPanelAlertNotification(context, notification)
-                if (shown) {
-                    shownIds = rememberShownNotificationId(shownIds, notification.id)
-                }
-            }
-        }
-
-    sessionStore.saveShownPanelNotificationIds(shownIds)
 }

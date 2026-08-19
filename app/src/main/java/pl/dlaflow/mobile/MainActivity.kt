@@ -62,49 +62,62 @@ import pl.dlaflow.mobile.feature.orders.OrdersLoadOperation
 import pl.dlaflow.mobile.feature.orders.OrdersQuery
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersStateHolder
+import pl.dlaflow.mobile.feature.products.MobileApiPhotoTasksGateway
+import pl.dlaflow.mobile.feature.products.MobileApiProductsGateway
+import pl.dlaflow.mobile.feature.products.PhotoTasksAction
+import pl.dlaflow.mobile.feature.products.PhotoTasksCoordinator
+import pl.dlaflow.mobile.feature.products.PhotoTasksEffect
+import pl.dlaflow.mobile.feature.products.PhotoTasksStateHolder
+import pl.dlaflow.mobile.feature.products.PhotoTaskStatus
+import pl.dlaflow.mobile.feature.products.ProductPhotoTask
+import pl.dlaflow.mobile.feature.products.ProductsAction
+import pl.dlaflow.mobile.feature.products.ProductsCoordinator
+import pl.dlaflow.mobile.feature.products.ProductsFeedback
+import pl.dlaflow.mobile.feature.products.ProductsOperation
+import pl.dlaflow.mobile.feature.products.ProductsScheduledTask
+import pl.dlaflow.mobile.feature.products.ProductsSearchScheduler
+import pl.dlaflow.mobile.feature.products.ProductsStateHolder
+import pl.dlaflow.mobile.feature.products.choosePhotoTaskFocus
 import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
 import pl.dlaflow.mobile.feature.pairing.PairingGateway
 import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
 import pl.dlaflow.mobile.feature.pairing.pairingSmokeSeed
-
-sealed interface MobileLaunchPackageScanAction {
-    data object None : MobileLaunchPackageScanAction
-    data class StartLookup(val code: String) : MobileLaunchPackageScanAction
-    data class WaitForSession(val code: String) : MobileLaunchPackageScanAction
-}
-
-fun resolveLaunchPackageScanAction(
-    rawCode: String?,
-    hasActiveSession: Boolean,
-    hasSavedSession: Boolean,
-): MobileLaunchPackageScanAction {
-    val code = rawCode?.trim().orEmpty()
-    if (code.isBlank()) {
-        return MobileLaunchPackageScanAction.None
-    }
-
-    return if (hasActiveSession || !hasSavedSession) {
-        MobileLaunchPackageScanAction.StartLookup(code)
-    } else {
-        MobileLaunchPackageScanAction.WaitForSession(code)
-    }
-}
-
-fun shouldConsumePendingLaunchPackageScan(
-    pendingCode: String?,
-    hasActiveSession: Boolean,
-    hasSavedSession: Boolean,
-): Boolean {
-    return resolveLaunchPackageScanAction(
-        rawCode = pendingCode,
-        hasActiveSession = hasActiveSession,
-        hasSavedSession = hasSavedSession,
-    ) is MobileLaunchPackageScanAction.StartLookup
-}
+import pl.dlaflow.mobile.feature.products.PhotoCaptureKind
+import pl.dlaflow.mobile.feature.products.PhotoCaptureStateHolder
+import pl.dlaflow.mobile.feature.products.orderedTasks
+import pl.dlaflow.mobile.feature.notifications.MobileApiNotificationsGateway
+import pl.dlaflow.mobile.feature.notifications.NotificationDestination
+import pl.dlaflow.mobile.feature.notifications.NotificationFilter
+import pl.dlaflow.mobile.feature.notifications.NotificationItem
+import pl.dlaflow.mobile.feature.notifications.NotificationTone
+import pl.dlaflow.mobile.feature.notifications.NotificationsCoordinator
+import pl.dlaflow.mobile.feature.notifications.NotificationsEffect
+import pl.dlaflow.mobile.feature.notifications.NotificationsStateHolder
+import pl.dlaflow.mobile.feature.notifications.canonicalContentOrNull
+import pl.dlaflow.mobile.feature.scanner.MobileApiScannerGateway
+import pl.dlaflow.mobile.feature.scanner.ScannerAction
+import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
+import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
+import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
+import pl.dlaflow.mobile.feature.settings.SettingsAction
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdLookupRequest
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdOrder
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdPreview
+import pl.dlaflow.mobile.feature.settings.SettingsCoordinator
+import pl.dlaflow.mobile.feature.settings.SettingsDisconnectRequest
+import pl.dlaflow.mobile.feature.settings.SettingsEffect
+import pl.dlaflow.mobile.feature.settings.SettingsInput
+import pl.dlaflow.mobile.feature.settings.SettingsNotificationPreference
+import pl.dlaflow.mobile.feature.settings.SettingsStateHolder
+import pl.dlaflow.mobile.feature.settings.SettingsTextResolver
+import pl.dlaflow.mobile.feature.settings.SettingsUpdateInfo
+import pl.dlaflow.mobile.feature.settings.SettingsUpdateOperation
+import pl.dlaflow.mobile.feature.settings.buildSettingsContent
+import pl.dlaflow.mobile.feature.settings.launchFirstResolvedSettingsTarget
+import pl.dlaflow.mobile.feature.settings.normalizeSettingsCallerIdPhone
+import pl.dlaflow.mobile.feature.settings.settingsSignerSetsMatch
 
 class MainActivity : ComponentActivity() {
-    private val cameraRequestCode = 4101
-    private val galleryRequestCode = 4102
     private val cameraPermissionRequestCode = 4103
     private val callerIdRoleRequestCode = 4104
     private val notificationPermissionRequestCode = 4105
@@ -118,6 +131,32 @@ class MainActivity : ComponentActivity() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private val settingsStateHolder = SettingsStateHolder()
+    private val settingsCoordinator by lazy {
+        SettingsCoordinator(settingsStateHolder, ::handleSettingsEffect)
+    }
+    private var settingsSessionEpoch = 0L
+    private var nextCallerIdLookupRequestId = 0L
+    private var activeCallerIdLookupRequest: SettingsCallerIdLookupRequest? = null
+    private val settingsLifecycleId = System.nanoTime()
+    private var nextSettingsUpdateOperationId = 0L
+    private var activeSettingsUpdateOperation: SettingsUpdateOperation? = null
+    private val scannerStateHolder = ScannerStateHolder()
+    private val scannerCoordinator by lazy {
+        ScannerCoordinator(
+            stateHolder = scannerStateHolder,
+            gateway = MobileApiScannerGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onFeedback = ::handleScannerFeedback,
+            onRequestCapture = ::scanPackageCode,
+            onOpenOrder = { orderNumber ->
+                selectedTab = MobileAssistantTab.ORDERS
+                handleOrdersAction(OrdersAction.OpenOrder(orderNumber))
+            },
+            onUnauthorized = ::handleScannerUnauthorized,
+        )
+    }
     private val dashboardStateHolder = DashboardStateHolder()
     private val dashboardCoordinator by lazy {
         DashboardCoordinator(
@@ -145,6 +184,29 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val pairingStateHolder = PairingStateHolder()
+    private val photoCaptureStateHolder = PhotoCaptureStateHolder()
+    private val notificationsStateHolder = NotificationsStateHolder()
+    private val notificationsCoordinator by lazy {
+        NotificationsCoordinator(
+            stateHolder = notificationsStateHolder,
+            gateway = MobileApiNotificationsGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onEffect = ::handleNotificationsEffect,
+            onReadStateChanged = {
+                session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
+            },
+            onUnauthorized = ::handleNotificationsUnauthorized,
+            onStateChanged = {
+                syncNotificationsUiState()
+                render()
+                if (markNotificationsReadOnOpen && notificationsStateHolder.state.canonicalContentOrNull() != null) {
+                    markNotificationsReadOnOpen = false
+                    markVisibleNotificationsRead()
+                }
+            },
+        )
+    }
     private val pairingCoordinator by lazy {
         PairingCoordinator(
             stateHolder = pairingStateHolder,
@@ -168,13 +230,11 @@ class MainActivity : ComponentActivity() {
     private var callerIdPreview by mutableStateOf<MobileCallerIdLookup?>(null)
     private var focusedPhotoTaskId: String? = null
     private var focusedPhotoTaskView: View? = null
-    private var lastDispatchedPhotoTaskId: String? = null
     private var photoTasks by mutableStateOf<List<MobilePhotoTask>>(emptyList())
     private var apiUrlValue by mutableStateOf("")
     private var callerIdTestPhoneValue by mutableStateOf("")
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
-    private var packageScanState by mutableStateOf<MobilePackageScanUiState>(MobilePackageScanUiState.Empty)
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -189,6 +249,7 @@ class MainActivity : ComponentActivity() {
     private var mobileNotifications by mutableStateOf<List<MobileAssistantNotification>>(emptyList())
     private var mobileNotificationsLoading by mutableStateOf(false)
     private var mobileNotificationFilter by mutableStateOf(MobileNotificationFilter.ALL)
+    private var markNotificationsReadOnOpen = false
     private var notificationPreferences by mutableStateOf(MobileNotificationPreferences.defaults())
     private var appUpdate by mutableStateOf<MobileAppUpdate?>(null)
     private var appUpdateDismissalState by mutableStateOf(MobileAppUpdateDismissalState())
@@ -206,10 +267,12 @@ class MainActivity : ComponentActivity() {
     private var pendingCameraPhotoFile: File? = null
     private var pendingCameraPhotoUri: Uri? = null
     private var pendingPhotoTaskId: String? = null
+    private var pendingPhotoResultRequestCode: Int? = null
+    private var pendingPhotoResultSourceId: String? = null
+    private var nextPhotoResultRequestCode = photoResultRequestCodeMin
     private var pendingSmokeApiUrl: String? = null
     private var pendingSmokePairingCode: String? = null
     private var pendingSmokePairingDeviceName: String? = null
-    private var pendingLaunchPackageCode: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
     private var session by mutableStateOf<MobileSession?>(null)
@@ -239,7 +302,6 @@ class MainActivity : ComponentActivity() {
                 setStatus("Przygotowujemy aplikację...")
                 completeSessionTransition {
                     setStatus("")
-                    consumePendingLaunchPackageScan()
                 }
             }
         }
@@ -253,16 +315,7 @@ class MainActivity : ComponentActivity() {
         if (consumeSmokePairingIntent()) {
             return
         }
-        if (
-            shouldConsumePendingLaunchPackageScan(
-                pendingCode = pendingLaunchPackageCode,
-                hasActiveSession = session != null,
-                hasSavedSession = sessionStore.readToken().isNotBlank(),
-            )
-        ) {
-            consumePendingLaunchPackageScan()
-        }
-        refreshPhotoTasks(showLoading = false)
+        session?.token?.let(photoTasksCoordinator::refresh)
         if (selectedTab == MobileAssistantTab.ORDERS) {
             ensureOrdersLoaded()
         }
@@ -270,12 +323,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopPhotoTaskDispatchPolling()
+        photoTasksCoordinator.reset()
+        productsCoordinator.reset()
+        notificationsCoordinator.reset()
+        settingsCoordinator.reset()
+        activeCallerIdLookupRequest = null
+        activeSettingsUpdateOperation = null
         executor.shutdownNow()
         super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
+        render()
         val pendingFile = pendingInstallApkFile
         val pendingUpdate = pendingInstallUpdate
         if (pendingFile != null && pendingUpdate != null && canInstallMobileUpdates()) {
@@ -291,7 +351,7 @@ class MainActivity : ComponentActivity() {
         val pairingScan = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         if (pairingScan != null) {
             if (pendingQrScanMode == QrScanMode.PACKAGE) {
-                handlePackageQrResult(pairingScan.contents)
+                handlePackageScanCapture(pairingScan.contents)
             } else {
                 handlePairingQrResult(pairingScan.contents)
             }
@@ -314,20 +374,34 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (requestCode != cameraRequestCode && requestCode != galleryRequestCode) {
+        if (requestCode != pendingPhotoResultRequestCode) {
+            return
+        }
+
+        val capture = photoCaptureStateHolder.pending
+        if (
+            capture == null ||
+            capture.sourceId != pendingPhotoResultSourceId ||
+            capture.sessionKey != session?.token ||
+            capture.taskId != pendingPhotoTaskId
+        ) {
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
+            setStatus("Sesja telefonu zmieniła się. Wybierz zdjęcie ponownie.")
             return
         }
 
         if (resultCode != RESULT_OK) {
             setStatus("Nie wybrano zdjęcia.")
             clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             return
         }
 
         val taskId = pendingPhotoTaskId ?: return
-        when (requestCode) {
-            cameraRequestCode -> uploadCameraResult(taskId)
-            galleryRequestCode -> uploadGalleryResult(taskId, data?.data)
+        when (capture.kind) {
+            PhotoCaptureKind.CAMERA -> uploadCameraResult(taskId)
+            PhotoCaptureKind.GALLERY -> uploadGalleryResult(taskId, data?.data)
         }
     }
 
@@ -337,6 +411,8 @@ class MainActivity : ComponentActivity() {
         if (requestCode == cameraPermissionRequestCode && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             pendingPhotoTaskId?.let { openCamera(it) }
         } else if (requestCode == cameraPermissionRequestCode) {
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Aparat nie ma zgody. Możesz wybrać zdjęcie z telefonu.")
         } else if (requestCode == notificationPermissionRequestCode) {
             setStatus(if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "Powiadomienia zadań włączone." else "Bez powiadomień otwórz aplikację, żeby zobaczyć zadania.")
@@ -354,6 +430,112 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private val productsStateHolder = ProductsStateHolder()
+    private val productsSearchScheduler = ProductsSearchScheduler { delayMillis, action ->
+        val runnable = Runnable(action)
+        dispatchHandler.postDelayed(runnable, delayMillis)
+        ProductsScheduledTask { dispatchHandler.removeCallbacks(runnable) }
+    }
+    private val productsCoordinator by lazy {
+        ProductsCoordinator(
+            stateHolder = productsStateHolder,
+            gateway = MobileApiProductsGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            searchScheduler = productsSearchScheduler,
+            onFeedback = ::handleProductsFeedback,
+            onUnauthorized = ::handleProductsUnauthorized,
+        )
+    }
+    private val photoTasksStateHolder = PhotoTasksStateHolder()
+    private val photoTasksCoordinator by lazy {
+        PhotoTasksCoordinator(
+            stateHolder = photoTasksStateHolder,
+            gateway = MobileApiPhotoTasksGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onEffect = ::handlePhotoTasksEffect,
+            onUnauthorized = ::handlePhotoTasksUnauthorized,
+            onTasksChanged = {
+                syncPhotoTasksUiState()
+                render()
+            },
+        )
+    }
+
+    private fun replaceSettingsSession() {
+        settingsSessionEpoch += 1L
+        settingsCoordinator.replaceSession(settingsSessionEpoch)
+        activeCallerIdLookupRequest = null
+        callerIdPreview = null
+        clearPendingCameraPhoto()
+        clearAppUpdateState()
+    }
+
+    private fun settingsContent() = buildSettingsContent(
+        SettingsInput(
+            displayName = dashboardStateHolder.state.contentOrNull()?.userName.orEmpty(),
+            userEmail = session?.userEmail.orEmpty(),
+            tenantName = dashboardStateHolder.state.contentOrNull()?.tenantName ?: session?.tenantName.orEmpty(),
+            deviceName = session?.deviceName.orEmpty(),
+            phoneStatusMessage = statusMessage,
+            callerIdLabel = dashboardStateHolder.state.contentOrNull()?.callerIdStatus?.label
+                ?: getString(if (isCallerIdOperational()) R.string.settings_value_enabled else R.string.settings_caller_id_fallback),
+            callerIdPreview = callerIdPreview?.let { preview ->
+                SettingsCallerIdPreview(
+                    displayName = preview.displayName,
+                    phone = preview.phone,
+                    primaryOrder = preview.primaryOrder?.let { order -> SettingsCallerIdOrder(order.orderNumber, order.status) },
+                )
+            },
+            callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
+            callerIdOperational = isCallerIdOperational(),
+            canAutoOpenTasks = canDrawOverOtherApps(),
+            notificationAllowed = areNotificationsAllowed(),
+            appVersionName = currentAppVersionName(),
+            update = appUpdate?.let { SettingsUpdateInfo(it.releaseTitle, it.latestVersionName, it.sizeBytes.toLong()) },
+            updateChecking = appUpdateChecking,
+            updateDownloading = appUpdateDownloading,
+            updateDownloadProgress = appUpdateDownloadProgress,
+            updateError = appUpdateError,
+            textResolver = SettingsTextResolver { resourceId, arguments -> getString(resourceId, *arguments) },
+            notificationPreferenceSummary = mobileNotificationPreferenceSummary(notificationPreferences),
+            notificationPreferences = MobileNotificationCategory.entries.map { category ->
+                SettingsNotificationPreference(category.key, category.label, category.description, notificationPreferences.isEnabled(category))
+            },
+        ),
+    )
+
+    private fun handleSettingsAction(action: SettingsAction) {
+        settingsCoordinator.onAction(action, settingsContent())
+    }
+
+    private fun handleSettingsEffect(effect: SettingsEffect) {
+        when (effect) {
+            is SettingsEffect.CallerIdPhoneChanged -> {
+                activeCallerIdLookupRequest = null
+                callerIdPreview = null
+            }
+            SettingsEffect.EnableCallerId -> requestCallerIdRole()
+            is SettingsEffect.TestCallerId -> testCallerIdLookup(effect.phone)
+            SettingsEffect.ShowCallerIdPreview -> callerIdPreview?.let { preview ->
+                runCatching { startActivity(CallerIdActivity.createIntent(this, preview)) }
+                    .onFailure { setStatus(getString(R.string.settings_host_caller_card_open_failed)) }
+            }
+            SettingsEffect.CheckAppUpdate -> refreshAppUpdate(showStatus = true)
+            SettingsEffect.InstallAppUpdate -> installAppUpdate()
+            SettingsEffect.OpenNotificationSettings -> openNotificationSettings()
+            SettingsEffect.OpenOverlaySettings -> requestOverlayPermission()
+            SettingsEffect.OpenAppSystemSettings -> openAppSystemSettings()
+            is SettingsEffect.NotificationPreferenceChanged -> {
+                val category = MobileNotificationCategory.entries.firstOrNull { it.key == effect.key } ?: return
+                notificationPreferences = notificationPreferences.withEnabled(category, effect.enabled)
+                sessionStore.saveNotificationPreferences(notificationPreferences)
+                render()
+            }
+            is SettingsEffect.Disconnect -> disconnectLocalPhone(effect.request)
+        }
+    }
 
     private fun render() {
         val theme = mobileTheme()
@@ -367,17 +549,13 @@ class MainActivity : ComponentActivity() {
                     session = session,
                     dashboardState = dashboardStateHolder.state,
                     photoTasks = orderedPhotoTasks(),
-                    packageScanState = packageScanState,
+                    scannerState = scannerStateHolder.state,
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
                     pairingState = pairingStateHolder.state,
-                    callerIdTestPhone = callerIdTestPhoneValue,
-                    callerIdPreview = callerIdPreview,
-                    callerIdOperational = isCallerIdOperational(),
-                    callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
-                    canAutoOpenTasks = canDrawOverOtherApps(),
-                    notificationAllowed = areNotificationsAllowed(),
+                    settingsState = settingsStateHolder.state,
+                    settingsContent = settingsContent(),
                     appVersionName = currentAppVersionName(),
                     appUpdate = appUpdate,
                     appUpdateDialogVisible = appUpdateDialogVisible,
@@ -402,7 +580,6 @@ class MainActivity : ComponentActivity() {
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
-                    notificationPreferences = notificationPreferences,
                     onPairingCodeChange = pairingStateHolder::updateCode,
                     onContinuePairing = { pairingStateHolder.continueToName() },
                     onScanPairingQr = { scanPairingQr() },
@@ -410,9 +587,7 @@ class MainActivity : ComponentActivity() {
                     onSubmitPairing = { submitPairing() },
                     onShowPairingHelp = pairingStateHolder::showHelp,
                     onPairingBack = { pairingStateHolder.back() },
-                    onCallerIdTestPhoneChange = {
-                        callerIdTestPhoneValue = it
-                    },
+                    onSettingsAction = ::handleSettingsAction,
                     onDashboardAction = ::handleDashboardAction,
                     onSelectTab = {
                         selectedTab = it
@@ -420,45 +595,35 @@ class MainActivity : ComponentActivity() {
                             ensureOrdersLoaded()
                         }
                         if (it == MobileAssistantTab.PRODUCTS) {
-                            ensureMobileProductsLoaded()
+                            ensureProductsLoaded()
                         }
                     },
                     onOrdersAction = ::handleOrdersAction,
                     onProductsSearchChange = {
                         if (mobileProductsSearch != it) {
                             mobileProductsSearch = it
-                            refreshMobileProducts(reset = true, showLoading = true)
+                            handleProductsAction(ProductsAction.SearchChanged(it))
                         }
                     },
                     onProductsFilterChange = {
                         if (mobileProductsFilter != it) {
                             mobileProductsFilter = it
-                            refreshMobileProducts(reset = true, showLoading = true)
+                            handleProductsAction(ProductsAction.FilterChanged(it.toFeatureProductsFilter()))
                         }
                     },
-                    onLoadMoreProducts = { refreshMobileProducts(reset = false, showLoading = true) },
-                    onToggleProductVariants = { productId -> toggleMobileProductVariants(productId) },
-                    onQuickEditProduct = { product, field, value -> quickEditMobileProduct(product, field, value) },
-                    onQuickEditVariant = { variant, field, value -> quickEditMobileProductVariant(variant, field, value) },
+                    onLoadMoreProducts = { handleProductsAction(ProductsAction.LoadMore) },
+                    onToggleProductVariants = { productId -> handleProductsAction(ProductsAction.ToggleVariants(productId)) },
+                    onQuickEditProduct = { product, field, value ->
+                        session?.token?.let { token -> productsCoordinator.quickEditProduct(token, product.id, field.toFeatureField(), value, true) }
+                    },
+                    onQuickEditVariant = { variant, field, value ->
+                        session?.token?.let { token -> productsCoordinator.quickEditVariant(token, variant.productId, variant.id, field.toFeatureField(), value, true) }
+                    },
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
-                    onNotificationFilterChange = { mobileNotificationFilter = it },
+                    onNotificationFilterChange = ::selectMobileNotificationFilter,
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
-                    onNotificationPreferenceChange = { category, enabled ->
-                        notificationPreferences = notificationPreferences.withEnabled(category, enabled)
-                        sessionStore.saveNotificationPreferences(notificationPreferences)
-                    },
-                    onEnableCallerId = { requestCallerIdRole() },
-                    onTestCallerId = { testCallerIdLookup() },
-                    onShowCallerIdPreview = {
-                        callerIdPreview?.let { startActivity(CallerIdActivity.createIntent(this@MainActivity, it)) }
-                    },
-                    onCheckAppUpdate = { refreshAppUpdate(showStatus = true) },
                     onInstallAppUpdate = { installAppUpdate() },
                     onDismissAppUpdate = { dismissAppUpdate() },
-                    onOpenNotificationSettings = { openNotificationSettings() },
-                    onOpenOverlaySettings = { requestOverlayPermission() },
-                    onOpenAppSystemSettings = { openAppSystemSettings() },
-                    onDisconnect = { disconnectLocalPhone() },
                 )
             }
         }
@@ -581,7 +746,7 @@ class MainActivity : ComponentActivity() {
         if (photoTasks.isEmpty()) {
             card.addView(label("Brak aktywnych zadań.", size = 18f, color = theme.strong, bold = true, top = 12))
             card.addView(label("Gdy klikniesz w panelu Wyślij z telefonu, zadanie pojawi się tutaj automatycznie.", size = 13f, color = theme.muted, top = 8))
-            card.addView(secondaryButton("Odśwież zadania") { refreshPhotoTasks() })
+            card.addView(secondaryButton("Odśwież zadania") { session?.token?.let(photoTasksCoordinator::refresh) })
         } else {
             orderedPhotoTasks().forEach { task ->
                 val taskCard = innerCard(focused = task.id == focusedPhotoTaskId)
@@ -598,9 +763,9 @@ class MainActivity : ComponentActivity() {
                     taskCard.addView(twoColumnText("Produkt z panelu", "${task.mediaCount} z ${task.maxPhotos} zdjęć", theme, top = 10))
                 }
                 taskCard.addView(progressTrack(task.mediaCount, task.maxPhotos, theme))
-                taskCard.addView(primaryButton("Zrób zdjęcie") { requestCamera(task.id) })
-                taskCard.addView(secondaryButton("Wybierz zdjęcie") { openGallery(task.id) })
-                taskCard.addView(secondaryButton("Zakończ zadanie") { completePhotoTask(task.id) })
+                taskCard.addView(primaryButton("Zrób zdjęcie") { handlePhotoTasksAction(PhotoTasksAction.RequestCamera(task.id)) })
+                taskCard.addView(secondaryButton("Wybierz zdjęcie") { handlePhotoTasksAction(PhotoTasksAction.RequestGallery(task.id)) })
+                taskCard.addView(secondaryButton("Zakończ zadanie") { handlePhotoTasksAction(PhotoTasksAction.Complete(task.id)) })
                 card.addView(taskCard)
             }
         }
@@ -677,12 +842,18 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
+                        replaceSettingsSession()
                         dashboardCoordinator.reset()
                         ordersCoordinator.reset()
+                        scannerCoordinator.reset()
+                        productsCoordinator.reset()
+                        photoTasksCoordinator.reset()
+                        notificationsCoordinator.reset()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
                     }
                     session = verifiedSession
+                    scannerCoordinator.resumePendingLaunch(verifiedSession.token)
                     syncPushInstallation(verifiedSession)
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
@@ -692,9 +863,8 @@ class MainActivity : ComponentActivity() {
                         DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
                         dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
-                        refreshPhotoTasks(showLoading = false)
+                        photoTasksCoordinator.refresh(verifiedSession.token)
                         refreshAppUpdate(showStatus = false)
-                        consumePendingLaunchPackageScan()
                         if (selectedTab == MobileAssistantTab.ORDERS) {
                             ensureOrdersLoaded()
                         }
@@ -705,7 +875,7 @@ class MainActivity : ComponentActivity() {
                     if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.", confirmUnauthorized = false)) {
                         hideSessionTransition()
                     }
-                    failPendingLaunchPackageScan(mobileApiBusinessMessage(it, "Nie udało się sprawdzić paczki."))
+                    scannerCoordinator.failPendingLaunch()
                 }
             }
         }
@@ -733,9 +903,14 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePairingSuccess(baseUrl: String, nextSession: MobileSession) {
         sessionStore.saveSession(baseUrl, nextSession)
+        replaceSettingsSession()
         updateSessionTransition(activeStepIndex = 1, progress = 46)
         dashboardCoordinator.reset()
         ordersCoordinator.reset()
+        scannerCoordinator.reset()
+        productsCoordinator.reset()
+        photoTasksCoordinator.reset()
+        notificationsCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
@@ -749,7 +924,7 @@ class MainActivity : ComponentActivity() {
             DlaFlowBackgroundSyncService.start(this)
             startPhotoTaskDispatchPolling()
             dashboardCoordinator.refresh(nextSession.token, showFeedback = false)
-            refreshPhotoTasks(showLoading = false)
+            photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
                 ensureOrdersLoaded()
@@ -781,80 +956,47 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handlePackageQrResult(rawValue: String?) {
-        val code = rawValue?.trim().orEmpty()
-        if (code.isBlank()) {
-            setStatus("Nie odczytano kodu paczki.")
-            return
-        }
-
+    private fun handlePackageScanCapture(rawValue: String?) {
         selectedTab = MobileAssistantTab.ORDERS
-        packageScanState = MobilePackageScanUiState.Loading(code)
-        setStatus("Sprawdzam paczkę w DlaFlow.")
-
-        val currentSession = session
-        if (currentSession == null) {
-            packageScanState = MobilePackageScanUiState.Failed(code, "Telefon nie jest połączony z panelem.")
-            setStatus("Telefon nie jest połączony z panelem.")
-            return
-        }
-
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).scanPackage(currentSession.token, code)
-            }.onSuccess { result ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    packageScanState = MobilePackageScanUiState.Resolved(result)
-                    setStatus(
-                        when {
-                            result.matched && result.ambiguous -> "Znaleziono kilka możliwych paczek w DlaFlow."
-                            result.matched -> "Paczka znaleziona w DlaFlow."
-                            else -> "Nie znaleziono paczki w DlaFlow."
-                        }
-                    )
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    val fallbackMessage = "Nie udało się sprawdzić paczki."
-                    val message = mobileApiBusinessMessage(error, fallbackMessage)
-                    val handled = handleMobileApiFailure(error, fallbackMessage)
-                    packageScanState = MobilePackageScanUiState.Failed(code, message)
-                    if (!handled) {
-                        setStatus(message)
-                    }
-                }
-            }
-        }
+        scannerCoordinator.acceptCapture(
+            rawCode = rawValue,
+            token = session?.token,
+            hasSavedSession = sessionStore.readToken().isNotBlank(),
+        )
     }
 
-    private fun consumePendingLaunchPackageScan() {
-        val code = pendingLaunchPackageCode?.trim().orEmpty()
-        if (code.isBlank()) {
-            pendingLaunchPackageCode = null
-            return
-        }
-
-        pendingLaunchPackageCode = null
-        handlePackageQrResult(code)
+    private fun handleScannerAction(action: ScannerAction) {
+        scannerCoordinator.handleAction(action)
     }
 
-    private fun failPendingLaunchPackageScan(message: String) {
-        val code = pendingLaunchPackageCode?.trim().orEmpty()
-        if (code.isBlank()) {
-            pendingLaunchPackageCode = null
-            return
-        }
+    private fun handleScannerFeedback(feedback: ScannerFeedback) {
+        setStatus(
+            when (feedback) {
+                ScannerFeedback.CAPTURE_EMPTY -> "Nie odczytano kodu paczki."
+                ScannerFeedback.WAITING_FOR_SESSION,
+                ScannerFeedback.LOOKUP_LOADING -> "Sprawdzam paczkę w DlaFlow."
+                ScannerFeedback.MATCHED -> "Paczka znaleziona w DlaFlow."
+                ScannerFeedback.AMBIGUOUS -> "Znaleziono kilka możliwych paczek w DlaFlow."
+                ScannerFeedback.NO_MATCH -> "Nie znaleziono paczki w DlaFlow."
+                ScannerFeedback.LOAD_FAILED -> "Nie udało się sprawdzić paczki."
+            },
+        )
+        render()
+    }
 
-        pendingLaunchPackageCode = null
-        selectedTab = MobileAssistantTab.ORDERS
-        packageScanState = MobilePackageScanUiState.Failed(code, message)
-        setStatus(message)
+    private fun handleScannerUnauthorized(
+        error: Throwable,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się sprawdzić paczki.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
     }
 
     private fun handleDashboardAction(action: DashboardAction) {
@@ -862,18 +1004,19 @@ class MainActivity : ComponentActivity() {
             DashboardAction.Refresh -> {
                 val currentSession = session ?: return
                 dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
-                refreshPhotoTasks(showLoading = false)
+                photoTasksCoordinator.refresh(currentSession.token)
                 if (selectedTab == MobileAssistantTab.ORDERS) {
                     ordersCoordinator.refreshList(currentSession.token, showFeedback = false)
                 }
                 refreshAppUpdate(showStatus = false)
             }
-            DashboardAction.ScanPackage -> scanPackageCode()
+            DashboardAction.ScanPackage -> handleScannerAction(ScannerAction.RequestCapture)
             DashboardAction.OpenProductWork -> {
-                val decision = chooseProductPhotoTaskAction(
-                    activeTaskIds = orderedPhotoTasks().map { it.id },
+                val decision = choosePhotoTaskFocus(
+                    activeTaskIds = photoTasksStateHolder.state.orderedTasks().map { it.id },
                     dashboardActiveTaskId = dashboardStateHolder.state.contentOrNull()?.activePhotoTask?.id,
                 )
+                photoTasksCoordinator.focus(decision.focusedTaskId)
                 focusedPhotoTaskId = decision.focusedTaskId
                 selectedTab = MobileAssistantTab.PRODUCTS
                 setStatus(decision.statusMessage)
@@ -881,10 +1024,10 @@ class MainActivity : ComponentActivity() {
                     session?.token?.let { token ->
                         dashboardCoordinator.refresh(token, showFeedback = false)
                     }
-                    refreshPhotoTasks(showLoading = true)
+                    session?.token?.let(photoTasksCoordinator::refresh)
                 }
                 if (decision.focusedTaskId == null) {
-                    ensureMobileProductsLoaded()
+                    ensureProductsLoaded()
                 }
             }
             DashboardAction.OpenStatistics -> {
@@ -895,12 +1038,12 @@ class MainActivity : ComponentActivity() {
             DashboardAction.OpenProducts -> {
                 selectedTab = MobileAssistantTab.PRODUCTS
                 setStatus("Pokazuję produkty.")
-                ensureMobileProductsLoaded()
+                ensureProductsLoaded()
             }
             DashboardAction.OpenNotifications -> openMobileNotifications()
-            is DashboardAction.TakePhoto -> requestCamera(action.taskId)
-            is DashboardAction.PickPhoto -> openGallery(action.taskId)
-            is DashboardAction.CompletePhotoTask -> completePhotoTask(action.taskId)
+            is DashboardAction.TakePhoto -> handlePhotoTasksAction(PhotoTasksAction.RequestCamera(action.taskId))
+            is DashboardAction.PickPhoto -> handlePhotoTasksAction(PhotoTasksAction.RequestGallery(action.taskId))
+            is DashboardAction.CompletePhotoTask -> handlePhotoTasksAction(PhotoTasksAction.Complete(action.taskId))
         }
     }
 
@@ -975,33 +1118,6 @@ class MainActivity : ComponentActivity() {
         pairingStateHolder.acceptQrResult(rawValue)
     }
 
-    private fun refreshPhotoTasks(showLoading: Boolean = true) {
-        val currentSession = session ?: return
-        if (showLoading) {
-            setStatus("Odświeżam zadania zdjęciowe...")
-        }
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).listActivePhotoTasks(currentSession.token)
-            }.onSuccess { tasks ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    photoTasks = tasks
-                    setStatus(if (tasks.isEmpty()) "Brak aktywnych zadań." else "Zadania gotowe.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    handleMobileApiFailure(error, "Nie udało się pobrać zadań.")
-                }
-            }
-        }
-    }
-
     private fun ensureOrdersLoaded() {
         val currentSession = session ?: return
         val state = ordersStateHolder.state
@@ -1057,234 +1173,59 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun refreshMobileProducts(reset: Boolean = true, showLoading: Boolean = true) {
-        val currentSession = session ?: return
-        if (mobileProductsLoading && !reset) {
-            return
-        }
-        if (!reset && mobileProductsNextCursor.isNullOrBlank()) {
-            return
-        }
-
-        val cursor = if (reset) null else mobileProductsNextCursor
-        val search = mobileProductsSearch
-        val filter = mobileProductsFilter
-        val requestVersion = ++mobileProductsRequestVersion
-        mobileProductsLoading = true
-        if (showLoading) {
-            setStatus("Odświeżam produkty...")
-        }
-
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).listProducts(
-                    token = currentSession.token,
-                    search = search,
-                    filter = filter,
-                    cursor = cursor,
-                )
-            }.onSuccess { page ->
-                runOnUiThread {
-                    if (requestVersion != mobileProductsRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProducts = if (reset) page.data else mobileProducts + page.data
-                    mobileProductsNextCursor = page.nextCursor
-                    mobileProductsTotal = page.total
-                    mobileProductsLoading = false
-                    mobileProductsReadOnly = !page.canEdit
-                    mobileProductsNoAccess = false
-                    setStatus(if (reset && page.data.isEmpty()) "Brak produktów dla wybranego filtra." else "Produkty gotowe.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (requestVersion != mobileProductsRequestVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProductsLoading = false
-                    if (error is MobileApiException && error.statusCode == 403) {
-                        clearMobileProductsData(invalidateCallbacks = true)
-                        mobileProductsReadOnly = false
-                        mobileProductsNoAccess = true
-                    }
-                    handleMobileApiFailure(error, "Nie udało się odświeżyć produktów.")
-                }
-            }
-        }
-    }
-
-    private fun ensureMobileProductsLoaded() {
-        if (session != null && mobileProducts.isEmpty() && !mobileProductsLoading) {
-            refreshMobileProducts(reset = true)
-        }
-    }
-
-    private fun toggleMobileProductVariants(productId: String) {
-        val currentSession = session ?: return
-        if (mobileProductVariants.containsKey(productId)) {
-            mobileProductVariants = mobileProductVariants - productId
-            return
-        }
-        if (productId in mobileProductVariantsLoading) {
-            return
-        }
-
-        val stateVersion = mobileProductsStateVersion
-        mobileProductVariantsLoading = mobileProductVariantsLoading + productId
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).listProductVariants(currentSession.token, productId)
-            }.onSuccess { variants ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProductVariants = mobileProductVariants + (productId to variants)
-                    mobileProductVariantsLoading = mobileProductVariantsLoading - productId
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProductVariantsLoading = mobileProductVariantsLoading - productId
-                    handleMobileApiFailure(error, "Nie udało się pobrać wariantów.")
-                }
-            }
-        }
-    }
-
-    private fun quickEditMobileProduct(product: MobileProduct, field: MobileProductQuickEditField, value: Double) {
-        val currentSession = session ?: return
-        val decision = canQuickEditProduct(product, field)
-        if (!decision.allowed) {
-            setStatus(decision.reason)
-            return
-        }
-
-        val stateVersion = mobileProductsStateVersion
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).quickEditProduct(currentSession.token, product.id, field, value)
-            }.onSuccess { updated ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProducts = replaceMobileProduct(mobileProducts, updated)
-                    mobileProductsReadOnly = false
-                    mobileProductsNoAccess = false
-                    setStatus("Produkt zaktualizowany.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    if (error is MobileApiException && error.statusCode == 403) {
-                        mobileProductsReadOnly = true
-                        mobileProductsNoAccess = false
-                    }
-                    handleMobileApiFailure(error, "Nie udało się zaktualizować produktu.")
-                }
-            }
-        }
-    }
-
-    private fun quickEditMobileProductVariant(variant: MobileProductVariant, field: MobileVariantQuickEditField, value: Double) {
-        val currentSession = session ?: return
-
-        val stateVersion = mobileProductsStateVersion
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).quickEditProductVariant(
-                    token = currentSession.token,
-                    productId = variant.productId,
-                    variantId = variant.id,
-                    field = field,
-                    value = value,
-                )
-            }.onSuccess { updated ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    mobileProductVariants = replaceMobileVariant(mobileProductVariants, updated)
-                    mobileProductsReadOnly = false
-                    mobileProductsNoAccess = false
-                    refreshMobileProducts(reset = true, showLoading = false)
-                    setStatus("Wariant zaktualizowany.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (stateVersion != mobileProductsStateVersion || !isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    if (error is MobileApiException && error.statusCode == 403) {
-                        mobileProductsReadOnly = true
-                        mobileProductsNoAccess = false
-                    }
-                    handleMobileApiFailure(error, "Nie udało się zaktualizować wariantu.")
-                }
-            }
-        }
-    }
-
     private fun openMobileNotifications() {
         mobileOverlayScreen = MobileAssistantOverlayScreen.NOTIFICATIONS
-        refreshMobileNotifications(markVisibleRead = true)
+        markNotificationsReadOnOpen = true
+        session?.token?.let(notificationsCoordinator::refresh)
     }
 
-    private fun refreshMobileNotifications(markVisibleRead: Boolean = false) {
-        val currentSession = session ?: return
-        if (mobileNotificationsLoading) {
-            return
-        }
-        val filterSnapshot = mobileNotificationFilter
-        mobileNotificationsLoading = true
-        executor.execute {
-            runCatching {
-                val client = mobileApiClientForSession(sessionStore)
-                val page = client.listNotifications(currentSession.token)
-                if (markVisibleRead) {
-                    val unreadIds = filterNotifications(page.notifications, filterSnapshot)
-                        .filter { it.readAt.isNullOrBlank() }
-                        .map { it.id }
-                        .filter { it.isNotBlank() }
-                    if (unreadIds.isNotEmpty()) {
-                        client.markNotificationsRead(currentSession.token, unreadIds)
-                        client.listNotifications(currentSession.token).notifications
-                    } else {
-                        page.notifications
-                    }
-                } else {
-                    page.notifications
-                }
-            }.onSuccess { notifications ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        mobileNotificationsLoading = false
-                        return@runOnUiThread
-                    }
-                    mobileNotifications = notifications
-                    mobileNotificationsLoading = false
-                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        mobileNotificationsLoading = false
-                        return@runOnUiThread
-                    }
-                    mobileNotificationsLoading = false
-                    handleMobileApiFailure(error, "Nie udało się pobrać powiadomień.")
-                }
-            }
-        }
+    private fun selectMobileNotificationFilter(filter: MobileNotificationFilter) {
+        mobileNotificationFilter = filter
+        notificationsCoordinator.selectFilter(filter.toFeatureNotificationFilter())
     }
 
     private fun markVisibleNotificationsRead() {
-        refreshMobileNotifications(markVisibleRead = true)
+        session?.token?.let(notificationsCoordinator::markVisibleRead)
+    }
+
+    private fun handleNotificationsEffect(effect: NotificationsEffect) {
+        when (effect) {
+            NotificationsEffect.OpenOrders -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.ORDERS
+                ensureOrdersLoaded()
+            }
+            NotificationsEffect.OpenProducts,
+            NotificationsEffect.OpenPhotoTasks -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.PRODUCTS
+                ensureProductsLoaded()
+            }
+            NotificationsEffect.OpenMessages -> setStatus("Wiadomości są dostępne w panelu.")
+            is NotificationsEffect.ShowSafeExplanation -> setStatus("Ta sprawa wymaga działania w panelu.")
+        }
+        render()
+    }
+
+    private fun handleNotificationsUnauthorized(
+        error: Throwable,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się pobrać powiadomień.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun syncNotificationsUiState() {
+        val state = notificationsStateHolder.state
+        mobileNotificationsLoading = state.isRefreshing || state.notificationsState is pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading
+        mobileNotifications = state.canonicalContentOrNull()?.items.orEmpty().map(NotificationItem::toMobileAssistantNotification)
     }
 
     private fun refreshAppUpdate(showStatus: Boolean = false) {
@@ -1395,7 +1336,7 @@ class MainActivity : ComponentActivity() {
             }.onFailure { error ->
                 runOnUiThread {
                     appUpdateDownloading = false
-                    appUpdateError = error.message ?: "Nie udało się pobrać aktualizacji."
+                    appUpdateError = "Nie udało się pobrać aktualizacji."
                     setStatus(appUpdateError)
                 }
             }
@@ -1615,36 +1556,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkPhotoTaskDispatch() {
-        val currentSession = session ?: return
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).getPhotoTaskDispatch(currentSession.token)
-            }.onSuccess { dispatch ->
-                val task = dispatch.pendingOpenTask ?: return@onSuccess
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    if (task.id == lastDispatchedPhotoTaskId) {
-                        return@runOnUiThread
-                    }
-                    lastDispatchedPhotoTaskId = task.id
-                    focusedPhotoTaskId = task.id
-                    selectedTab = MobileAssistantTab.PRODUCTS
-                    showPhotoTaskNotification(task)
-                    openPhotoTaskIfAllowed(task)
-                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
-                    refreshPhotoTasks(showLoading = false)
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    handleMobileApiFailure(error, "Nie udało się sprawdzić zadań z panelu.", showNonAuthStatus = false)
-                }
-            }
-        }
+        session?.token?.let(photoTasksCoordinator::pollDispatch)
     }
 
     private fun openPhotoTaskIfAllowed(task: MobilePhotoTask) {
@@ -1680,29 +1592,24 @@ class MainActivity : ComponentActivity() {
         }
         val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {
+            photoTasksStateHolder.consumeExternalFocus(taskId)
             focusedPhotoTaskId = taskId
-            lastDispatchedPhotoTaskId = taskId
             selectedTab = MobileAssistantTab.PRODUCTS
             statusMessage = "Otwieram zadanie zdjęciowe z panelu."
         }
-        when (
-            val packageScanAction = resolveLaunchPackageScanAction(
-                rawCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode),
-                hasActiveSession = session != null,
+        val smokePackageCode = if (BuildConfig.DEBUG) {
+            intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode).orEmpty()
+        } else {
+            ""
+        }
+        if (smokePackageCode.isNotBlank()) {
+            intent?.removeExtra(DlaFlowDeepLinks.extraSmokePackageCode)
+            selectedTab = MobileAssistantTab.ORDERS
+            scannerCoordinator.acceptLaunch(
+                rawCode = smokePackageCode,
+                activeToken = session?.token,
                 hasSavedSession = sessionStore.readToken().isNotBlank(),
             )
-        ) {
-            MobileLaunchPackageScanAction.None -> Unit
-            is MobileLaunchPackageScanAction.StartLookup -> {
-                pendingLaunchPackageCode = null
-                handlePackageQrResult(packageScanAction.code)
-            }
-            is MobileLaunchPackageScanAction.WaitForSession -> {
-                pendingLaunchPackageCode = packageScanAction.code
-                packageScanState = MobilePackageScanUiState.Loading(packageScanAction.code)
-                selectedTab = MobileAssistantTab.ORDERS
-                statusMessage = "Sprawdzam paczkę w DlaFlow."
-            }
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()
@@ -1768,7 +1675,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestCamera(taskId: String) {
-        pendingPhotoTaskId = taskId
+        if (!beginPendingPhoto(taskId, PhotoCaptureKind.CAMERA)) return
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             openCamera(taskId)
         } else {
@@ -1777,9 +1684,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openCamera(taskId: String) {
-        pendingPhotoTaskId = taskId
         val photoFile = runCatching { createCameraPhotoFile() }.getOrNull()
         if (photoFile == null) {
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Nie udało się przygotować pliku zdjęcia.")
             return
         }
@@ -1794,85 +1702,96 @@ class MainActivity : ComponentActivity() {
         }
         if (intent.resolveActivity(packageManager) == null) {
             clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Nie znaleziono aplikacji aparatu.")
             return
         }
-        startActivityForResult(intent, cameraRequestCode)
+        startActivityForResult(intent, pendingPhotoResultRequestCode ?: return)
     }
 
     private fun openGallery(taskId: String) {
-        pendingPhotoTaskId = taskId
+        if (!beginPendingPhoto(taskId, PhotoCaptureKind.GALLERY)) return
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
         }
-        startActivityForResult(intent, galleryRequestCode)
+        startActivityForResult(intent, pendingPhotoResultRequestCode ?: return)
     }
 
     private fun uploadCameraResult(taskId: String) {
         val uri = pendingCameraPhotoUri
         val file = pendingCameraPhotoFile
-        val bytes = when {
-            uri != null -> contentResolver.openInputStream(uri)?.use { input -> input.readBytes() }
-            file != null && file.exists() -> file.readBytes()
+        val input = when {
+            uri != null -> contentResolver.openInputStream(uri)
+            file != null && file.exists() -> file.inputStream()
             else -> null
         }
-
-        if (bytes == null || bytes.isEmpty()) {
+        if (input == null) {
             clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Aparat nie zapisał pełnego zdjęcia.")
             return
         }
-
-        uploadPhoto(taskId, bytes, file?.name ?: "zdjecie-z-telefonu.jpg", "image/jpeg")
+        uploadPhoto(taskId, input, file?.name ?: "zdjecie-z-telefonu.jpg", "image/jpeg")
     }
 
     private fun uploadGalleryResult(taskId: String, uri: Uri?) {
         if (uri == null) {
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Nie wybrano zdjęcia.")
             return
         }
 
-        val bytes = contentResolver.openInputStream(uri)?.use { input ->
-            input.readBytes()
-        }
-        if (bytes == null) {
+        val input = contentResolver.openInputStream(uri)
+        if (input == null) {
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Nie udało się odczytać zdjęcia.")
             return
         }
-
-        uploadPhoto(taskId, bytes, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
+        uploadPhoto(taskId, input, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
     }
 
-    private fun uploadPhoto(taskId: String, bytes: ByteArray, fileName: String, mimeType: String) {
-        val currentSession = session ?: return
-        setStatus("Wysyłam pełne zdjęcie (${formatBytes(bytes.size)})...")
+    private fun uploadPhoto(taskId: String, input: java.io.InputStream, fileName: String, mimeType: String) {
+        val capture = photoCaptureStateHolder.pending
+        val currentSession = session ?: run {
+            input.close()
+            return
+        }
+        if (capture == null || capture.taskId != taskId || capture.sessionKey != currentSession.token) {
+            input.close()
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
+            return
+        }
+        if (!photoCaptureStateHolder.advance(capture, pl.dlaflow.mobile.feature.products.PhotoCapturePhase.PREPARING)) {
+            input.close()
+            return
+        }
+        val preparingCapture = capture.copy(phase = pl.dlaflow.mobile.feature.products.PhotoCapturePhase.PREPARING)
+        setStatus("Wysyłam pełne zdjęcie...")
         executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).uploadPhotoTaskMedia(
-                    token = currentSession.token,
-                    taskId = taskId,
-                    imageBytes = bytes,
-                    fileName = fileName,
-                    mimeType = mimeType,
-                )
-            }.onSuccess {
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    clearPendingCameraPhoto()
-                    setStatus("Zdjęcie dodane do produktu.")
-                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
-                    refreshPhotoTasks()
+            val destination = File(cacheDir, "mobile-photo-uploads/${capture.sourceId}.bin")
+            val prepared = input.use { stream ->
+                prepareMobilePhotoUpload(stream, destination, capture.sourceId, fileName, mimeType)
+            }
+            runOnUiThread {
+                val source = (prepared as? MobilePhotoUploadPreparationResult.Ready)?.source
+                if (!photoCaptureStateHolder.matches(preparingCapture) || !isCurrentSessionToken(currentSession.token)) {
+                    source?.let(photoTasksCoordinator::discardUploadSource)
+                    return@runOnUiThread
                 }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
+                clearPendingCameraPhoto()
+                when {
+                    source == null -> {
+                        photoTasksCoordinator.mediaSelectionCancelled()
+                        setStatus("Zdjęcie jest puste, za duże albo niedostępne.")
                     }
-                    clearPendingCameraPhoto()
-                    handleMobileApiFailure(error, "Nie udało się wysłać zdjęcia.")
+                    photoTasksCoordinator.submitUpload(currentSession.token, taskId, source) -> {
+                        setStatus("Wysyłam pełne zdjęcie...")
+                    }
+                    else -> setStatus("Nie udało się przygotować zdjęcia do wysłania.")
                 }
             }
         }
@@ -1889,33 +1808,27 @@ class MainActivity : ComponentActivity() {
 
     private fun clearPendingCameraPhoto() {
         pendingCameraPhotoUri = null
+        pendingCameraPhotoFile?.delete()
         pendingCameraPhotoFile = null
+        pendingPhotoTaskId = null
+        pendingPhotoResultRequestCode = null
+        pendingPhotoResultSourceId = null
+        photoCaptureStateHolder.reset()
     }
 
-    private fun completePhotoTask(taskId: String) {
-        val currentSession = session ?: return
-        setStatus("Kończę zadanie...")
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).completePhotoTask(currentSession.token, taskId)
-            }.onSuccess {
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    photoTasks = photoTasks.filterNot { it.id == taskId }
-                    dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
-                    setStatus("Zadanie zakończone.")
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    handleMobileApiFailure(error, "Nie udało się zakończyć zadania.")
-                }
-            }
-        }
+    private fun beginPendingPhoto(taskId: String, kind: PhotoCaptureKind): Boolean {
+        val sessionToken = session?.token ?: return false
+        val capture = photoCaptureStateHolder.begin(sessionToken, taskId, kind, java.util.UUID.randomUUID().toString()) ?: return false
+        pendingPhotoTaskId = taskId
+        pendingPhotoResultRequestCode = allocatePhotoResultRequestCode()
+        pendingPhotoResultSourceId = capture.sourceId
+        return true
+    }
+
+    private fun allocatePhotoResultRequestCode(): Int {
+        val requestCode = nextPhotoResultRequestCode
+        nextPhotoResultRequestCode = if (requestCode >= photoResultRequestCodeMax) photoResultRequestCodeMin else requestCode + 1
+        return requestCode
     }
 
     private fun requestCallerIdRole() {
@@ -1974,11 +1887,215 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        openResolvedSystemSettings(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+            getString(R.string.settings_host_overlay_settings_open_failed),
+        )
     }
 
     private fun openAppSystemSettings() {
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        openResolvedSystemSettings(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+            getString(R.string.settings_host_app_settings_open_failed),
+            allowApplicationFallback = false,
+        )
+    }
+
+    private fun ensureProductsLoaded() {
+        val currentSession = session ?: return
+        val state = productsStateHolder.state
+        if (state.activeListRequestId == null && state.listState == pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading) {
+            productsCoordinator.resetList(currentSession.token, state.query, showFeedback = true)
+        }
+    }
+
+    private fun handleProductsAction(action: ProductsAction) {
+        session?.token?.let { productsCoordinator.handleAction(it, action, showFeedback = true) }
+        syncProductsUiState()
+    }
+
+    private fun handleProductsFeedback(feedback: ProductsFeedback) {
+        syncProductsUiState()
+        setStatus(
+            when (feedback) {
+                ProductsFeedback.LIST_LOADING -> "Odświeżam produkty..."
+                ProductsFeedback.LIST_READY -> "Produkty gotowe."
+                ProductsFeedback.LIST_EMPTY -> "Brak produktów dla wybranego filtra."
+                ProductsFeedback.VARIANTS_LOADING -> "Pobieram warianty..."
+                ProductsFeedback.VARIANTS_READY -> "Warianty gotowe."
+                ProductsFeedback.QUICK_EDIT_SAVING -> "Zapisuję zmianę..."
+                ProductsFeedback.QUICK_EDIT_SAVED -> "Produkt zaktualizowany."
+                ProductsFeedback.LOAD_FAILED -> "Nie udało się wykonać operacji na produktach."
+            },
+        )
+        render()
+    }
+
+    private fun handleProductsUnauthorized(
+        error: Throwable,
+        @Suppress("UNUSED_PARAMETER") operation: ProductsOperation,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się wykonać operacji na produktach.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun handlePhotoTasksAction(action: PhotoTasksAction) {
+        photoTasksCoordinator.handleAction(session?.token, action)
+    }
+
+    private fun handlePhotoTasksEffect(effect: PhotoTasksEffect) {
+        when (effect) {
+            is PhotoTasksEffect.LaunchCamera -> requestCamera(effect.taskId)
+            is PhotoTasksEffect.LaunchGallery -> openGallery(effect.taskId)
+            is PhotoTasksEffect.PresentDispatch -> presentPhotoTaskDispatch(effect.task)
+            PhotoTasksEffect.UploadSucceeded -> {
+                session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
+                setStatus("Zdjęcie dodane do produktu.")
+            }
+            PhotoTasksEffect.CompletionSucceeded -> {
+                session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
+                setStatus("Zadanie zakończone.")
+            }
+            PhotoTasksEffect.OperationFailed -> setStatus("Nie udało się wykonać operacji na zadaniu zdjęciowym.")
+        }
+        render()
+    }
+
+    private fun handlePhotoTasksUnauthorized(
+        error: Throwable,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się wykonać operacji na zadaniu zdjęciowym.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun syncProductsUiState() {
+        val featureState = productsStateHolder.state
+        val content = featureState.listState.let { state ->
+            when (state) {
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Content -> state.data
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Offline -> state.lastContent
+                else -> null
+            }
+        }
+        mobileProducts = content?.items.orEmpty().map { item ->
+            MobileProduct(
+                id = item.id,
+                name = item.name,
+                sku = item.sku,
+                ean = item.ean,
+                image = item.thumbnailUrl,
+                thumbnailUrl = item.thumbnailUrl,
+                grossPrice = item.grossPrice,
+                stock = item.stock,
+                status = item.status.label,
+                currency = item.currency,
+                variantCount = item.variantCount,
+                lowStock = item.lowStock,
+                editableFields = MobileProductEditableFields(item.editableFields.grossPrice, item.editableFields.stock),
+            )
+        }
+        mobileProductsNextCursor = content?.nextCursor
+        mobileProductsTotal = content?.total ?: 0
+        mobileProductsLoading = featureState.activeListRequestId != null
+        mobileProductsSearch = featureState.query.search
+        mobileProductsFilter = when (featureState.query.filter) {
+            pl.dlaflow.mobile.feature.products.ProductsFilter.ALL -> MobileProductFilter.ALL
+            pl.dlaflow.mobile.feature.products.ProductsFilter.LOW_STOCK -> MobileProductFilter.LOW_STOCK
+            pl.dlaflow.mobile.feature.products.ProductsFilter.NO_IMAGE -> MobileProductFilter.NO_IMAGE
+            pl.dlaflow.mobile.feature.products.ProductsFilter.HAS_VARIANTS -> MobileProductFilter.HAS_VARIANTS
+        }
+        mobileProductsReadOnly = content?.canEdit == false
+        mobileProductsNoAccess = featureState.listState is pl.dlaflow.mobile.core.state.DlaFlowUiState.NoAccess
+        mobileProductVariants = featureState.variants.mapValues { (_, value) ->
+            when (value) {
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Content -> value.data.map { variant ->
+                    MobileProductVariant(
+                        id = variant.id,
+                        productId = variant.productId,
+                        name = variant.name,
+                        sku = variant.sku,
+                        ean = variant.ean,
+                        image = variant.thumbnailUrl,
+                        thumbnailUrl = variant.thumbnailUrl,
+                        price = variant.price,
+                        stock = variant.stock,
+                        status = variant.status.label,
+                        editableFields = MobileProductVariantEditableFields(variant.editableFields.price, variant.editableFields.stock),
+                    )
+                }
+                else -> emptyList()
+            }
+        }
+        mobileProductVariantsLoading = featureState.variants.filterValues { it is pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading }.keys
+    }
+
+    private fun syncPhotoTasksUiState() {
+        val featureTasks = photoTasksStateHolder.state.orderedTasks()
+        photoTasks = featureTasks.map { task ->
+            MobilePhotoTask(
+                id = task.id,
+                productName = task.productName,
+                productSku = task.productSku,
+                status = task.status.name.lowercase(Locale.ROOT),
+                mediaCount = task.mediaCount,
+                maxPhotos = task.maxPhotos,
+                expiresAt = task.expiresAt,
+            )
+        }
+        focusedPhotoTaskId = photoTasksStateHolder.state.focusedTaskId
+    }
+
+    private fun presentPhotoTaskDispatch(task: ProductPhotoTask) {
+        syncPhotoTasksUiState()
+        val mobileTask = MobilePhotoTask(
+            id = task.id,
+            productName = task.productName,
+            productSku = task.productSku,
+            status = task.status.name.lowercase(Locale.ROOT),
+            mediaCount = task.mediaCount,
+            maxPhotos = task.maxPhotos,
+            expiresAt = task.expiresAt,
+        )
+        selectedTab = MobileAssistantTab.PRODUCTS
+        showPhotoTaskNotification(mobileTask)
+        openPhotoTaskIfAllowed(mobileTask)
+        session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
+        render()
+    }
+
+    private fun openResolvedSystemSettings(
+        intent: Intent,
+        failureMessage: String,
+        allowApplicationFallback: Boolean = true,
+    ): Boolean {
+        val candidates = buildList {
+            add(intent)
+            if (allowApplicationFallback) add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+        val result = launchFirstResolvedSettingsTarget(
+            candidates = candidates,
+            canResolve = { it.resolveActivity(packageManager) != null },
+            launch = ::startActivity,
+        )
+        if (result.candidateIndex == 1) setStatus(getString(R.string.settings_host_system_settings_fallback_opened))
+        if (!result.launched) setStatus(failureMessage)
+        return result.launched
     }
 
     private fun canDrawOverOtherApps(): Boolean {
@@ -1993,32 +2110,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun testCallerIdLookup() {
+    private fun testCallerIdLookup(requestedPhone: String? = null) {
         val currentSession = session ?: return
-        val phone = callerIdTestPhoneValue.trim()
+        val phone = (requestedPhone ?: callerIdTestPhoneValue).trim()
         if (phone.isBlank()) {
             setStatus("Wpisz numer do testu Caller ID.")
             return
         }
 
+        val request = SettingsCallerIdLookupRequest(++nextCallerIdLookupRequestId, settingsSessionEpoch, phone)
+        activeCallerIdLookupRequest = request
+        callerIdPreview = null
         setStatus("Sprawdzam numer...")
         executor.execute {
             runCatching {
                 mobileApiClientForSession(sessionStore).lookupCallerId(currentSession.token, phone)
             }.onSuccess { lookup ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if (activeCallerIdLookupRequest != request || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
+                    activeCallerIdLookupRequest = null
                     callerIdPreview = lookup
                     render()
                     setStatus(if (lookup.primaryOrder == null) "Brak zamówienia dla numeru." else "Znaleziono zamówienie.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if (activeCallerIdLookupRequest != request || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
+                    activeCallerIdLookupRequest = null
                     handleMobileApiFailure(error, "Nie udało się sprawdzić numeru.")
                 }
             }
@@ -2099,7 +2221,7 @@ class MainActivity : ComponentActivity() {
 
     private fun mobileApiBusinessMessage(error: Throwable, fallbackMessage: String): String {
         if (error !is MobileApiException) {
-            return error.message ?: fallbackMessage
+            return fallbackMessage
         }
 
         return when (error.statusCode) {
@@ -2146,6 +2268,7 @@ class MainActivity : ComponentActivity() {
         mobileNotifications = emptyList()
         mobileNotificationsLoading = false
         mobileNotificationFilter = MobileNotificationFilter.ALL
+        markNotificationsReadOnOpen = false
     }
 
     private fun clearAppUpdateState() {
@@ -2174,8 +2297,10 @@ class MainActivity : ComponentActivity() {
         callerIdPreview = null
         focusedPhotoTaskId = null
         focusedPhotoTaskView = null
-        lastDispatchedPhotoTaskId = null
-        packageScanState = MobilePackageScanUiState.Empty
+        productsCoordinator.reset()
+        photoTasksCoordinator.reset()
+        notificationsCoordinator.reset()
+        scannerCoordinator.reset()
         clearAppUpdateState()
         ordersCoordinator.reset()
         clearMobileProductsState()
@@ -2187,11 +2312,13 @@ class MainActivity : ComponentActivity() {
         setStatus(message)
     }
 
-    private fun disconnectLocalPhone() {
+    private fun disconnectLocalPhone(request: SettingsDisconnectRequest? = null) {
         val currentSession = session
 
         if (currentSession == null) {
-            clearDisconnectedSession("Telefon odłączony. Sparuj go ponownie w panelu.")
+            if (request == null || settingsCoordinator.acceptsDisconnectSuccess(request)) {
+                clearDisconnectedSession("Telefon odłączony. Sparuj go ponownie w panelu.")
+            }
             return
         }
 
@@ -2201,14 +2328,14 @@ class MainActivity : ComponentActivity() {
                 mobileApiClientForSession(sessionStore).revokeCurrentDevice(currentSession.token)
             }.onSuccess {
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if ((request != null && !settingsCoordinator.acceptsDisconnectSuccess(request)) || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
                     clearDisconnectedSession("Telefon odłączony. Panel nie będzie go już pokazywać.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if ((request != null && !settingsCoordinator.acceptDisconnectFailure(request)) || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
                     if (!handleMobileApiFailure(error, "Nie udało się odłączyć telefonu w panelu. Sprawdź połączenie i spróbuj ponownie.")) {
@@ -2579,6 +2706,8 @@ class MainActivity : ComponentActivity() {
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
         private const val extraSmokePairingDeviceName = "pl.dlaflow.mobile.SMOKE_PAIRING_DEVICE_NAME"
         private const val sessionTransitionMinimumVisibleMs = 950L
+        private const val photoResultRequestCodeMin = 4_200
+        private const val photoResultRequestCodeMax = 65_000
         private val sessionTransitionSteps = listOf("Telefon", "Sesja", "Zadania", "Start")
     }
 }
@@ -2591,3 +2720,54 @@ internal fun callerIdMissingPermissionMessage(needsPhoneState: Boolean, needsCon
         else -> "Caller ID wymaga jeszcze zgody systemowej."
     }
 }
+
+private fun MobileProductFilter.toFeatureProductsFilter(): pl.dlaflow.mobile.feature.products.ProductsFilter = when (this) {
+    MobileProductFilter.ALL -> pl.dlaflow.mobile.feature.products.ProductsFilter.ALL
+    MobileProductFilter.LOW_STOCK -> pl.dlaflow.mobile.feature.products.ProductsFilter.LOW_STOCK
+    MobileProductFilter.NO_IMAGE -> pl.dlaflow.mobile.feature.products.ProductsFilter.NO_IMAGE
+    MobileProductFilter.HAS_VARIANTS -> pl.dlaflow.mobile.feature.products.ProductsFilter.HAS_VARIANTS
+}
+
+private fun MobileProductQuickEditField.toFeatureField(): pl.dlaflow.mobile.feature.products.ProductQuickEditField = when (this) {
+    MobileProductQuickEditField.GROSS_PRICE -> pl.dlaflow.mobile.feature.products.ProductQuickEditField.GROSS_PRICE
+    MobileProductQuickEditField.STOCK -> pl.dlaflow.mobile.feature.products.ProductQuickEditField.STOCK
+}
+
+private fun MobileVariantQuickEditField.toFeatureField(): pl.dlaflow.mobile.feature.products.VariantQuickEditField = when (this) {
+    MobileVariantQuickEditField.PRICE -> pl.dlaflow.mobile.feature.products.VariantQuickEditField.PRICE
+    MobileVariantQuickEditField.STOCK -> pl.dlaflow.mobile.feature.products.VariantQuickEditField.STOCK
+}
+
+private fun MobileNotificationFilter.toFeatureNotificationFilter(): NotificationFilter = when (this) {
+    MobileNotificationFilter.ALL -> NotificationFilter.ALL
+    MobileNotificationFilter.ATTENTION -> NotificationFilter.ATTENTION
+    MobileNotificationFilter.UNREAD -> NotificationFilter.UNREAD
+}
+
+private fun NotificationItem.toMobileAssistantNotification() = MobileAssistantNotification(
+    id = id,
+    title = title,
+    description = description,
+    tone = when (tone) {
+        NotificationTone.Neutral -> "neutral"
+        NotificationTone.Info -> "info"
+        NotificationTone.Success -> "success"
+        NotificationTone.Attention -> "warning"
+    },
+    source = source,
+    account = account,
+    occurredAt = occurredAt,
+    readAt = readAt,
+    mobileAction = MobileNotificationAction(
+        type = when (destination) {
+            NotificationDestination.Orders -> "OPEN_ORDERS"
+            NotificationDestination.Products -> "OPEN_PRODUCTS"
+            NotificationDestination.Messages -> "OPEN_MESSAGES"
+            NotificationDestination.PhotoTasks -> "OPEN_PHOTO_TASKS"
+            NotificationDestination.LogsSummary -> "OPEN_LOGS_SUMMARY"
+            NotificationDestination.ContactAdmin -> "CONTACT_ADMIN"
+            NotificationDestination.Unsupported -> ""
+        },
+        label = actionLabel.orEmpty(),
+    ),
+)

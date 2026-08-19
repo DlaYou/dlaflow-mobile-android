@@ -7,6 +7,9 @@ import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
 import java.util.concurrent.Executors
+import pl.dlaflow.mobile.core.session.NotificationSessionKey
+import pl.dlaflow.mobile.feature.notifications.NotificationsBackgroundDeliveryMemory
+import pl.dlaflow.mobile.feature.notifications.NotificationsBackgroundRuntime
 
 class DlaFlowDispatchJobService : JobService() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -29,23 +32,37 @@ class DlaFlowDispatchJobService : JobService() {
         executor.execute {
             runCatching {
                 val client = mobileApiClientForSession(sessionStore)
-                client to client.getPhotoTaskDispatch(token)
-            }.onSuccess { (client, dispatch) ->
-                val task = dispatch.pendingOpenTask
-                if (
-                    task != null &&
-                    shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences()) &&
-                    sessionStore.readLastBackgroundPhotoTaskId() != task.id
-                ) {
-                    sessionStore.saveLastBackgroundPhotoTaskId(task.id)
-                    DlaFlowNotifications.showPhotoTaskNotification(this, task)
-                }
-
-                runCatching {
-                    pollUnreadPanelAlertNotifications(this, sessionStore, client, token)
-                }.onFailure { error ->
-                    handleBackgroundSyncFailure(error, token)
-                }
+                val capturedKey = NotificationSessionKey.create(sessionStore.readBaseUrl(), sessionStore.readDeviceId(), token)
+                    ?: return@runCatching
+                NotificationsBackgroundRuntime.coordinator.poll(
+                    capturedSessionKey = capturedKey,
+                    currentSessionKey = {
+                        NotificationSessionKey.create(sessionStore.readBaseUrl(), sessionStore.readDeviceId(), sessionStore.readToken())
+                    },
+                    memory = object : NotificationsBackgroundDeliveryMemory {
+                        override fun readLastPhotoTaskId() = sessionStore.readLastBackgroundPhotoTaskId()
+                        override fun saveLastPhotoTaskId(taskId: String) = sessionStore.saveLastBackgroundPhotoTaskId(taskId)
+                        override fun readShownPanelAlertIds() = sessionStore.readShownPanelNotificationIds()
+                        override fun saveShownPanelAlertIds(ids: String) = sessionStore.saveShownPanelNotificationIds(ids)
+                    },
+                    loadPhotoTask = { client.getPhotoTaskDispatch(token).pendingOpenTask },
+                    loadPanelNotifications = {
+                        client.listNotifications(token, limit = 10).also { page ->
+                            DlaFlowNotifications.updateBackgroundServiceNotification(this, page.unreadCount)
+                        }.notifications
+                    },
+                    showPhotoTask = { task ->
+                        if (!shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences())) false
+                        else {
+                            DlaFlowNotifications.showPhotoTaskNotification(this, task)
+                            true
+                        }
+                    },
+                    showPanelAlert = { notification ->
+                        if (!shouldShowNativePanelNotification(notification, sessionStore.readNotificationPreferences())) false
+                        else DlaFlowNotifications.showPanelAlertNotification(this, notification)
+                    },
+                )
             }.onFailure { error ->
                 handleBackgroundSyncFailure(error, token)
             }

@@ -99,6 +99,18 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-pairing-feature-boundary.ps1
 
+      - name: Verify mobile products feature boundary
+        shell: pwsh
+        run: ./scripts/verify-products-feature-boundary.ps1
+
+      - name: Verify mobile notifications feature boundary
+        shell: pwsh
+        run: ./scripts/verify-notifications-feature-boundary.ps1
+
+      - name: Verify mobile settings feature boundary
+        shell: pwsh
+        run: ./scripts/verify-settings-feature-boundary.ps1
+
       - name: Run Android unit tests and lint
         shell: bash
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
