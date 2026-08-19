@@ -31,6 +31,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.doOnPreDraw
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -223,6 +224,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var root: LinearLayout
     private lateinit var scrollView: ScrollView
     private lateinit var contentView: View
+    private lateinit var screenView: FrameLayout
     private lateinit var statusView: TextView
     private lateinit var callerIdTestPhoneInput: EditText
     private var sessionTransitionOverlay: DlaFlowSessionTransitionOverlay? = null
@@ -275,6 +277,8 @@ class MainActivity : ComponentActivity() {
     private var pendingSmokePairingDeviceName: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
+    private var initialContentStarted = false
+    private var startupHasSavedSession = false
     private var session by mutableStateOf<MobileSession?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -284,26 +288,36 @@ class MainActivity : ComponentActivity() {
             splashScreenView.remove()
         }
         super.onCreate(savedInstanceState)
-        sessionStore = MobileSessionStore(this)
-        apiUrlValue = sessionStore.readBaseUrl()
-        notificationPreferences = sessionStore.readNotificationPreferences()
-        DlaFlowNotifications.ensureChannels(this)
-        handleLaunchIntent(intent)
-        val hasSavedSession = sessionStore.readToken().isNotBlank()
-        render()
+        showSessionTransitionShell()
         showSessionTransition(activeStepIndex = 0, progress = 18, animateIn = false)
-        sessionTransitionOverlay?.post {
-            keepSystemSplashVisible = false
-            if (consumeSmokePairingIntent()) {
-                return@post
-            } else if (hasSavedSession) {
-                verifySavedSession(showInitialTransition = false)
-            } else {
-                setStatus("Przygotowujemy aplikację...")
-                completeSessionTransition {
-                    setStatus("")
-                }
+        releaseSystemSplash()
+        dispatchHandler.postDelayed(::releaseSystemSplash, systemSplashFallbackDelayMs)
+        screenView.doOnPreDraw {
+            if (!initialContentStarted) {
+                initialContentStarted = true
+                dispatchHandler.post(::startInitialContent)
             }
+        }
+    }
+
+    private fun startInitialContent() {
+        if (!::sessionStore.isInitialized) {
+            sessionStore = MobileSessionStore(this)
+            apiUrlValue = sessionStore.readBaseUrl()
+            notificationPreferences = sessionStore.readNotificationPreferences()
+            DlaFlowNotifications.ensureChannels(this)
+            handleLaunchIntent(intent)
+            startupHasSavedSession = sessionStore.readToken().isNotBlank()
+        }
+        releaseSystemSplash()
+        render()
+        if (consumeSmokePairingIntent()) {
+            return
+        } else if (startupHasSavedSession) {
+            verifySavedSession(showInitialTransition = false)
+        } else {
+            setStatus("Przygotowujemy aplikację...")
+            completeSessionTransition { setStatus("") }
         }
     }
 
@@ -335,6 +349,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::sessionStore.isInitialized) {
+            return
+        }
         render()
         val pendingFile = pendingInstallApkFile
         val pendingUpdate = pendingInstallUpdate
@@ -627,22 +644,29 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        contentView = composeView
-
         window.statusBarColor = theme.appBg
         window.navigationBarColor = theme.appBg
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             window.decorView.systemUiVisibility = if (theme.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
         }
 
-        val screen = FrameLayout(this).apply {
-            addView(composeView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        if (::contentView.isInitialized) {
+            screenView.removeView(contentView)
+        }
+        contentView = composeView
+        screenView.addView(composeView, 0,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    private fun showSessionTransitionShell() {
+        screenView = FrameLayout(this).apply {
+            setBackgroundColor(mobileTheme().appBg)
             sessionTransitionOverlay = DlaFlowSessionTransitionOverlay(this@MainActivity).also { overlay ->
                 addView(overlay, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             }
         }
-
-        setContentView(screen)
+        setContentView(screenView)
     }
 
     private fun renderHeader() {
@@ -2408,6 +2432,10 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun releaseSystemSplash() {
+        keepSystemSplashVisible = false
+    }
+
     private fun updateSessionTransition(activeStepIndex: Int, progress: Int) {
         sessionTransitionOverlay?.update(activeStepIndex = activeStepIndex, progress = progress, steps = sessionTransitionSteps)
     }
@@ -2705,6 +2733,7 @@ class MainActivity : ComponentActivity() {
         private const val extraSmokeApiUrl = "pl.dlaflow.mobile.SMOKE_API_URL"
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
         private const val extraSmokePairingDeviceName = "pl.dlaflow.mobile.SMOKE_PAIRING_DEVICE_NAME"
+        private const val systemSplashFallbackDelayMs = 1_200L
         private const val sessionTransitionMinimumVisibleMs = 950L
         private const val photoResultRequestCodeMin = 4_200
         private const val photoResultRequestCodeMax = 65_000
