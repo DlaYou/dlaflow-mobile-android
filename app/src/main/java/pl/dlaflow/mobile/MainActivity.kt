@@ -1778,10 +1778,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun uploadPhoto(taskId: String, input: java.io.InputStream, fileName: String, mimeType: String) {
-        val currentSession = session ?: return
+        val currentSession = session ?: run {
+            input.close()
+            return
+        }
         setStatus("Wysyłam pełne zdjęcie...")
         executor.execute {
-            val destination = File(cacheDir, "mobile-photo-uploads/$taskId-${System.nanoTime()}.bin")
+            val destination = File(cacheDir, "mobile-photo-uploads/${java.util.UUID.randomUUID()}.bin")
             val prepared = input.use { stream ->
                 prepareMobilePhotoUpload(stream, destination, taskId, fileName, mimeType)
             }
