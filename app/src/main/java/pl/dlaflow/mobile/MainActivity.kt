@@ -63,6 +63,7 @@ import pl.dlaflow.mobile.feature.orders.OrdersLoadOperation
 import pl.dlaflow.mobile.feature.orders.OrdersQuery
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersStateHolder
+import pl.dlaflow.mobile.feature.orders.listContentOrNull
 import pl.dlaflow.mobile.feature.products.MobileApiPhotoTasksGateway
 import pl.dlaflow.mobile.feature.products.MobileApiProductsGateway
 import pl.dlaflow.mobile.feature.products.PhotoTasksAction
@@ -283,6 +284,16 @@ class MainActivity : ComponentActivity() {
     private var initialContentStarted = false
     private var startupHasSavedSession = false
     private var session by mutableStateOf<MobileSession?>(null)
+    private val dataRefreshController by lazy {
+        MobileDataRefreshController(
+            postDelayed = dispatchHandler::postDelayed,
+            removeCallbacks = dispatchHandler::removeCallbacks,
+            refreshDashboard = ::refreshDashboardIfIdle,
+            refreshOrders = ::refreshOrdersIfIdle,
+            selectedTab = { selectedTab },
+            intervalMs = dataRefreshIntervalMs,
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -314,6 +325,7 @@ class MainActivity : ComponentActivity() {
         }
         releaseSystemSplash()
         render()
+        dataRefreshController.start()
         if (consumeSmokePairingIntent()) {
             return
         } else if (startupHasSavedSession) {
@@ -339,6 +351,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        dataRefreshController.stop()
         stopPhotoTaskDispatchPolling()
         photoTasksCoordinator.reset()
         productsCoordinator.reset()
@@ -355,6 +368,7 @@ class MainActivity : ComponentActivity() {
         if (!::sessionStore.isInitialized) {
             return
         }
+        dataRefreshController.start()
         render()
         val pendingFile = pendingInstallApkFile
         val pendingUpdate = pendingInstallUpdate
@@ -363,6 +377,11 @@ class MainActivity : ComponentActivity() {
             pendingInstallUpdate = null
             openMobileUpdateInstaller(pendingFile, pendingUpdate)
         }
+    }
+
+    override fun onPause() {
+        dataRefreshController.stop()
+        super.onPause()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -622,6 +641,7 @@ class MainActivity : ComponentActivity() {
                     onDashboardAction = ::handleDashboardAction,
                     onSelectTab = {
                         selectedTab = it
+                        dataRefreshController.refreshAfterTabSelection(it)
                         if (it == MobileAssistantTab.ORDERS) {
                             ensureOrdersLoaded()
                         }
@@ -1148,16 +1168,46 @@ class MainActivity : ComponentActivity() {
         pairingStateHolder.acceptQrResult(rawValue)
     }
 
-    private fun ensureOrdersLoaded() {
+    private fun ensureOrdersLoaded(showFeedback: Boolean = true) {
         val currentSession = session ?: return
         val state = ordersStateHolder.state
-        if (state.activeListRequestId == null && state.listState == pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading) {
-            ordersCoordinator.resetList(
-                token = currentSession.token,
-                query = state.query,
-                showFeedback = true,
-            )
+        if (state.activeListRequestId != null || state.activeDetailRequestId != null) {
+            return
         }
+        when (val route = state.route) {
+            OrdersRoute.List -> {
+                if (state.listState == pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading && state.listContentOrNull() == null) {
+                    ordersCoordinator.resetList(
+                        token = currentSession.token,
+                        query = state.query,
+                        showFeedback = showFeedback,
+                    )
+                } else {
+                    ordersCoordinator.refreshList(currentSession.token, showFeedback = showFeedback)
+                }
+            }
+
+            is OrdersRoute.Detail -> {
+                if (state.detailState !is pl.dlaflow.mobile.core.state.DlaFlowUiState.NoAccess) {
+                    ordersCoordinator.loadDetail(
+                        token = currentSession.token,
+                        orderNumber = route.orderNumber,
+                        showFeedback = showFeedback,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun refreshDashboardIfIdle() {
+        val currentSession = session ?: return
+        if (dashboardStateHolder.state.activeRequestId == null) {
+            dashboardCoordinator.refresh(currentSession.token, showFeedback = false)
+        }
+    }
+
+    private fun refreshOrdersIfIdle() {
+        ensureOrdersLoaded(showFeedback = false)
     }
 
     private fun handleOrdersAction(action: OrdersAction) {
@@ -2751,6 +2801,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val dispatchPollIntervalMs = 5_000L
+        private const val dataRefreshIntervalMs = 60_000L
         private const val extraSmokeApiUrl = "pl.dlaflow.mobile.SMOKE_API_URL"
         private const val extraSmokePairingCode = "pl.dlaflow.mobile.SMOKE_PAIRING_CODE"
         private const val extraSmokePairingDeviceName = "pl.dlaflow.mobile.SMOKE_PAIRING_DEVICE_NAME"
