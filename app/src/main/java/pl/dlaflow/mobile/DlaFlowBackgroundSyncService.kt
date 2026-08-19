@@ -140,29 +140,3 @@ class DlaFlowBackgroundSyncService : Service() {
         }
     }
 }
-
-internal fun pollUnreadPanelAlertNotifications(
-    context: Context,
-    sessionStore: MobileSessionStore,
-    client: MobileApiClient,
-    token: String,
-) {
-    val notificationPage = client.listNotifications(token, limit = 10)
-    DlaFlowNotifications.updateBackgroundServiceNotification(context, notificationPage.unreadCount)
-    var shownIds = sessionStore.readShownPanelNotificationIds()
-    val preferences = sessionStore.readNotificationPreferences()
-
-    notificationPage.notifications
-        .filter { it.readAt.isNullOrBlank() }
-        .filter { shouldShowNativePanelNotification(it, preferences) }
-        .forEach { notification ->
-            if (!hasShownNotificationId(shownIds, notification.id)) {
-                val shown = DlaFlowNotifications.showPanelAlertNotification(context, notification)
-                if (shown) {
-                    shownIds = rememberShownNotificationId(shownIds, notification.id)
-                }
-            }
-        }
-
-    sessionStore.saveShownPanelNotificationIds(shownIds)
-}

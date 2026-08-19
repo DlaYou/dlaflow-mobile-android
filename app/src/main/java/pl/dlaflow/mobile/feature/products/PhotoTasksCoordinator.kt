@@ -117,7 +117,9 @@ internal class PhotoTasksCoordinator(
         executor.execute {
             runCatching { gateway.loadActive(token) }
                 .onSuccess { tasks ->
-                    postToMain { stateHolder.acceptRefreshSuccess(request, tasks) }
+                    postToMain {
+                        if (stateHolder.acceptRefreshSuccess(request, tasks)) onTasksChanged()
+                    }
                 }
                 .onFailure { error ->
                     postToMain { handleRefreshFailure(token, request, error, allowUnauthorizedRetry) }
@@ -173,7 +175,10 @@ internal class PhotoTasksCoordinator(
                     postToMain {
                         val accepted = stateHolder.acceptUploadSuccess(request, task)
                         releaseSource(request.requestId, owner)
-                        if (accepted) onTasksChanged()
+                        if (accepted) {
+                            onTasksChanged()
+                            onEffect(PhotoTasksEffect.UploadSucceeded)
+                        }
                     }
                 }
                 .onFailure { error ->
@@ -197,6 +202,7 @@ internal class PhotoTasksCoordinator(
                     return
                 }
                 if (!allowUnauthorizedRetry) {
+                    onEffect(PhotoTasksEffect.OperationFailed)
                     releaseSource(request.requestId, owner)
                     return
                 }
@@ -233,7 +239,7 @@ internal class PhotoTasksCoordinator(
         owner: UploadSourceOwner,
         message: pl.dlaflow.mobile.core.state.DlaFlowUiMessage,
     ) {
-        stateHolder.acceptUploadFailure(request, message)
+        if (stateHolder.acceptUploadFailure(request, message)) onEffect(PhotoTasksEffect.OperationFailed)
         releaseSource(request.requestId, owner)
     }
 
@@ -246,7 +252,10 @@ internal class PhotoTasksCoordinator(
             runCatching { gateway.complete(token, request.taskId) }
                 .onSuccess { task ->
                     postToMain {
-                        if (stateHolder.acceptCompletionSuccess(request, task)) onTasksChanged()
+                        if (stateHolder.acceptCompletionSuccess(request, task)) {
+                            onTasksChanged()
+                            onEffect(PhotoTasksEffect.CompletionSucceeded)
+                        }
                     }
                 }
                 .onFailure { error ->
@@ -283,10 +292,10 @@ internal class PhotoTasksCoordinator(
                     )
                 }
             }
-            is PhotoTasksFailure.NoAccess -> stateHolder.acceptCompletionFailure(request, failure.message)
-            is PhotoTasksFailure.Offline -> stateHolder.acceptCompletionFailure(request, failure.message)
-            is PhotoTasksFailure.InvalidPayload -> stateHolder.acceptCompletionFailure(request, failure.message)
-            is PhotoTasksFailure.Retryable -> stateHolder.acceptCompletionFailure(request, failure.message)
+            is PhotoTasksFailure.NoAccess -> if (stateHolder.acceptCompletionFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.Offline -> if (stateHolder.acceptCompletionFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.InvalidPayload -> if (stateHolder.acceptCompletionFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.Retryable -> if (stateHolder.acceptCompletionFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
         }
     }
 
@@ -338,10 +347,10 @@ internal class PhotoTasksCoordinator(
                     )
                 }
             }
-            is PhotoTasksFailure.NoAccess -> stateHolder.acceptDispatchFailure(request, failure.message)
-            is PhotoTasksFailure.Offline -> stateHolder.acceptDispatchFailure(request, failure.message)
-            is PhotoTasksFailure.InvalidPayload -> stateHolder.acceptDispatchFailure(request, failure.message)
-            is PhotoTasksFailure.Retryable -> stateHolder.acceptDispatchFailure(request, failure.message)
+            is PhotoTasksFailure.NoAccess -> if (stateHolder.acceptDispatchFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.Offline -> if (stateHolder.acceptDispatchFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.InvalidPayload -> if (stateHolder.acceptDispatchFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
+            is PhotoTasksFailure.Retryable -> if (stateHolder.acceptDispatchFailure(request, failure.message)) onEffect(PhotoTasksEffect.OperationFailed)
         }
     }
 

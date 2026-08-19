@@ -10,6 +10,7 @@ internal class NotificationsCoordinator(
     private val onEffect: (NotificationsEffect) -> Unit,
     private val onReadStateChanged: () -> Unit,
     private val onUnauthorized: (Throwable, Boolean, () -> Unit, () -> Unit) -> Unit,
+    private val onStateChanged: () -> Unit = {},
 ) {
     fun open(
         token: String,
@@ -17,6 +18,7 @@ internal class NotificationsCoordinator(
         allowUnauthorizedRetry: Boolean = true,
     ): Boolean {
         stateHolder.setDashboardPreview(dashboardPreview)
+        onStateChanged()
         return refresh(token, allowUnauthorizedRetry)
     }
 
@@ -31,6 +33,7 @@ internal class NotificationsCoordinator(
 
     fun selectFilter(filter: NotificationFilter) {
         stateHolder.selectFilter(filter)
+        onStateChanged()
     }
 
     fun markVisibleRead(
@@ -50,6 +53,7 @@ internal class NotificationsCoordinator(
 
     fun reset() {
         stateHolder.reset()
+        onStateChanged()
     }
 
     private fun executeLoad(
@@ -60,7 +64,9 @@ internal class NotificationsCoordinator(
         executor.execute {
             runCatching { gateway.load(token) }
                 .onSuccess { content ->
-                    postToMain { stateHolder.acceptLoadSuccess(request, content) }
+                    postToMain {
+                        if (stateHolder.acceptLoadSuccess(request, content)) onStateChanged()
+                    }
                 }
                 .onFailure { error ->
                     postToMain { handleLoadFailure(token, request, error, allowUnauthorizedRetry) }
@@ -100,6 +106,7 @@ internal class NotificationsCoordinator(
             is NotificationsFailure.Offline -> stateHolder.acceptLoadOffline(request, failure.message)
             is NotificationsFailure.Retryable -> stateHolder.acceptLoadFailure(request, failure.message)
         }
+        onStateChanged()
     }
 
     private fun executeMutation(
@@ -113,6 +120,7 @@ internal class NotificationsCoordinator(
                     postToMain {
                         if (stateHolder.acceptMutationSuccess(request)) {
                             onReadStateChanged()
+                            onStateChanged()
                             refresh(token)
                         }
                     }
@@ -155,5 +163,6 @@ internal class NotificationsCoordinator(
             is NotificationsFailure.Offline -> stateHolder.acceptMutationOffline(request, failure.message)
             is NotificationsFailure.Retryable -> stateHolder.acceptMutationFailure(request, failure.message)
         }
+        onStateChanged()
     }
 }

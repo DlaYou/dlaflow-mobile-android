@@ -308,7 +308,13 @@ class PhotoTasksCoordinatorTest {
         harness.executor.runNext()
         harness.mainQueue.runNext()
 
-        assertEquals(listOf(PhotoTasksEffect.PresentDispatch(photoTask("dispatch-1"))), harness.effects)
+        assertEquals(
+            listOf(
+                PhotoTasksEffect.CompletionSucceeded,
+                PhotoTasksEffect.PresentDispatch(photoTask("dispatch-1")),
+            ),
+            harness.effects,
+        )
     }
 
     @Test

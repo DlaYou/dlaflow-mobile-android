@@ -153,4 +153,7 @@ internal sealed interface PhotoTasksEffect {
     data class LaunchCamera(val taskId: String) : PhotoTasksEffect
     data class LaunchGallery(val taskId: String) : PhotoTasksEffect
     data class PresentDispatch(val task: ProductPhotoTask) : PhotoTasksEffect
+    data object UploadSucceeded : PhotoTasksEffect
+    data object CompletionSucceeded : PhotoTasksEffect
+    data object OperationFailed : PhotoTasksEffect
 }
