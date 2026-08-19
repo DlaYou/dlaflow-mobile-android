@@ -308,15 +308,23 @@ private fun OrdersListCard(
                         Text(formatOrdersMoney(order.amount), color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
                     }
                     Spacer(Modifier.height(5.dp))
-                    Text(
-                        order.productSummary.ifBlank { stringResource(R.string.orders_value_products_count, order.itemCount) },
-                        color = colors.text,
-                        fontSize = 10.8.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 13.5.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                    val productLines = ordersProductLines(
+                        productNames = order.productNames,
+                        fallbackSummary = order.productSummary.ifBlank {
+                            stringResource(R.string.orders_value_products_count, order.itemCount)
+                        },
                     )
+                    productLines.forEach { productLine ->
+                        Text(
+                            productLine,
+                            color = colors.text,
+                            fontSize = 10.8.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 13.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Spacer(Modifier.height(5.dp))
                     OrderStatusFields(colors, order)
                     Spacer(Modifier.height(6.dp))

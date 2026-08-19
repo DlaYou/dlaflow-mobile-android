@@ -131,6 +131,7 @@ data class MobileOrderListItem(
     val statusColor: String = "",
     val thumbnailUrl: String,
     val updatedAt: String,
+    val productNames: List<String> = emptyList(),
 )
 
 data class MobileOrdersPage(
@@ -1004,6 +1005,7 @@ class MobileApiClient(
             statusColor = item.optString("statusColor", ""),
             thumbnailUrl = item.optString("thumbnailUrl", ""),
             updatedAt = item.optString("updatedAt", ""),
+            productNames = parseMobileOrderItemNames(item.optJSONArray("items")),
         )
     }
 
@@ -1096,6 +1098,20 @@ class MobileApiClient(
         }
 
         return items
+    }
+
+    private fun parseMobileOrderItemNames(itemsJson: org.json.JSONArray?): List<String> {
+        if (itemsJson == null) return emptyList()
+
+        val names = mutableListOf<String>()
+        for (index in 0 until itemsJson.length()) {
+            val name = itemsJson.optJSONObject(index)
+                ?.optString("name", "")
+                ?.trim()
+                .orEmpty()
+            if (name.isNotBlank()) names += name
+        }
+        return names.distinct()
     }
 
     private fun parseMobileOrderShipments(shipmentsJson: org.json.JSONArray?): List<MobileOrderShipment> {

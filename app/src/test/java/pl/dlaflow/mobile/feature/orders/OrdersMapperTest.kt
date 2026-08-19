@@ -88,6 +88,20 @@ class OrdersMapperTest {
     }
 
     @Test
+    fun `list mapper preserves product names supplied by the API`() {
+        val item = MobileOrdersPage(
+            data = listOf(orderListDto().copy(productNames = listOf("Produkt A", "Produkt B"))),
+            count = 1,
+            limit = 20,
+            nextOffset = null,
+            offset = 0,
+            total = 1,
+        ).toOrdersListContent().items.single()
+
+        assertEquals(listOf("Produkt A", "Produkt B"), item.productNames)
+    }
+
+    @Test
     fun `list mapper preserves canonical shipment timing fields`() {
         val item = MobileOrdersPage(
             data = listOf(orderListDto().copy(
@@ -163,6 +177,28 @@ class OrdersMapperTest {
         assertEquals(
             listOf(OrdersFilter.ALL, OrdersFilter.NEW, OrdersFilter.TO_SHIP),
             visibleOrdersFilters,
+        )
+    }
+
+    @Test
+    fun `list product presentation keeps two names and exposes remaining items`() {
+        assertEquals(
+            listOf("Produkt A", "Produkt B", "+1 więcej"),
+            ordersProductLines(
+                productNames = listOf("Produkt A", "Produkt B", "Produkt C"),
+                fallbackSummary = "Produkt A + 2",
+            ),
+        )
+    }
+
+    @Test
+    fun `list product presentation falls back to API summary`() {
+        assertEquals(
+            listOf("Produkt A + 1"),
+            ordersProductLines(
+                productNames = emptyList(),
+                fallbackSummary = "Produkt A + 1",
+            ),
         )
     }
 }

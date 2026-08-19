@@ -53,6 +53,7 @@ internal data class OrdersListItem(
     val statusColor: String = "",
     val thumbnailUrl: String,
     val badges: OrdersBadges,
+    val productNames: List<String> = emptyList(),
 )
 
 internal data class OrdersListContent(
@@ -141,6 +142,19 @@ internal data class OrderDetailContent(
     val internalNotesCount: Int,
     val statusHistoryCount: Int,
 )
+
+internal fun ordersProductLines(
+    productNames: List<String>,
+    fallbackSummary: String,
+    maxVisible: Int = 2,
+): List<String> {
+    val names = productNames.map(String::trim).filter(String::isNotBlank).distinct()
+    if (names.isEmpty()) return fallbackSummary.trim().takeIf(String::isNotBlank)?.let(::listOf).orEmpty()
+
+    val visible = names.take(maxVisible.coerceAtLeast(1))
+    val remaining = (names.size - visible.size).coerceAtLeast(0)
+    return visible + if (remaining > 0) listOf("+$remaining więcej") else emptyList()
+}
 
 internal sealed interface OrdersRoute {
     data object List : OrdersRoute

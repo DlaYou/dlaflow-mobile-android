@@ -39,6 +39,7 @@ internal fun MobileOrderListItem.toOrdersListItem() = OrdersListItem(
         messages = badges.messages,
         shipments = badges.shipments,
     ),
+    productNames = productNames,
 )
 
 internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
