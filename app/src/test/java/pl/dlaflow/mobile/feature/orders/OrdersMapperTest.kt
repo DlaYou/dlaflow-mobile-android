@@ -159,9 +159,9 @@ class OrdersMapperTest {
     }
 
     @Test
-    fun `visible orders filters keep messages in its dedicated tab`() {
+    fun `visible orders filters keep secondary workflows off the toolbar`() {
         assertEquals(
-            listOf(OrdersFilter.ALL, OrdersFilter.NEW, OrdersFilter.TO_SHIP, OrdersFilter.OVERDUE, OrdersFilter.PROBLEMS),
+            listOf(OrdersFilter.ALL, OrdersFilter.NEW, OrdersFilter.TO_SHIP),
             visibleOrdersFilters,
         )
     }

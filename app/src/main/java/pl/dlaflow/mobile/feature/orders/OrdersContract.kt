@@ -16,8 +16,6 @@ internal val visibleOrdersFilters = listOf(
     OrdersFilter.ALL,
     OrdersFilter.NEW,
     OrdersFilter.TO_SHIP,
-    OrdersFilter.OVERDUE,
-    OrdersFilter.PROBLEMS,
 )
 
 internal data class OrdersQuery(
