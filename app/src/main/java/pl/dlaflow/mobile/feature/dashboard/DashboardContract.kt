@@ -2,6 +2,7 @@ package pl.dlaflow.mobile.feature.dashboard
 
 import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
+import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
 
 internal data class DashboardKpis(
     val newOrders: Int,
@@ -184,6 +185,7 @@ internal sealed interface DashboardAction {
     data object OpenStatistics : DashboardAction
     data object OpenProducts : DashboardAction
     data object OpenNotifications : DashboardAction
+    data class OpenOrdersFilter(val destination: MobileKpiDestination) : DashboardAction
     data class TakePhoto(val taskId: String) : DashboardAction
     data class PickPhoto(val taskId: String) : DashboardAction
     data class CompletePhotoTask(val taskId: String) : DashboardAction

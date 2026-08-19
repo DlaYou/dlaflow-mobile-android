@@ -101,6 +101,8 @@ import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
 import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
 import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
 import pl.dlaflow.mobile.feature.settings.SettingsAction
+import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
+import pl.dlaflow.mobile.app.navigation.toOrdersFilter
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdLookupRequest
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdOrder
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdPreview
@@ -1068,6 +1070,7 @@ class MainActivity : ComponentActivity() {
                 ensureProductsLoaded()
             }
             DashboardAction.OpenNotifications -> openMobileNotifications()
+            is DashboardAction.OpenOrdersFilter -> openOrdersDestination(action.destination)
             is DashboardAction.TakePhoto -> handlePhotoTasksAction(PhotoTasksAction.RequestCamera(action.taskId))
             is DashboardAction.PickPhoto -> handlePhotoTasksAction(PhotoTasksAction.RequestGallery(action.taskId))
             is DashboardAction.CompletePhotoTask -> handlePhotoTasksAction(PhotoTasksAction.Complete(action.taskId))
@@ -2433,6 +2436,11 @@ class MainActivity : ComponentActivity() {
             steps = sessionTransitionSteps,
             animateIn = animateIn,
         )
+    }
+
+    private fun openOrdersDestination(destination: MobileKpiDestination) {
+        selectedTab = MobileAssistantTab.ORDERS
+        handleOrdersAction(OrdersAction.FilterChanged(destination.toOrdersFilter()))
     }
 
     private fun releaseSystemSplash() {

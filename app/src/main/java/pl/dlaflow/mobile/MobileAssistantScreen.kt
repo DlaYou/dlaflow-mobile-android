@@ -154,6 +154,8 @@ import pl.dlaflow.mobile.feature.dashboard.DashboardPhotoTask
 import pl.dlaflow.mobile.feature.dashboard.DashboardUiState
 import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.orders.OrdersAction
+import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
+import pl.dlaflow.mobile.app.navigation.toOrdersFilter
 import pl.dlaflow.mobile.feature.orders.OrdersFeatureScreen
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerStrip
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerState
@@ -551,7 +553,9 @@ private fun AssistantContent(
                     state = ordersState,
                     thumbnailLoader = thumbnailLoader,
                     leadContent = {
-                        LegacyKpiGrid(colors, dashboard?.kpis)
+                        LegacyKpiGrid(colors, dashboard?.kpis) { destination ->
+                            onOrdersAction(OrdersAction.FilterChanged(destination.toOrdersFilter()))
+                        }
                         OrdersPackageScannerStrip(
                             colors = colors,
                             scanState = scannerState.toOrdersPackageScannerState(),
@@ -1536,12 +1540,16 @@ private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: DashboardConten
 }
 
 @Composable
-private fun LegacyKpiGrid(colors: DlaFlowComposeColors, kpis: DashboardKpis?) {
+private fun LegacyKpiGrid(
+    colors: DlaFlowComposeColors,
+    kpis: DashboardKpis?,
+    onKpiClick: (MobileKpiDestination) -> Unit,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), (kpis?.newOrders ?: 0).toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), (kpis?.toShip ?: 0).toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), (kpis?.overdueOrProblems ?: 0).toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f))
-        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_messages), (kpis?.messages ?: 0).toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f))
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_new_orders), (kpis?.newOrders ?: 0).toString(), Icons.Rounded.ShoppingCart, colors.primary, Modifier.weight(1f), onClick = { onKpiClick(MobileKpiDestination.NEW_ORDERS) })
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_to_ship), (kpis?.toShip ?: 0).toString(), Icons.Rounded.LocalShipping, colors.orange, Modifier.weight(1f), onClick = { onKpiClick(MobileKpiDestination.TO_SHIP) })
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_overdue), (kpis?.overdueOrProblems ?: 0).toString(), Icons.Rounded.Inventory2, colors.success, Modifier.weight(1f), onClick = { onKpiClick(MobileKpiDestination.OVERDUE) })
+        DlaFlowKpiTile(colors, stringResource(R.string.dashboard_kpi_messages), (kpis?.messages ?: 0).toString(), Icons.Rounded.ChatBubbleOutline, colors.info, Modifier.weight(1f), onClick = { onKpiClick(MobileKpiDestination.MESSAGES) })
     }
 }
 

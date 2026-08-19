@@ -68,6 +68,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationRow
 import pl.dlaflow.mobile.core.designsystem.DlaFlowPhotoTaskCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
+import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
 
 internal fun dashboardQuickAction(index: Int): DashboardAction = when (index) {
     0 -> DashboardAction.ScanPackage
@@ -118,7 +119,9 @@ internal fun DashboardFeatureScreen(
                 }
             }
             RevenueCard(colors, content, layoutPolicy)
-            KpiGrid(colors, content?.kpis, layoutPolicy)
+            KpiGrid(colors, content?.kpis, layoutPolicy) { destination ->
+                onAction(DashboardAction.OpenOrdersFilter(destination))
+            }
             NotificationsList(colors, content?.notifications.orEmpty()) { onAction(DashboardAction.OpenNotifications) }
             QuickActions(colors, layoutPolicy, onAction)
             ActivePhotoTaskSection(colors, content?.activePhotoTask, fallbackPhotoTask, onAction)
@@ -441,13 +444,14 @@ private fun KpiGrid(
     colors: DlaFlowComposeColors,
     kpis: DashboardKpis?,
     layoutPolicy: DashboardLayoutPolicy,
+    onKpiClick: (MobileKpiDestination) -> Unit,
 ) {
     val visibleKpis = kpis ?: DashboardKpis(0, 0, 0, 0)
     val items = listOf(
-        DashboardKpiItem(stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary),
-        DashboardKpiItem(stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange),
-        DashboardKpiItem(stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success),
-        DashboardKpiItem(stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info),
+        DashboardKpiItem(MobileKpiDestination.NEW_ORDERS, stringResource(R.string.dashboard_kpi_new_orders), visibleKpis.newOrders.toString(), Icons.Rounded.ShoppingCart, colors.primary),
+        DashboardKpiItem(MobileKpiDestination.TO_SHIP, stringResource(R.string.dashboard_kpi_to_ship), visibleKpis.toShip.toString(), Icons.Rounded.LocalShipping, colors.orange),
+        DashboardKpiItem(MobileKpiDestination.OVERDUE, stringResource(R.string.dashboard_kpi_overdue), visibleKpis.overdueOrProblems.toString(), Icons.Rounded.Inventory2, colors.success),
+        DashboardKpiItem(MobileKpiDestination.MESSAGES, stringResource(R.string.dashboard_kpi_messages), visibleKpis.messages.toString(), Icons.Rounded.ChatBubbleOutline, colors.info),
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -465,6 +469,7 @@ private fun KpiGrid(
                         iconColor = item.iconColor,
                         layoutPolicy = layoutPolicy,
                         modifier = Modifier.weight(1f),
+                        onClick = { onKpiClick(item.destination) },
                     )
                 }
                 repeat(layoutPolicy.kpiColumns - rowItems.size) {
@@ -476,6 +481,7 @@ private fun KpiGrid(
 }
 
 private data class DashboardKpiItem(
+    val destination: MobileKpiDestination,
     val label: String,
     val value: String,
     val icon: ImageVector,
@@ -491,6 +497,7 @@ private fun KpiTile(
     iconColor: Color,
     layoutPolicy: DashboardLayoutPolicy,
     modifier: Modifier = Modifier,
+    onClick: () -> Unit,
 ) {
     DlaFlowKpiTile(
         colors = colors,
@@ -500,6 +507,7 @@ private fun KpiTile(
         iconColor = iconColor,
         height = layoutPolicy.kpiTileHeightDp.dp,
         modifier = modifier,
+        onClick = onClick,
     )
 }
 

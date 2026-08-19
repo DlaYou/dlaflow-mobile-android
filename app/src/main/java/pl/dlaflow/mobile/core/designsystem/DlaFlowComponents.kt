@@ -758,6 +758,7 @@ internal fun DlaFlowKpiTile(
     iconColor: Color,
     modifier: Modifier = Modifier,
     height: Dp = 98.dp,
+    onClick: (() -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -765,6 +766,15 @@ internal fun DlaFlowKpiTile(
             .clip(RoundedCornerShape(8.dp))
             .background(colors.surface)
             .border(1.dp, colors.border.copy(alpha = 0.78f), RoundedCornerShape(8.dp))
+            .then(
+                if (onClick != null) {
+                    Modifier
+                        .clickable(role = Role.Button, onClick = onClick)
+                        .heightIn(min = DlaFlowDimensions.minimumTouchTarget)
+                } else {
+                    Modifier
+                },
+            )
             .padding(horizontal = 9.dp, vertical = 9.dp),
     ) {
         DlaFlowIcon(icon, iconColor, modifier = Modifier.size(25.dp))
