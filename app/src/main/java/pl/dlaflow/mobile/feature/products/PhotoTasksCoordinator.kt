@@ -389,6 +389,8 @@ internal class PhotoTasksCoordinator(
         val SAFE_IMAGE_MIME_TYPES = setOf(
             "image/avif",
             "image/gif",
+            "image/heic",
+            "image/heif",
             "image/jpeg",
             "image/png",
             "image/webp",

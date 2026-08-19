@@ -195,6 +195,16 @@ class PhotoTasksStateHolderTest {
     }
 
     @Test
+    fun `external focus consumes dispatch dedupe so repeated task is ignored`() {
+        val holder = PhotoTasksStateHolder()
+
+        assertTrue(holder.consumeExternalFocus("task-1"))
+        assertFalse(holder.consumeExternalFocus("task-1"))
+        assertTrue(holder.consumeExternalFocus("task-2"))
+        assertEquals("task-2", holder.state.focusedTaskId)
+    }
+
+    @Test
     fun `accepted unauthorized starts one request bound retry and late callback is ignored`() {
         val holder = PhotoTasksStateHolder()
         val unauthorized = holder.beginRefresh("session-a")!!

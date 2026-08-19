@@ -3,6 +3,7 @@ package pl.dlaflow.mobile
 import java.io.File
 import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
+import pl.dlaflow.mobile.feature.products.PhotoUploadSource
 
 internal sealed interface MobilePhotoUploadPreparationResult {
     data class Ready(val source: PreparedPhotoUploadSource) : MobilePhotoUploadPreparationResult
@@ -39,7 +40,7 @@ internal fun prepareMobilePhotoUpload(
                 PreparedPhotoUploadSource(
                     sourceId = sourceId,
                     file = destination,
-                    byteCount = total,
+                    lengthBytes = total,
                     safeFileName = sanitizePhotoFileName(fileName),
                     safeMimeType = sanitizePhotoMimeType(mimeType),
                 ),
@@ -52,22 +53,24 @@ internal fun prepareMobilePhotoUpload(
 }
 
 internal class PreparedPhotoUploadSource(
-    val sourceId: String,
+    override val sourceId: String,
     private val file: File,
-    val byteCount: Long,
-    val safeFileName: String,
-    val safeMimeType: String,
-) {
+    override val lengthBytes: Long,
+    override val safeFileName: String,
+    override val safeMimeType: String,
+) : PhotoUploadSource {
     private val disposed = AtomicBoolean(false)
 
-    fun openStream(): InputStream {
+    override fun openStream(): InputStream {
         check(!disposed.get()) { "Prepared photo upload source is no longer available." }
         return file.inputStream().buffered()
     }
 
-    fun dispose() {
+    override fun dispose() {
         if (disposed.compareAndSet(false, true)) file.delete()
     }
+
+    val byteCount: Long get() = lengthBytes
 }
 
 private fun sanitizePhotoFileName(value: String): String = value

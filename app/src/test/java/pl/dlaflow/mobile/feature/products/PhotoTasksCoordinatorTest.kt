@@ -61,7 +61,7 @@ class PhotoTasksCoordinatorTest {
     @Test
     fun `invalid prepared source clears selection and exposes controlled error`() {
         val harness = PhotoTasksHarness()
-        val source = TestPhotoUploadSource(safeMimeType = "image/heic")
+        val source = TestPhotoUploadSource(safeMimeType = "image/tiff")
 
         harness.coordinator.handleAction(null, PhotoTasksAction.RequestGallery("task-1"))
         assertFalse(harness.coordinator.submitUpload("session-a", "task-1", source))
@@ -73,14 +73,14 @@ class PhotoTasksCoordinatorTest {
 
     @Test
     fun `upload MIME allow list matches canonical API`() {
-        listOf("image/avif", "image/gif", "image/jpeg", "image/png", "image/webp").forEachIndexed { index, mime ->
+        listOf("image/avif", "image/gif", "image/heic", "image/heif", "image/jpeg", "image/png", "image/webp").forEachIndexed { index, mime ->
             val harness = PhotoTasksHarness(upload = { taskId, _ -> photoTask(taskId, mediaCount = 1) })
             val source = TestPhotoUploadSource(sourceId = "allowed-$index", safeMimeType = mime)
 
             assertTrue(harness.coordinator.submitUpload("session-a", "task-$index", source))
         }
 
-        listOf("image/heic", "image/heif").forEachIndexed { index, mime ->
+        listOf("image/tiff", "image/svg+xml").forEachIndexed { index, mime ->
             val harness = PhotoTasksHarness()
             val source = TestPhotoUploadSource(sourceId = "rejected-$index", safeMimeType = mime)
 

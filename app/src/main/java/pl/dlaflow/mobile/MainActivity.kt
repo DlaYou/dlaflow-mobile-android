@@ -62,10 +62,29 @@ import pl.dlaflow.mobile.feature.orders.OrdersLoadOperation
 import pl.dlaflow.mobile.feature.orders.OrdersQuery
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersStateHolder
+import pl.dlaflow.mobile.feature.products.MobileApiPhotoTasksGateway
+import pl.dlaflow.mobile.feature.products.MobileApiProductsGateway
+import pl.dlaflow.mobile.feature.products.PhotoTasksAction
+import pl.dlaflow.mobile.feature.products.PhotoTasksCoordinator
+import pl.dlaflow.mobile.feature.products.PhotoTasksEffect
+import pl.dlaflow.mobile.feature.products.PhotoTasksStateHolder
+import pl.dlaflow.mobile.feature.products.PhotoTaskStatus
+import pl.dlaflow.mobile.feature.products.ProductPhotoTask
+import pl.dlaflow.mobile.feature.products.ProductsAction
+import pl.dlaflow.mobile.feature.products.ProductsCoordinator
+import pl.dlaflow.mobile.feature.products.ProductsFeedback
+import pl.dlaflow.mobile.feature.products.ProductsOperation
+import pl.dlaflow.mobile.feature.products.ProductsScheduledTask
+import pl.dlaflow.mobile.feature.products.ProductsSearchScheduler
+import pl.dlaflow.mobile.feature.products.ProductsStateHolder
+import pl.dlaflow.mobile.feature.products.choosePhotoTaskFocus
 import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
 import pl.dlaflow.mobile.feature.pairing.PairingGateway
 import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
 import pl.dlaflow.mobile.feature.pairing.pairingSmokeSeed
+import pl.dlaflow.mobile.feature.products.PhotoCaptureKind
+import pl.dlaflow.mobile.feature.products.PhotoCaptureStateHolder
+import pl.dlaflow.mobile.feature.products.orderedTasks
 import pl.dlaflow.mobile.feature.scanner.MobileApiScannerGateway
 import pl.dlaflow.mobile.feature.scanner.ScannerAction
 import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
@@ -158,6 +177,7 @@ class MainActivity : ComponentActivity() {
         )
     }
     private val pairingStateHolder = PairingStateHolder()
+    private val photoCaptureStateHolder = PhotoCaptureStateHolder()
     private val pairingCoordinator by lazy {
         PairingCoordinator(
             stateHolder = pairingStateHolder,
@@ -271,6 +291,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopPhotoTaskDispatchPolling()
+        photoTasksCoordinator.reset()
+        productsCoordinator.reset()
         settingsCoordinator.reset()
         activeCallerIdLookupRequest = null
         activeSettingsUpdateOperation = null
@@ -323,6 +345,14 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val capture = photoCaptureStateHolder.pending
+        val expectedKind = if (requestCode == cameraRequestCode) PhotoCaptureKind.CAMERA else PhotoCaptureKind.GALLERY
+        if (capture == null || capture.kind != expectedKind || capture.sessionKey != session?.token || capture.taskId != pendingPhotoTaskId) {
+            clearPendingCameraPhoto()
+            setStatus("Sesja telefonu zmieniła się. Wybierz zdjęcie ponownie.")
+            return
+        }
+
         if (resultCode != RESULT_OK) {
             setStatus("Nie wybrano zdjęcia.")
             clearPendingCameraPhoto()
@@ -359,12 +389,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    private val productsStateHolder = ProductsStateHolder()
+    private val productsSearchScheduler = ProductsSearchScheduler { delayMillis, action ->
+        val runnable = Runnable(action)
+        dispatchHandler.postDelayed(runnable, delayMillis)
+        ProductsScheduledTask { dispatchHandler.removeCallbacks(runnable) }
+    }
+    private val productsCoordinator by lazy {
+        ProductsCoordinator(
+            stateHolder = productsStateHolder,
+            gateway = MobileApiProductsGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            searchScheduler = productsSearchScheduler,
+            onFeedback = ::handleProductsFeedback,
+            onUnauthorized = ::handleProductsUnauthorized,
+        )
+    }
+    private val photoTasksStateHolder = PhotoTasksStateHolder()
+    private val photoTasksCoordinator by lazy {
+        PhotoTasksCoordinator(
+            stateHolder = photoTasksStateHolder,
+            gateway = MobileApiPhotoTasksGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onEffect = ::handlePhotoTasksEffect,
+            onUnauthorized = ::handlePhotoTasksUnauthorized,
+            onTasksChanged = { render() },
+        )
+    }
 
     private fun replaceSettingsSession() {
         settingsSessionEpoch += 1L
         settingsCoordinator.replaceSession(settingsSessionEpoch)
         activeCallerIdLookupRequest = null
         callerIdPreview = null
+        clearPendingCameraPhoto()
         clearAppUpdateState()
     }
 
@@ -738,6 +798,8 @@ class MainActivity : ComponentActivity() {
                         dashboardCoordinator.reset()
                         ordersCoordinator.reset()
                         scannerCoordinator.reset()
+                        productsCoordinator.reset()
+                        photoTasksCoordinator.reset()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
                     }
@@ -752,7 +814,7 @@ class MainActivity : ComponentActivity() {
                         DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
                         dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
-                        refreshPhotoTasks(showLoading = false)
+                        photoTasksCoordinator.refresh(verifiedSession.token)
                         refreshAppUpdate(showStatus = false)
                         if (selectedTab == MobileAssistantTab.ORDERS) {
                             ensureOrdersLoaded()
@@ -797,6 +859,8 @@ class MainActivity : ComponentActivity() {
         dashboardCoordinator.reset()
         ordersCoordinator.reset()
         scannerCoordinator.reset()
+        productsCoordinator.reset()
+        photoTasksCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
@@ -810,7 +874,7 @@ class MainActivity : ComponentActivity() {
             DlaFlowBackgroundSyncService.start(this)
             startPhotoTaskDispatchPolling()
             dashboardCoordinator.refresh(nextSession.token, showFeedback = false)
-            refreshPhotoTasks(showLoading = false)
+            photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
                 ensureOrdersLoaded()
@@ -1791,7 +1855,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestCamera(taskId: String) {
-        pendingPhotoTaskId = taskId
+        if (!beginPendingPhoto(taskId, PhotoCaptureKind.CAMERA)) return
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             openCamera(taskId)
         } else {
@@ -1800,7 +1864,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openCamera(taskId: String) {
-        pendingPhotoTaskId = taskId
         val photoFile = runCatching { createCameraPhotoFile() }.getOrNull()
         if (photoFile == null) {
             setStatus("Nie udało się przygotować pliku zdjęcia.")
@@ -1824,7 +1887,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openGallery(taskId: String) {
-        pendingPhotoTaskId = taskId
+        if (!beginPendingPhoto(taskId, PhotoCaptureKind.GALLERY)) return
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "image/*"
@@ -1921,6 +1984,15 @@ class MainActivity : ComponentActivity() {
     private fun clearPendingCameraPhoto() {
         pendingCameraPhotoUri = null
         pendingCameraPhotoFile = null
+        pendingPhotoTaskId = null
+        photoCaptureStateHolder.reset()
+    }
+
+    private fun beginPendingPhoto(taskId: String, kind: PhotoCaptureKind): Boolean {
+        val sessionToken = session?.token ?: return false
+        if (photoCaptureStateHolder.begin(sessionToken, taskId, kind, java.util.UUID.randomUUID().toString()) == null) return false
+        pendingPhotoTaskId = taskId
+        return true
     }
 
     private fun completePhotoTask(taskId: String) {
@@ -2017,6 +2089,172 @@ class MainActivity : ComponentActivity() {
             getString(R.string.settings_host_app_settings_open_failed),
             allowApplicationFallback = false,
         )
+    }
+
+    private fun ensureProductsLoaded() {
+        val currentSession = session ?: return
+        val state = productsStateHolder.state
+        if (state.activeListRequestId == null && state.listState == pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading) {
+            productsCoordinator.resetList(currentSession.token, state.query, showFeedback = true)
+        }
+    }
+
+    private fun handleProductsAction(action: ProductsAction) {
+        session?.token?.let { productsCoordinator.handleAction(it, action, showFeedback = true) }
+    }
+
+    private fun handleProductsFeedback(feedback: ProductsFeedback) {
+        syncProductsUiState()
+        setStatus(
+            when (feedback) {
+                ProductsFeedback.LIST_LOADING -> "Odświeżam produkty..."
+                ProductsFeedback.LIST_READY -> "Produkty gotowe."
+                ProductsFeedback.LIST_EMPTY -> "Brak produktów dla wybranego filtra."
+                ProductsFeedback.VARIANTS_LOADING -> "Pobieram warianty..."
+                ProductsFeedback.VARIANTS_READY -> "Warianty gotowe."
+                ProductsFeedback.QUICK_EDIT_SAVING -> "Zapisuję zmianę..."
+                ProductsFeedback.QUICK_EDIT_SAVED -> "Produkt zaktualizowany."
+                ProductsFeedback.LOAD_FAILED -> "Nie udało się wykonać operacji na produktach."
+            },
+        )
+        render()
+    }
+
+    private fun handleProductsUnauthorized(
+        error: Throwable,
+        @Suppress("UNUSED_PARAMETER") operation: ProductsOperation,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się wykonać operacji na produktach.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun handlePhotoTasksAction(action: PhotoTasksAction) {
+        photoTasksCoordinator.handleAction(session?.token, action)
+    }
+
+    private fun handlePhotoTasksEffect(effect: PhotoTasksEffect) {
+        when (effect) {
+            is PhotoTasksEffect.LaunchCamera -> requestCamera(effect.taskId)
+            is PhotoTasksEffect.LaunchGallery -> openGallery(effect.taskId)
+            is PhotoTasksEffect.PresentDispatch -> presentPhotoTaskDispatch(effect.task)
+        }
+    }
+
+    private fun handlePhotoTasksUnauthorized(
+        error: Throwable,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się wykonać operacji na zadaniu zdjęciowym.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun syncProductsUiState() {
+        val featureState = productsStateHolder.state
+        val content = featureState.listState.let { state ->
+            when (state) {
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Content -> state.data
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Offline -> state.lastContent
+                else -> null
+            }
+        }
+        mobileProducts = content?.items.orEmpty().map { item ->
+            MobileProduct(
+                id = item.id,
+                name = item.name,
+                sku = item.sku,
+                ean = item.ean,
+                image = item.thumbnailUrl,
+                thumbnailUrl = item.thumbnailUrl,
+                grossPrice = item.grossPrice,
+                stock = item.stock,
+                status = item.status.label,
+                currency = item.currency,
+                variantCount = item.variantCount,
+                lowStock = item.lowStock,
+                editableFields = MobileProductEditableFields(item.editableFields.grossPrice, item.editableFields.stock),
+            )
+        }
+        mobileProductsNextCursor = content?.nextCursor
+        mobileProductsTotal = content?.total ?: 0
+        mobileProductsLoading = featureState.activeListRequestId != null
+        mobileProductsSearch = featureState.query.search
+        mobileProductsFilter = when (featureState.query.filter) {
+            pl.dlaflow.mobile.feature.products.ProductsFilter.ALL -> MobileProductFilter.ALL
+            pl.dlaflow.mobile.feature.products.ProductsFilter.LOW_STOCK -> MobileProductFilter.LOW_STOCK
+            pl.dlaflow.mobile.feature.products.ProductsFilter.NO_IMAGE -> MobileProductFilter.NO_IMAGE
+            pl.dlaflow.mobile.feature.products.ProductsFilter.HAS_VARIANTS -> MobileProductFilter.HAS_VARIANTS
+        }
+        mobileProductsReadOnly = content?.canEdit == false
+        mobileProductsNoAccess = featureState.listState is pl.dlaflow.mobile.core.state.DlaFlowUiState.NoAccess
+        mobileProductVariants = featureState.variants.mapValues { (_, value) ->
+            when (value) {
+                is pl.dlaflow.mobile.core.state.DlaFlowUiState.Content -> value.data.map { variant ->
+                    MobileProductVariant(
+                        id = variant.id,
+                        productId = variant.productId,
+                        name = variant.name,
+                        sku = variant.sku,
+                        ean = variant.ean,
+                        image = variant.thumbnailUrl,
+                        thumbnailUrl = variant.thumbnailUrl,
+                        price = variant.price,
+                        stock = variant.stock,
+                        status = variant.status.label,
+                        editableFields = MobileProductVariantEditableFields(variant.editableFields.price, variant.editableFields.stock),
+                    )
+                }
+                else -> emptyList()
+            }
+        }
+        mobileProductVariantsLoading = featureState.variants.filterValues { it is pl.dlaflow.mobile.core.state.DlaFlowUiState.Loading }.keys
+    }
+
+    private fun syncPhotoTasksUiState() {
+        val featureTasks = photoTasksStateHolder.state.orderedTasks()
+        photoTasks = featureTasks.map { task ->
+            MobilePhotoTask(
+                id = task.id,
+                productName = task.productName,
+                productSku = task.productSku,
+                status = task.status.name.lowercase(Locale.ROOT),
+                mediaCount = task.mediaCount,
+                maxPhotos = task.maxPhotos,
+                expiresAt = task.expiresAt,
+            )
+        }
+        focusedPhotoTaskId = photoTasksStateHolder.state.focusedTaskId
+    }
+
+    private fun presentPhotoTaskDispatch(task: ProductPhotoTask) {
+        syncPhotoTasksUiState()
+        val mobileTask = MobilePhotoTask(
+            id = task.id,
+            productName = task.productName,
+            productSku = task.productSku,
+            status = task.status.name.lowercase(Locale.ROOT),
+            mediaCount = task.mediaCount,
+            maxPhotos = task.maxPhotos,
+            expiresAt = task.expiresAt,
+        )
+        selectedTab = MobileAssistantTab.PRODUCTS
+        showPhotoTaskNotification(mobileTask)
+        openPhotoTaskIfAllowed(mobileTask)
+        render()
     }
 
     private fun openResolvedSystemSettings(

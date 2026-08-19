@@ -32,6 +32,14 @@ internal class PhotoTasksStateHolder {
         state = state.copy(focusedTaskId = rawTaskId?.trim()?.takeIf(String::isNotEmpty))
     }
 
+    fun consumeExternalFocus(rawTaskId: String?): Boolean {
+        val taskId = rawTaskId?.trim()?.takeIf(String::isNotEmpty) ?: return false
+        if (taskId == lastDispatchedTaskId) return false
+        lastDispatchedTaskId = taskId
+        state = state.copy(focusedTaskId = taskId)
+        return true
+    }
+
     fun beginMediaSelection(taskId: String): Boolean {
         if (state.hasBlockingOperationInFlight) return false
         invalidateDispatchForOperation()
@@ -322,8 +330,7 @@ internal class PhotoTasksStateHolder {
     ): ProductPhotoTask? {
         if (!matches(request)) return null
         finishDispatch()
-        if (task == null || task.id.isBlank() || task.id == lastDispatchedTaskId) return null
-        lastDispatchedTaskId = task.id
+        if (task == null || task.id.isBlank() || !consumeExternalFocus(task.id)) return null
         state = state.withUpsertedTask(task).copy(
             fallbackTask = task,
             focusedTaskId = task.id,

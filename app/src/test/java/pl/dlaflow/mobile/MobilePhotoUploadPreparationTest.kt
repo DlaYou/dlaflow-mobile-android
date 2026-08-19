@@ -8,6 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import pl.dlaflow.mobile.feature.products.PhotoUploadSource
 
 class MobilePhotoUploadPreparationTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
@@ -27,6 +28,25 @@ class MobilePhotoUploadPreparationTest {
         source.dispose()
         assertFalse(destination.exists())
         assertThrows(IllegalStateException::class.java) { source.openStream() }
+    }
+
+    @Test
+    fun `prepared source implements upload contract and accepts heic and heif`() {
+        listOf("image/heic", "image/heif").forEach { mimeType ->
+            val destination = temporaryFolder.newFile("prepared-${mimeType.substringAfter('/')}")
+            val result = prepareMobilePhotoUpload(
+                ByteArrayInputStream(byteArrayOf(1, 2, 3)),
+                destination,
+                "capture-$mimeType",
+                "photo.heic",
+                mimeType,
+            )
+
+            val source = (result as MobilePhotoUploadPreparationResult.Ready).source
+            assertTrue(source is PhotoUploadSource)
+            assertEquals(mimeType, source.safeMimeType)
+            (source as PhotoUploadSource).dispose()
+        }
     }
 
     @Test
