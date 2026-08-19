@@ -12,7 +12,7 @@ Istniejące karty `Nowe zamówienia`, `Do wysyłki`, `Po terminie` i `Wiadomośc
 - `Po terminie` przełącza aplikację na Zamówienia z osobnym filtrem `OVERDUE`. Panel/API wybiera wyłącznie zamówienia z kanonicznym `shippingDeadlineAt` wcześniejszym niż chwila zapytania i bez potwierdzonego etapu wysyłki lub doręczenia. Android nie porównuje dat lokalnie.
 - `Wiadomości` przełącza aplikację bezpośrednio na istniejącą dolną zakładkę `Wiadomości`; nie otwiera filtra zamówień ani nakładki powiadomień.
 - Lista jest pobierana przez istniejący `OrdersCoordinator` i `/api/mobile/orders`; Android nie filtruje danych lokalnie i nie interpretuje integratora.
-- Filtry `Wszystkie`, `Nowe`, `Do wysyłki`, `Po terminie` i `Problemy` są widoczne w ekranie Zamówień. Usuwamy z tego miejsca filtr `Wiadomości`, ponieważ wiadomości mają własną zakładkę.
+- Na pasku ekranu Zamówień są widoczne tylko `Wszystkie`, `Nowe` i `Do wysyłki`. `Po terminie` i `Problemy` pozostają wewnętrznymi celami operacyjnymi/API, ale nie zajmują miejsca w głównym pasku filtrów; `Wiadomości` mają własną zakładkę.
 - Wspólny `DlaFlowKpiTile` dostaje opcjonalną akcję z semantyką przycisku i minimum 48 dp. Bez akcji pozostaje zwykłą kartą.
 
 ## Granice

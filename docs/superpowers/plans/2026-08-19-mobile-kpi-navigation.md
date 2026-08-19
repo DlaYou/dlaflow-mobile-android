@@ -37,7 +37,7 @@
 
 - [ ] Add failing tests requiring `OVERDUE -> OrdersFilter.OVERDUE`, `OrdersFilter.OVERDUE -> MobileOrderFilter.OVERDUE`, and query value `overdue`.
 - [ ] Run focused tests and confirm RED.
-- [ ] Add `OVERDUE` at the existing model/mapper seams, label it `Po terminie`, expose it in Orders, and remove the orders-only `MESSAGES` filter from the visible list.
+- [ ] Add `OVERDUE` at the existing model/mapper seams, label it `Po terminie`, keep it available as a KPI destination, and expose only the three primary filters (`Wszystkie`, `Nowe`, `Do wysyłki`) in the Orders toolbar.
 - [ ] Run focused tests and confirm GREEN.
 
 ### Task 3: Route Messages to its tab
