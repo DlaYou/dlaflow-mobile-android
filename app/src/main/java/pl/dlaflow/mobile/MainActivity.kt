@@ -1750,19 +1750,17 @@ class MainActivity : ComponentActivity() {
     private fun uploadCameraResult(taskId: String) {
         val uri = pendingCameraPhotoUri
         val file = pendingCameraPhotoFile
-        val bytes = when {
-            uri != null -> contentResolver.openInputStream(uri)?.use { input -> input.readBytes() }
-            file != null && file.exists() -> file.readBytes()
+        val input = when {
+            uri != null -> contentResolver.openInputStream(uri)
+            file != null && file.exists() -> file.inputStream()
             else -> null
         }
-
-        if (bytes == null || bytes.isEmpty()) {
+        if (input == null) {
             clearPendingCameraPhoto()
             setStatus("Aparat nie zapisał pełnego zdjęcia.")
             return
         }
-
-        uploadPhoto(taskId, bytes, file?.name ?: "zdjecie-z-telefonu.jpg", "image/jpeg")
+        uploadPhoto(taskId, input, file?.name ?: "zdjecie-z-telefonu.jpg", "image/jpeg")
     }
 
     private fun uploadGalleryResult(taskId: String, uri: Uri?) {
@@ -1771,29 +1769,36 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val bytes = contentResolver.openInputStream(uri)?.use { input ->
-            input.readBytes()
-        }
-        if (bytes == null) {
+        val input = contentResolver.openInputStream(uri)
+        if (input == null) {
             setStatus("Nie udało się odczytać zdjęcia.")
             return
         }
-
-        uploadPhoto(taskId, bytes, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
+        uploadPhoto(taskId, input, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
     }
 
-    private fun uploadPhoto(taskId: String, bytes: ByteArray, fileName: String, mimeType: String) {
+    private fun uploadPhoto(taskId: String, input: java.io.InputStream, fileName: String, mimeType: String) {
         val currentSession = session ?: return
-        setStatus("Wysyłam pełne zdjęcie (${formatBytes(bytes.size)})...")
+        setStatus("Wysyłam pełne zdjęcie...")
         executor.execute {
+            val destination = File(cacheDir, "mobile-photo-uploads/$taskId-${System.nanoTime()}.bin")
+            val prepared = input.use { stream ->
+                prepareMobilePhotoUpload(stream, destination, taskId, fileName, mimeType)
+            }
             runCatching {
-                mobileApiClientForSession(sessionStore).uploadPhotoTaskMedia(
-                    token = currentSession.token,
-                    taskId = taskId,
-                    imageBytes = bytes,
-                    fileName = fileName,
-                    mimeType = mimeType,
-                )
+                val source = (prepared as? MobilePhotoUploadPreparationResult.Ready)?.source
+                    ?: error("Zdjęcie jest puste lub za duże.")
+                try {
+                    mobileApiClientForSession(sessionStore).uploadPhotoTaskMedia(
+                        token = currentSession.token,
+                        taskId = taskId,
+                        source = MobilePhotoUploadSource(source.byteCount) { source.openStream() },
+                        fileName = source.safeFileName,
+                        mimeType = source.safeMimeType,
+                    )
+                } finally {
+                    source.dispose()
+                }
             }.onSuccess {
                 runOnUiThread {
                     if (!isCurrentSessionToken(currentSession.token)) {

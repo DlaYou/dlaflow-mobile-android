@@ -10,10 +10,17 @@ import java.net.URI
 import java.net.URLEncoder
 import java.net.URL
 import java.net.URLDecoder
+import java.security.MessageDigest
 import java.util.UUID
 import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
+internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
+
+internal class MobilePhotoUploadSource(
+    val byteCount: Long,
+    val openStream: () -> InputStream,
+)
 
 data class MobileSession(
     val deviceId: String,
@@ -669,11 +676,20 @@ class MobileApiClient(
         return parseMobileProductVariant(response.getJSONObject("data"))
     }
 
-    fun uploadPhotoTaskMedia(token: String, taskId: String, imageBytes: ByteArray, fileName: String, mimeType: String): MobilePhotoTask {
+    internal fun uploadPhotoTaskMedia(
+        token: String,
+        taskId: String,
+        source: MobilePhotoUploadSource,
+        fileName: String,
+        mimeType: String,
+    ): MobilePhotoTask {
+        require(source.byteCount in 1..MOBILE_PHOTO_UPLOAD_MAX_BYTES) {
+            "Photo upload must contain between 1 byte and $MOBILE_PHOTO_UPLOAD_MAX_BYTES bytes."
+        }
         val response = postMultipart(
-            path = "/api/mobile/photo-tasks/$taskId/media",
+            path = "/api/mobile/photo-tasks/${encodePathSegment(taskId)}/media",
             token = token,
-            imageBytes = imageBytes,
+            source = source,
             fileName = fileName,
             mimeType = mimeType,
         )
@@ -684,7 +700,7 @@ class MobileApiClient(
 
     fun completePhotoTask(token: String, taskId: String): MobilePhotoTask {
         val response = postJson(
-            path = "/api/mobile/photo-tasks/$taskId/complete",
+            path = "/api/mobile/photo-tasks/${encodePathSegment(taskId)}/complete",
             body = JSONObject(),
             token = token,
         )
@@ -797,12 +813,28 @@ class MobileApiClient(
         return readJsonResponse(connection)
     }
 
-    private fun postMultipart(path: String, token: String, imageBytes: ByteArray, fileName: String, mimeType: String): JSONObject {
+    private fun postMultipart(
+        path: String,
+        token: String,
+        source: MobilePhotoUploadSource,
+        fileName: String,
+        mimeType: String,
+    ): JSONObject {
         val boundary = "dlaflow-mobile-${UUID.randomUUID()}"
-        val fileSha256 = mobileRequestBodySha256(imageBytes)
+        val safeFileName = sanitizeMobilePhotoUploadFileName(fileName)
+        val safeMimeType = sanitizeMobilePhotoUploadMimeType(mimeType)
+        val fileSha256 = mobilePhotoUploadSha256(source)
+        val head = buildString {
+            append("--").append(boundary).append("\r\n")
+            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(safeFileName).append("\"\r\n")
+            append("Content-Type: ").append(safeMimeType).append("\r\n\r\n")
+        }.toByteArray(Charsets.UTF_8)
+        val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
+        val contentLength = head.size.toLong() + source.byteCount + footer.size.toLong()
         val connection = openConnection(path)
         connection.requestMethod = "POST"
         connection.doOutput = true
+        connection.setFixedLengthStreamingMode(contentLength)
         connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         connection.setRequestProperty("X-DlaFlow-File-SHA256", fileSha256)
         applyAuthorizationAndSignature(
@@ -810,19 +842,16 @@ class MobileApiClient(
             method = "POST",
             path = path,
             token = token,
-            bodyBytes = imageBytes,
+            bodyBytes = ByteArray(0),
             bodySha256Override = fileSha256,
         )
 
         connection.outputStream.use { stream ->
-            val head = buildString {
-                append("--").append(boundary).append("\r\n")
-                append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(fileName).append("\"\r\n")
-                append("Content-Type: ").append(mimeType).append("\r\n\r\n")
-            }.toByteArray(Charsets.UTF_8)
             stream.write(head)
-            stream.write(imageBytes)
-            stream.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+            source.openStream().use { input ->
+                copyMobilePhotoUpload(input, stream, source.byteCount)
+            }
+            stream.write(footer)
         }
 
         return readJsonResponse(connection)
@@ -1417,6 +1446,54 @@ private fun readMobileMediaWithinLimit(input: InputStream, maxBytes: Int): ByteA
         }
         output.write(buffer, 0, read)
     }
+}
+
+private fun mobilePhotoUploadSha256(source: MobilePhotoUploadSource): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    var total = 0L
+    source.openStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read == 0) continue
+            total += read
+            require(total <= source.byteCount) { "Photo upload source exceeded declared length." }
+            digest.update(buffer, 0, read)
+        }
+    }
+    require(total == source.byteCount) { "Photo upload source length did not match declared length." }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+}
+
+private fun copyMobilePhotoUpload(input: InputStream, output: java.io.OutputStream, expectedBytes: Long) {
+    var total = 0L
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        if (read == 0) continue
+        total += read
+        require(total <= expectedBytes) { "Photo upload source exceeded declared length." }
+        output.write(buffer, 0, read)
+    }
+    require(total == expectedBytes) { "Photo upload source length did not match declared length." }
+}
+
+private fun sanitizeMobilePhotoUploadFileName(value: String): String {
+    val sanitized = value
+        .trim()
+        .take(128)
+        .replace(Regex("[\\r\\n\\\"\\\\/:;]"), "_")
+        .filter { it.code in 32..126 }
+        .trim()
+    return sanitized.ifBlank { "zdjecie-z-telefonu.jpg" }
+}
+
+private fun sanitizeMobilePhotoUploadMimeType(value: String): String {
+    val normalized = value.trim().lowercase()
+    return normalized.takeIf { it.matches(Regex("image/[a-z0-9][a-z0-9.+-]{0,63}")) }
+        ?: "application/octet-stream"
 }
 
 private fun isCanonicalMobileApiPath(pathWithQuery: String): Boolean {
