@@ -45,6 +45,26 @@ class SettingsSourceBoundaryTest {
     }
 
     @Test
+    fun `notification preference changes do not rebuild the host compose root`() {
+        val host = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
+        val preferenceBranch = host
+            .substringAfter("is SettingsEffect.NotificationPreferenceChanged")
+            .substringBefore("is SettingsEffect.Disconnect")
+
+        assertFalse(preferenceBranch.contains("render()"))
+    }
+
+    @Test
+    fun `host keeps one compose root after the first render`() {
+        val host = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
+        val renderBody = host.substringAfter("private fun render() {").substringBefore("private fun showSessionTransitionShell()")
+
+        assertTrue(renderBody.contains("if (::contentView.isInitialized)"))
+        assertTrue(renderBody.contains("hostRenderVersion += 1"))
+        assertFalse(renderBody.contains("screenView.removeView(contentView)"))
+    }
+
+    @Test
     fun `settings business copy is resource backed instead of hardcoded in mapper`() {
         val mapper = File("src/main/java/pl/dlaflow/mobile/feature/settings/SettingsMapper.kt").readText()
         val resources = File("src/main/res/values/strings.xml").readText()

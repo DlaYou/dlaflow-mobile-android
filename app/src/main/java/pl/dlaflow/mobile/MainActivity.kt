@@ -253,6 +253,7 @@ class MainActivity : ComponentActivity() {
     private var mobileNotificationFilter by mutableStateOf(MobileNotificationFilter.ALL)
     private var markNotificationsReadOnOpen = false
     private var notificationPreferences by mutableStateOf(MobileNotificationPreferences.defaults())
+    private var hostRenderVersion by mutableStateOf(0)
     private var appUpdate by mutableStateOf<MobileAppUpdate?>(null)
     private var appUpdateDismissalState by mutableStateOf(MobileAppUpdateDismissalState())
     private var appUpdateDialogVisible by mutableStateOf(false)
@@ -521,7 +522,10 @@ class MainActivity : ComponentActivity() {
                 SettingsNotificationPreference(category.key, category.label, category.description, notificationPreferences.isEnabled(category))
             },
         ),
-    )
+    ).also {
+        // Keep lifecycle refreshes on the existing Compose root instead of replacing the view.
+        hostRenderVersion.let { }
+    }
 
     private fun handleSettingsAction(action: SettingsAction) {
         settingsCoordinator.onAction(action, settingsContent())
@@ -548,7 +552,6 @@ class MainActivity : ComponentActivity() {
                 val category = MobileNotificationCategory.entries.firstOrNull { it.key == effect.key } ?: return
                 notificationPreferences = notificationPreferences.withEnabled(category, effect.enabled)
                 sessionStore.saveNotificationPreferences(notificationPreferences)
-                render()
             }
             is SettingsEffect.Disconnect -> disconnectLocalPhone(effect.request)
         }
@@ -556,6 +559,15 @@ class MainActivity : ComponentActivity() {
 
     private fun render() {
         val theme = mobileTheme()
+        window.statusBarColor = theme.appBg
+        window.navigationBarColor = theme.appBg
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            window.decorView.systemUiVisibility = if (theme.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
+        if (::contentView.isInitialized) {
+            hostRenderVersion += 1
+            return
+        }
         focusedPhotoTaskView = null
         val composeView = ComposeView(this).apply {
             alpha = if (contentReadyForDisplay) 1f else 0f
@@ -643,15 +655,6 @@ class MainActivity : ComponentActivity() {
                     onDismissAppUpdate = { dismissAppUpdate() },
                 )
             }
-        }
-        window.statusBarColor = theme.appBg
-        window.navigationBarColor = theme.appBg
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.decorView.systemUiVisibility = if (theme.dark) 0 else View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        }
-
-        if (::contentView.isInitialized) {
-            screenView.removeView(contentView)
         }
         contentView = composeView
         screenView.addView(composeView, 0,
