@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -25,12 +26,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -54,7 +58,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -93,6 +101,48 @@ internal fun DlaFlowScreenHeader(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+    }
+}
+
+@Composable
+internal fun DlaFlowBackHeader(
+    colors: DlaFlowComposeColors,
+    title: String,
+    subtitle: String,
+    backContentDescription: String,
+    modifier: Modifier = Modifier,
+    backButtonModifier: Modifier = Modifier,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = backButtonModifier
+                .size(DlaFlowDimensions.minimumTouchTarget)
+                .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
+                .background(colors.surfaceSubtle)
+                .border(
+                    DlaFlowDimensions.borderWidth,
+                    colors.border,
+                    RoundedCornerShape(DlaFlowDimensions.controlRadius),
+                )
+                .clickable(role = Role.Button, onClick = onBack)
+                .clearAndSetSemantics { contentDescription = backContentDescription },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                contentDescription = null,
+                tint = colors.text,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(Modifier.width(DlaFlowDimensions.inlineGap))
+        Column(modifier = Modifier.weight(1f)) {
+            DlaFlowScreenHeader(colors, title, subtitle)
         }
     }
 }
@@ -449,6 +499,127 @@ internal fun DlaFlowSecondaryButton(
 }
 
 @Composable
+internal fun DlaFlowDangerButton(
+    colors: DlaFlowComposeColors,
+    text: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(DlaFlowDimensions.controlRadius),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = colors.danger.copy(alpha = if (colors.dark) 0.14f else 0.06f),
+            contentColor = colors.danger,
+            disabledContainerColor = colors.surfaceSubtle,
+            disabledContentColor = colors.textMuted,
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            DlaFlowDimensions.borderWidth,
+            colors.danger.copy(alpha = 0.24f),
+        ),
+        modifier = modifier.height(DlaFlowDimensions.minimumTouchTarget),
+    ) {
+        Text(text, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+internal fun DlaFlowNavigationRow(
+    colors: DlaFlowComposeColors,
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = DlaFlowDimensions.minimumTouchTarget)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DlaFlowIcon(icon, colors.primary, modifier = Modifier.size(32.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = colors.textStrong,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = subtitle,
+                color = colors.textMuted,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null,
+            tint = colors.textMuted.copy(alpha = 0.62f),
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+@Composable
+internal fun DlaFlowConfirmationDialog(
+    colors: DlaFlowComposeColors,
+    title: String,
+    description: String,
+    confirmLabel: String,
+    dismissLabel: String,
+    destructive: Boolean = false,
+    confirmEnabled: Boolean = true,
+    modifier: Modifier = Modifier,
+    confirmButtonModifier: Modifier = Modifier,
+    dismissButtonModifier: Modifier = Modifier,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        modifier = modifier,
+        onDismissRequest = onDismiss,
+        containerColor = colors.surface,
+        titleContentColor = colors.textStrong,
+        textContentColor = colors.text,
+        title = { Text(title, fontWeight = FontWeight.ExtraBold) },
+        text = { Text(description, fontWeight = FontWeight.Medium, lineHeight = 19.sp) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = confirmEnabled,
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = if (destructive) colors.danger else colors.primary,
+                    disabledContentColor = colors.textMuted,
+                ),
+                modifier = confirmButtonModifier.defaultMinSize(minHeight = DlaFlowDimensions.minimumTouchTarget),
+            ) {
+                Text(confirmLabel, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = dismissButtonModifier.defaultMinSize(minHeight = DlaFlowDimensions.minimumTouchTarget),
+            ) {
+                Text(dismissLabel, color = colors.textMuted, fontWeight = FontWeight.Bold)
+            }
+        },
+    )
+}
+
+@Composable
 internal fun DlaFlowIcon(
     icon: ImageVector,
     color: Color,
@@ -511,26 +682,70 @@ internal fun DlaFlowStatusStrip(colors: DlaFlowComposeColors, message: String) {
 }
 
 @Composable
-internal fun DlaFlowKeyValue(colors: DlaFlowComposeColors, label: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = DlaFlowDimensions.rowVerticalPadding),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            color = colors.textMuted,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
+internal fun DlaFlowKeyValue(
+    colors: DlaFlowComposeColors,
+    label: String,
+    value: String,
+    adaptive: Boolean = false,
+    modifier: Modifier = Modifier,
+    labelModifier: Modifier = Modifier,
+    valueModifier: Modifier = Modifier,
+) {
+    val stacked = adaptive && (
+        LocalConfiguration.current.screenWidthDp <= 412 || LocalDensity.current.fontScale >= 1.2f
         )
-        Text(
-            text = value,
-            color = colors.textStrong,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+    val semanticsModifier = modifier.clearAndSetSemantics {
+        contentDescription = "$label: $value"
+    }
+    if (stacked) {
+        Column(
+            modifier = semanticsModifier
+                .fillMaxWidth()
+                .padding(vertical = DlaFlowDimensions.rowVerticalPadding),
+        ) {
+            Text(
+                label,
+                color = colors.textMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = labelModifier,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = value,
+                color = colors.textStrong,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = valueModifier,
+            )
+        }
+    } else {
+        Row(
+            modifier = semanticsModifier
+                .fillMaxWidth()
+                .padding(vertical = DlaFlowDimensions.rowVerticalPadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                color = colors.textMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = labelModifier.weight(1f),
+                maxLines = 2,
+            )
+            Text(
+                text = value,
+                color = colors.textStrong,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = valueModifier,
+            )
+        }
     }
 }
 

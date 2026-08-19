@@ -166,6 +166,11 @@ import pl.dlaflow.mobile.feature.pairing.PairingStep
 import pl.dlaflow.mobile.feature.pairing.PairingUiState
 import pl.dlaflow.mobile.feature.scanner.ScannerMatchKind
 import pl.dlaflow.mobile.feature.scanner.ScannerUiState
+import pl.dlaflow.mobile.feature.settings.SettingsAction
+import pl.dlaflow.mobile.feature.settings.SettingsContent
+import pl.dlaflow.mobile.feature.settings.SettingsFeatureScreen
+import pl.dlaflow.mobile.feature.settings.SettingsRoute
+import pl.dlaflow.mobile.feature.settings.SettingsUiState
 
 enum class MobileNotificationFilter(val label: String) {
     ALL("Wszystkie"),
@@ -203,7 +208,6 @@ internal fun packageScannerResolvedCopy(result: pl.dlaflow.mobile.feature.scanne
         supportingText = "Ten kod nie pasuje do żadnej paczki w DlaFlow.",
     )
 }
-
 internal fun ScannerUiState.toOrdersPackageScannerState(): OrdersPackageScannerState = when (val lookup = lookupState) {
     DlaFlowUiState.Empty -> OrdersPackageScannerState.Empty
     DlaFlowUiState.Loading -> OrdersPackageScannerState.Loading
@@ -261,163 +265,6 @@ private fun toneColorKey(tone: String): String {
     return if (normalized == "error" || normalized == "warning") "attention" else normalized
 }
 
-enum class MobileMoreSettingsKind {
-    ACCOUNT,
-    SECURITY,
-    NOTIFICATIONS,
-    PREFERENCES,
-    INTEGRATIONS,
-    TEAM,
-    APP,
-    CALLER_ID,
-}
-
-data class MobileMoreSettingsItem(
-    val kind: MobileMoreSettingsKind,
-    val title: String,
-    val subtitle: String,
-)
-
-data class MobileMoreSettingsDetail(
-    val kind: MobileMoreSettingsKind,
-    val title: String,
-    val description: String,
-    val rows: List<Pair<String, String>>,
-    val primaryActionLabel: String? = null,
-    val secondaryActionLabel: String? = null,
-    val dangerActionLabel: String? = null,
-)
-
-fun buildMobileMoreSettingsItems(
-    appVersionName: String,
-    callerIdLabel: String,
-    canAutoOpenTasks: Boolean,
-    updateAvailable: Boolean,
-    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
-): List<MobileMoreSettingsItem> = listOf(
-    MobileMoreSettingsItem(MobileMoreSettingsKind.ACCOUNT, "Dane konta", "Profil operatora i firma"),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.SECURITY, "Bezpieczeństwo", "Token telefonu chroniony"),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.NOTIFICATIONS, "Powiadomienia", mobileNotificationPreferenceSummary(notificationPreferences)),
-    MobileMoreSettingsItem(
-        MobileMoreSettingsKind.PREFERENCES,
-        "Preferencje",
-        if (canAutoOpenTasks) "Auto-otwieranie zadań" else "Przez powiadomienie",
-    ),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.INTEGRATIONS, "Integracje", "Mobile Assistant w panelu"),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.TEAM, "Zespół", "Dostęp pracowników"),
-    MobileMoreSettingsItem(
-        MobileMoreSettingsKind.APP,
-        "Aplikacja",
-        if (updateAvailable) "Aktualizacja dostępna" else "Wersja $appVersionName",
-    ),
-    MobileMoreSettingsItem(MobileMoreSettingsKind.CALLER_ID, "Caller ID", callerIdLabel.ifBlank { "Do sprawdzenia" }),
-)
-
-fun buildMobileMoreSettingsDetail(
-    kind: MobileMoreSettingsKind,
-    userName: String,
-    userEmail: String,
-    tenantName: String,
-    deviceName: String,
-    appVersionName: String,
-    callerIdLabel: String,
-    notificationAllowed: Boolean,
-    canAutoOpenTasks: Boolean,
-    updateAvailable: Boolean,
-    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
-): MobileMoreSettingsDetail {
-    return when (kind) {
-        MobileMoreSettingsKind.ACCOUNT -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Dane konta",
-            description = "Podgląd operatora połączonego z panelem DlaFlow.",
-            rows = listOf(
-                "Operator" to userName.ifBlank { userEmail.substringBefore("@") },
-                "E-mail" to userEmail,
-                "Firma" to tenantName.ifBlank { "DlaFlow" },
-                "Telefon" to deviceName.ifBlank { "Telefon DlaFlow" },
-            ),
-        )
-        MobileMoreSettingsKind.SECURITY -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Bezpieczeństwo",
-            description = "Telefon używa bezpiecznej sesji mobilnej. Gdy zgubisz urządzenie, odłącz je tutaj albo w panelu.",
-            rows = listOf(
-                "Sesja telefonu" to "Aktywna",
-                "Token" to "Chroniony w pamięci systemowej Android",
-                "Zakres dostępu" to "Tylko funkcje Mobile Assistant",
-            ),
-            dangerActionLabel = "Odłącz telefon",
-        )
-        MobileMoreSettingsKind.NOTIFICATIONS -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Powiadomienia",
-            description = "Wybierz, o których sprawach z panelu telefon ma Ci przypominać.",
-            rows = listOf(
-                "Status" to if (notificationAllowed) "Włączone" else "Wymagają zgody Androida",
-                "Aktywne typy" to mobileNotificationPreferenceSummary(notificationPreferences),
-                "Działanie w tle" to "Sprawdzam nowe sprawy co kilka minut",
-            ),
-            primaryActionLabel = "Ustawienia powiadomień",
-        )
-        MobileMoreSettingsKind.PREFERENCES -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Preferencje",
-            description = "Ustaw sposób pracy telefonu z zadaniami i systemowymi zgodami Androida.",
-            rows = listOf(
-                "Auto-otwieranie zadań" to if (canAutoOpenTasks) "Włączone" else "Przez powiadomienie",
-                "Motyw" to "Zgodny z ustawieniem systemu",
-                "Układ" to "Standard DlaFlow Mobile",
-            ),
-            primaryActionLabel = if (canAutoOpenTasks) null else "Włącz auto-otwieranie",
-        )
-        MobileMoreSettingsKind.INTEGRATIONS -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Integracje",
-            description = "Mobile Assistant jest zarządzany z panelu DlaFlow w sekcji Integracje i Wtyczki.",
-            rows = listOf(
-                "Wtyczka" to "Mobile Assistant",
-                "Połączenie" to "Aktywne dla tej firmy",
-                "Zarządzanie" to "Panel DlaFlow -> Integracje -> Wtyczki",
-            ),
-        )
-        MobileMoreSettingsKind.TEAM -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Zespół",
-            description = "Podgląd pracownika używającego telefonu. Uprawnienia i zespół zmieniaj w panelu.",
-            rows = listOf(
-                "Pracownik" to userName.ifBlank { userEmail.substringBefore("@") },
-                "Firma" to tenantName.ifBlank { "DlaFlow" },
-                "Zarządzanie" to "Panel DlaFlow -> Zespół",
-            ),
-        )
-        MobileMoreSettingsKind.APP -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Aplikacja",
-            description = "Sprawdź wersję aplikacji i pobierz aktualizację opublikowaną w panelu.",
-            rows = listOf(
-                "Wersja" to appVersionName,
-                "Kanał" to "Production APK z panelu",
-                "Status" to if (updateAvailable) "Aktualizacja dostępna" else "Masz aktualną wersję",
-            ),
-            primaryActionLabel = "Sprawdź aktualizację",
-            secondaryActionLabel = "Ustawienia systemowe",
-        )
-        MobileMoreSettingsKind.CALLER_ID -> MobileMoreSettingsDetail(
-            kind = kind,
-            title = "Caller ID",
-            description = "Caller ID pokazuje kontekst klienta i zamówienia przy połączeniu telefonicznym.",
-            rows = listOf(
-                "Status" to callerIdLabel.ifBlank { "Do sprawdzenia" },
-                "Test numeru" to "Wpisz numer i sprawdź kartę klienta",
-                "Połączenia" to "Działa dla zwykłych rozmów Android",
-            ),
-            primaryActionLabel = "Sprawdź numer",
-            secondaryActionLabel = "Włącz Caller ID",
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun MobileAssistantScreen(
@@ -429,12 +276,8 @@ internal fun MobileAssistantScreen(
     selectedTab: MobileAssistantTab,
     apiUrl: String,
     pairingState: PairingUiState,
-    callerIdTestPhone: String,
-    callerIdPreview: MobileCallerIdLookup?,
-    callerIdOperational: Boolean,
-    callerIdAvailable: Boolean,
-    canAutoOpenTasks: Boolean,
-    notificationAllowed: Boolean = true,
+    settingsState: SettingsUiState,
+    settingsContent: SettingsContent,
     appVersionName: String,
     appUpdate: MobileAppUpdate? = null,
     appUpdateDialogVisible: Boolean = false,
@@ -459,7 +302,6 @@ internal fun MobileAssistantScreen(
     mobileNotifications: List<MobileAssistantNotification> = emptyList(),
     mobileNotificationsLoading: Boolean = false,
     mobileNotificationFilter: MobileNotificationFilter = MobileNotificationFilter.ALL,
-    notificationPreferences: MobileNotificationPreferences = MobileNotificationPreferences.defaults(),
     onPairingCodeChange: (String) -> Unit,
     onContinuePairing: () -> Unit,
     onScanPairingQr: () -> Unit,
@@ -467,7 +309,7 @@ internal fun MobileAssistantScreen(
     onSubmitPairing: () -> Unit,
     onShowPairingHelp: () -> Unit,
     onPairingBack: () -> Unit,
-    onCallerIdTestPhoneChange: (String) -> Unit,
+    onSettingsAction: (SettingsAction) -> Unit,
     onDashboardAction: (DashboardAction) -> Unit,
     onSelectTab: (MobileAssistantTab) -> Unit,
     onOrdersAction: (OrdersAction) -> Unit = {},
@@ -480,17 +322,8 @@ internal fun MobileAssistantScreen(
     onCloseOverlay: () -> Unit = {},
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
     onMarkNotificationsRead: () -> Unit = {},
-    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit = { _, _ -> },
-    onEnableCallerId: () -> Unit,
-    onTestCallerId: () -> Unit,
-    onShowCallerIdPreview: () -> Unit,
-    onCheckAppUpdate: () -> Unit,
     onInstallAppUpdate: () -> Unit,
     onDismissAppUpdate: () -> Unit,
-    onOpenNotificationSettings: () -> Unit = {},
-    onOpenOverlaySettings: () -> Unit = {},
-    onOpenAppSystemSettings: () -> Unit = {},
-    onDisconnect: () -> Unit,
 ) {
     val dashboard = dashboardState.contentOrNull()
     val dark = isSystemInDarkTheme()
@@ -504,6 +337,7 @@ internal fun MobileAssistantScreen(
             selectedTab = selectedTab,
             overlayScreen = mobileOverlayScreen,
             orderDetailVisible = ordersState.route is OrdersRoute.Detail,
+            settingsDetailVisible = settingsState.route is SettingsRoute.Detail,
         )
     }
     val backAction = mobileAssistantBackAction(route)
@@ -515,6 +349,7 @@ internal fun MobileAssistantScreen(
                 MobileAssistantBackAction.CLOSE_PAIRING_NAME,
                 -> onPairingBack()
                 MobileAssistantBackAction.CLOSE_ORDER_DETAIL -> onOrdersAction(OrdersAction.CloseDetail)
+                MobileAssistantBackAction.CLOSE_SETTINGS_DETAIL -> onSettingsAction(SettingsAction.Back)
                 MobileAssistantBackAction.CLOSE_OVERLAY -> onCloseOverlay()
                 MobileAssistantBackAction.NONE -> Unit
             }
@@ -573,42 +408,21 @@ internal fun MobileAssistantScreen(
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
-                    notificationPreferences = notificationPreferences,
-                        callerIdTestPhone = callerIdTestPhone,
-                        callerIdPreview = callerIdPreview,
-                    callerIdOperational = callerIdOperational,
-                    callerIdAvailable = callerIdAvailable,
-                    canAutoOpenTasks = canAutoOpenTasks,
-                    notificationAllowed = notificationAllowed,
-                    appVersionName = appVersionName,
-                        appUpdate = appUpdate,
-                        appUpdateChecking = appUpdateChecking,
-                        appUpdateDownloading = appUpdateDownloading,
-                        appUpdateDownloadProgress = appUpdateDownloadProgress,
-                        appUpdateError = appUpdateError,
-                        ordersState = ordersState,
-                        onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
-                        onDashboardAction = onDashboardAction,
-                        onOrdersAction = onOrdersAction,
-                        onProductsSearchChange = onProductsSearchChange,
-                        onProductsFilterChange = onProductsFilterChange,
-                        onLoadMoreProducts = onLoadMoreProducts,
-                        onToggleProductVariants = onToggleProductVariants,
-                        onQuickEditProduct = onQuickEditProduct,
-                        onQuickEditVariant = onQuickEditVariant,
-                        onCloseOverlay = onCloseOverlay,
-                        onNotificationFilterChange = onNotificationFilterChange,
-                        onMarkNotificationsRead = onMarkNotificationsRead,
-                        onNotificationPreferenceChange = onNotificationPreferenceChange,
-                        onEnableCallerId = onEnableCallerId,
-                        onTestCallerId = onTestCallerId,
-                        onShowCallerIdPreview = onShowCallerIdPreview,
-                        onCheckAppUpdate = onCheckAppUpdate,
-                        onInstallAppUpdate = onInstallAppUpdate,
-                        onOpenNotificationSettings = onOpenNotificationSettings,
-                        onOpenOverlaySettings = onOpenOverlaySettings,
-                        onOpenAppSystemSettings = onOpenAppSystemSettings,
-                        onDisconnect = onDisconnect,
+                    settingsState = settingsState,
+                    settingsContent = settingsContent,
+                    ordersState = ordersState,
+                    onSettingsAction = onSettingsAction,
+                    onDashboardAction = onDashboardAction,
+                    onOrdersAction = onOrdersAction,
+                    onProductsSearchChange = onProductsSearchChange,
+                    onProductsFilterChange = onProductsFilterChange,
+                    onLoadMoreProducts = onLoadMoreProducts,
+                    onToggleProductVariants = onToggleProductVariants,
+                    onQuickEditProduct = onQuickEditProduct,
+                    onQuickEditVariant = onQuickEditVariant,
+                    onCloseOverlay = onCloseOverlay,
+                    onNotificationFilterChange = onNotificationFilterChange,
+                    onMarkNotificationsRead = onMarkNotificationsRead,
                     )
                 }
             }
@@ -654,21 +468,10 @@ private fun AssistantContent(
     mobileNotifications: List<MobileAssistantNotification>,
     mobileNotificationsLoading: Boolean,
     mobileNotificationFilter: MobileNotificationFilter,
-    notificationPreferences: MobileNotificationPreferences,
-    callerIdTestPhone: String,
-    callerIdPreview: MobileCallerIdLookup?,
-    callerIdOperational: Boolean,
-    callerIdAvailable: Boolean,
-    canAutoOpenTasks: Boolean,
-    notificationAllowed: Boolean,
-    appVersionName: String,
-    appUpdate: MobileAppUpdate?,
-    appUpdateChecking: Boolean,
-    appUpdateDownloading: Boolean,
-    appUpdateDownloadProgress: Int,
-    appUpdateError: String,
+    settingsState: SettingsUiState,
+    settingsContent: SettingsContent,
     ordersState: OrdersUiState,
-    onCallerIdTestPhoneChange: (String) -> Unit,
+    onSettingsAction: (SettingsAction) -> Unit,
     onDashboardAction: (DashboardAction) -> Unit,
     onOrdersAction: (OrdersAction) -> Unit,
     onProductsSearchChange: (String) -> Unit,
@@ -680,16 +483,6 @@ private fun AssistantContent(
     onCloseOverlay: () -> Unit,
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
-    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
-    onEnableCallerId: () -> Unit,
-    onTestCallerId: () -> Unit,
-    onShowCallerIdPreview: () -> Unit,
-    onCheckAppUpdate: () -> Unit,
-    onInstallAppUpdate: () -> Unit,
-    onOpenNotificationSettings: () -> Unit,
-    onOpenOverlaySettings: () -> Unit,
-    onOpenAppSystemSettings: () -> Unit,
-    onDisconnect: () -> Unit,
 ) {
     val mobileMediaClient = remember(apiUrl, session.deviceId) {
         mobileApiClientForDevice(apiUrl, session.deviceId)
@@ -800,35 +593,11 @@ private fun AssistantContent(
                     dashboard = dashboard,
                     onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
                 )
-                MobileAssistantTab.MORE -> MoreTab(
+                MobileAssistantTab.MORE -> SettingsFeatureScreen(
                     colors = colors,
-                    session = session,
-                    dashboard = dashboard,
-                    statusMessage = statusMessage,
-                    callerIdTestPhone = callerIdTestPhone,
-                    callerIdPreview = callerIdPreview,
-                    callerIdOperational = callerIdOperational,
-                    callerIdAvailable = callerIdAvailable,
-                    canAutoOpenTasks = canAutoOpenTasks,
-                    notificationAllowed = notificationAllowed,
-                    notificationPreferences = notificationPreferences,
-                    appVersionName = appVersionName,
-                    appUpdate = appUpdate,
-                    appUpdateChecking = appUpdateChecking,
-                    appUpdateDownloading = appUpdateDownloading,
-                    appUpdateDownloadProgress = appUpdateDownloadProgress,
-                    appUpdateError = appUpdateError,
-                    onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
-                    onEnableCallerId = onEnableCallerId,
-                    onTestCallerId = onTestCallerId,
-                    onShowCallerIdPreview = onShowCallerIdPreview,
-                    onCheckAppUpdate = onCheckAppUpdate,
-                    onInstallAppUpdate = onInstallAppUpdate,
-                    onOpenNotificationSettings = onOpenNotificationSettings,
-                    onNotificationPreferenceChange = onNotificationPreferenceChange,
-                    onOpenOverlaySettings = onOpenOverlaySettings,
-                    onOpenAppSystemSettings = onOpenAppSystemSettings,
-                    onDisconnect = onDisconnect,
+                    state = settingsState,
+                    content = settingsContent,
+                    onAction = onSettingsAction,
                 )
             }
         }
@@ -1805,607 +1574,6 @@ private fun LegacyNotificationsList(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun MoreTab(
-    colors: DlaFlowComposeColors,
-    session: MobileSession,
-    dashboard: DashboardContent?,
-    statusMessage: String,
-    callerIdTestPhone: String,
-    callerIdPreview: MobileCallerIdLookup?,
-    callerIdOperational: Boolean,
-    callerIdAvailable: Boolean,
-    canAutoOpenTasks: Boolean,
-    notificationAllowed: Boolean,
-    notificationPreferences: MobileNotificationPreferences,
-    appVersionName: String,
-    appUpdate: MobileAppUpdate?,
-    appUpdateChecking: Boolean,
-    appUpdateDownloading: Boolean,
-    appUpdateDownloadProgress: Int,
-    appUpdateError: String,
-    onCallerIdTestPhoneChange: (String) -> Unit,
-    onEnableCallerId: () -> Unit,
-    onTestCallerId: () -> Unit,
-    onShowCallerIdPreview: () -> Unit,
-    onCheckAppUpdate: () -> Unit,
-    onInstallAppUpdate: () -> Unit,
-    onOpenNotificationSettings: () -> Unit,
-    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
-    onOpenOverlaySettings: () -> Unit,
-    onOpenAppSystemSettings: () -> Unit,
-    onDisconnect: () -> Unit,
-) {
-    val callerIdLabel = dashboard?.callerIdStatus?.label ?: if (callerIdOperational) "Włączone" else "Do włączenia"
-    var selectedSettingsKind by remember { mutableStateOf<MobileMoreSettingsKind?>(null) }
-    val settingsItems = buildMobileMoreSettingsItems(
-        appVersionName = appVersionName,
-        callerIdLabel = callerIdLabel,
-        canAutoOpenTasks = canAutoOpenTasks,
-        updateAvailable = appUpdate != null,
-        notificationPreferences = notificationPreferences,
-    )
-    val displayName = dashboard?.userName?.takeIf { it.isNotBlank() }
-        ?: session.userEmail.substringBefore("@").replaceFirstChar { char -> char.uppercase(Locale("pl", "PL")) }
-    val tenantName = dashboard?.tenantName?.takeIf { it.isNotBlank() } ?: session.tenantName.ifBlank { "DlaFlow" }
-
-    BackHandler(enabled = selectedSettingsKind != null) {
-        selectedSettingsKind = null
-    }
-
-    val selectedKind = selectedSettingsKind
-    if (selectedKind != null) {
-        val detail = buildMobileMoreSettingsDetail(
-            kind = selectedKind,
-            userName = displayName,
-            userEmail = session.userEmail,
-            tenantName = tenantName,
-            deviceName = session.deviceName,
-            appVersionName = appVersionName,
-            callerIdLabel = callerIdLabel,
-            notificationAllowed = notificationAllowed,
-            canAutoOpenTasks = canAutoOpenTasks,
-            updateAvailable = appUpdate != null,
-            notificationPreferences = notificationPreferences,
-        )
-
-        MoreSettingsDetailScreen(
-            colors = colors,
-            detail = detail,
-            callerIdTestPhone = callerIdTestPhone,
-            callerIdPreview = callerIdPreview,
-            appVersionName = appVersionName,
-            appUpdate = appUpdate,
-            appUpdateChecking = appUpdateChecking,
-            appUpdateDownloading = appUpdateDownloading,
-            appUpdateDownloadProgress = appUpdateDownloadProgress,
-            appUpdateError = appUpdateError,
-            statusMessage = statusMessage,
-            callerIdAvailable = callerIdAvailable,
-            callerIdOperational = callerIdOperational,
-            onBack = { selectedSettingsKind = null },
-            onCallerIdTestPhoneChange = onCallerIdTestPhoneChange,
-            onEnableCallerId = onEnableCallerId,
-            onTestCallerId = onTestCallerId,
-            onShowCallerIdPreview = onShowCallerIdPreview,
-            onCheckAppUpdate = onCheckAppUpdate,
-            onInstallAppUpdate = onInstallAppUpdate,
-            onOpenNotificationSettings = onOpenNotificationSettings,
-            notificationPreferences = notificationPreferences,
-            onNotificationPreferenceChange = onNotificationPreferenceChange,
-            onOpenOverlaySettings = onOpenOverlaySettings,
-            onOpenAppSystemSettings = onOpenAppSystemSettings,
-            onDisconnect = onDisconnect,
-        )
-        return
-    }
-
-    SectionTitle(colors, "Ustawienia", "Konto, telefon i aplikacja")
-    MoreAccountCard(colors, session, dashboard)
-    MoreSettingsList(colors, settingsItems, onSelect = { selectedSettingsKind = it })
-    DlaFlowCard(colors) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            DlaFlowIcon(Icons.Rounded.PhoneAndroid, colors.primary, modifier = Modifier.size(38.dp))
-            Spacer(Modifier.width(11.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Status telefonu", color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                Text(statusMessage.ifBlank { "Telefon działa normalnie." }, color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 16.sp)
-            }
-        }
-        Spacer(Modifier.height(14.dp))
-        MoreDangerButton(colors, "Wyloguj się", onDisconnect)
-    }
-    Spacer(Modifier.height(92.dp))
-}
-
-@Composable
-private fun NotificationPreferenceSettings(
-    colors: DlaFlowComposeColors,
-    preferences: MobileNotificationPreferences,
-    onPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
-) {
-    DlaFlowCard(colors) {
-        Text(
-            text = "Co ma przychodzić na telefon",
-            color = colors.textStrong,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.ExtraBold,
-        )
-        Text(
-            text = mobileNotificationPreferenceSummary(preferences),
-            color = colors.textMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 15.sp,
-        )
-        Spacer(Modifier.height(8.dp))
-        MobileNotificationCategory.entries.forEachIndexed { index, category ->
-            if (index > 0) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .height(1.dp)
-                        .background(colors.borderSubtle),
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 58.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = category.label,
-                        color = colors.textStrong,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 16.sp,
-                    )
-                    Text(
-                        text = category.description,
-                        color = colors.textMuted,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 14.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Switch(
-                    checked = preferences.isEnabled(category),
-                    onCheckedChange = { enabled -> onPreferenceChange(category, enabled) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = colors.primary,
-                        uncheckedThumbColor = colors.textMuted,
-                        uncheckedTrackColor = colors.surfaceSubtle,
-                        uncheckedBorderColor = colors.border,
-                    ),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoreSettingsDetailScreen(
-    colors: DlaFlowComposeColors,
-    detail: MobileMoreSettingsDetail,
-    callerIdTestPhone: String,
-    callerIdPreview: MobileCallerIdLookup?,
-    appVersionName: String,
-    appUpdate: MobileAppUpdate?,
-    appUpdateChecking: Boolean,
-    appUpdateDownloading: Boolean,
-    appUpdateDownloadProgress: Int,
-    appUpdateError: String,
-    statusMessage: String,
-    callerIdAvailable: Boolean,
-    callerIdOperational: Boolean,
-    notificationPreferences: MobileNotificationPreferences,
-    onBack: () -> Unit,
-    onCallerIdTestPhoneChange: (String) -> Unit,
-    onEnableCallerId: () -> Unit,
-    onTestCallerId: () -> Unit,
-    onShowCallerIdPreview: () -> Unit,
-    onCheckAppUpdate: () -> Unit,
-    onInstallAppUpdate: () -> Unit,
-    onOpenNotificationSettings: () -> Unit,
-    onNotificationPreferenceChange: (MobileNotificationCategory, Boolean) -> Unit,
-    onOpenOverlaySettings: () -> Unit,
-    onOpenAppSystemSettings: () -> Unit,
-    onDisconnect: () -> Unit,
-) {
-    TextButton(
-        onClick = onBack,
-        colors = ButtonDefaults.textButtonColors(contentColor = colors.primary),
-        contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-            contentDescription = null,
-            tint = colors.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(4.dp))
-        Text("Wróć", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-    }
-    Text(
-        text = detail.title,
-        color = colors.textStrong,
-        fontSize = 21.sp,
-        fontFamily = DlaFlowInter,
-        fontWeight = FontWeight.ExtraBold,
-        letterSpacing = 0.sp,
-        lineHeight = 26.sp,
-    )
-    Text(
-        text = detail.description,
-        color = colors.textMuted,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        lineHeight = 17.sp,
-    )
-
-    DlaFlowCard(colors) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            DlaFlowIcon(moreSettingsIcon(detail.kind), colors.primary, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(detail.title, color = colors.textStrong, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
-                Text(detail.description, color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
-            }
-        }
-        Spacer(Modifier.height(13.dp))
-        detail.rows.forEachIndexed { index, row ->
-            MoreDetailRow(colors, row.first, row.second)
-            if (index < detail.rows.lastIndex) {
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-        if (detail.kind == MobileMoreSettingsKind.APP) {
-            CompactAppSettingsActions(
-                colors = colors,
-                detail = detail,
-                appUpdate = appUpdate,
-                checking = appUpdateChecking,
-                downloading = appUpdateDownloading,
-                downloadProgress = appUpdateDownloadProgress,
-                error = appUpdateError,
-                onCheckAppUpdate = onCheckAppUpdate,
-                onInstallAppUpdate = onInstallAppUpdate,
-                onOpenAppSystemSettings = onOpenAppSystemSettings,
-            )
-        }
-    }
-
-    when (detail.kind) {
-        MobileMoreSettingsKind.NOTIFICATIONS -> {
-            NotificationPreferenceSettings(
-                colors = colors,
-                preferences = notificationPreferences,
-                onPreferenceChange = onNotificationPreferenceChange,
-            )
-            Spacer(Modifier.height(10.dp))
-            DlaFlowPrimaryButton(colors, Icons.Rounded.NotificationsNone, "Ustawienia powiadomień", onClick = onOpenNotificationSettings)
-        }
-        MobileMoreSettingsKind.PREFERENCES -> {
-            if (detail.primaryActionLabel != null) {
-                DlaFlowPrimaryButton(colors, Icons.Rounded.Tune, detail.primaryActionLabel, onClick = onOpenOverlaySettings)
-            }
-        }
-        MobileMoreSettingsKind.APP -> Unit
-        MobileMoreSettingsKind.CALLER_ID -> {
-            DlaFlowCard(colors) {
-                if (callerIdAvailable && !callerIdOperational) {
-                    DlaFlowPrimaryButton(colors, Icons.Rounded.Call, "Włącz Caller ID", onClick = onEnableCallerId)
-                    Spacer(Modifier.height(10.dp))
-                }
-                DlaFlowTextField(colors, "Numer telefonu", callerIdTestPhone, onCallerIdTestPhoneChange)
-                Spacer(Modifier.height(10.dp))
-                DlaFlowSecondaryButton(colors, Icons.Rounded.Call, "Sprawdź numer", onClick = onTestCallerId)
-                val preview = callerIdPreview
-                if (preview != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = preview.primaryOrder?.let { "${preview.displayName.ifBlank { preview.phone }} · #${it.orderNumber} · ${it.status}" }
-                            ?: "Brak zamówienia dla ${preview.phone}.",
-                        color = colors.textStrong,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (preview.primaryOrder != null) {
-                        Spacer(Modifier.height(10.dp))
-                        DlaFlowPrimaryButton(colors, Icons.Rounded.Call, "Pokaż kartę połączenia", onClick = onShowCallerIdPreview)
-                    }
-                }
-            }
-        }
-        MobileMoreSettingsKind.SECURITY -> {
-            DlaFlowCard(colors) {
-                Text("Odłączenie telefonu usuwa lokalną sesję i wyrejestruje urządzenie w panelu.", color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp)
-                Spacer(Modifier.height(12.dp))
-                MoreDangerButton(colors, detail.dangerActionLabel ?: "Odłącz telefon", onDisconnect)
-            }
-        }
-        MobileMoreSettingsKind.ACCOUNT,
-        MobileMoreSettingsKind.INTEGRATIONS,
-        MobileMoreSettingsKind.TEAM -> {
-            DlaFlowCard(colors) {
-                Text(
-                    text = when (detail.kind) {
-                        MobileMoreSettingsKind.INTEGRATIONS -> "Zmiany integracji wykonuj w panelu DlaFlow. Telefon pokazuje tutaj status połączenia z wtyczką."
-                        MobileMoreSettingsKind.TEAM -> "Role, uprawnienia i skład zespołu zmieniaj w panelu. Aplikacja pokazuje tylko konto używane na tym telefonie."
-                        else -> "Dane konta są pobierane z panelu DlaFlow. Edycja profilu pozostaje po stronie panelu."
-                    },
-                    color = colors.textMuted,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    lineHeight = 17.sp,
-                )
-            }
-        }
-    }
-
-    if (detail.kind == MobileMoreSettingsKind.CALLER_ID && statusMessage.isNotBlank()) {
-        DlaFlowStatusStrip(colors, statusMessage)
-    }
-    Spacer(Modifier.height(92.dp))
-}
-
-@Composable
-private fun CompactAppSettingsActions(
-    colors: DlaFlowComposeColors,
-    detail: MobileMoreSettingsDetail,
-    appUpdate: MobileAppUpdate?,
-    checking: Boolean,
-    downloading: Boolean,
-    downloadProgress: Int,
-    error: String,
-    onCheckAppUpdate: () -> Unit,
-    onInstallAppUpdate: () -> Unit,
-    onOpenAppSystemSettings: () -> Unit,
-) {
-    Spacer(Modifier.height(12.dp))
-    val update = appUpdate
-    if (update != null) {
-        Text(update.releaseTitle, color = colors.textStrong, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
-        Text(
-            "Dostępna wersja ${update.latestVersionName} · ${formatMobileUpdateBytes(update.sizeBytes)}",
-            color = colors.textMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            lineHeight = 15.sp,
-        )
-        Spacer(Modifier.height(10.dp))
-    }
-    if (downloading) {
-        MobileUpdateProgress(colors, downloadProgress)
-        Spacer(Modifier.height(10.dp))
-    }
-    if (error.isNotBlank()) {
-        Text(error, color = colors.danger, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
-        Spacer(Modifier.height(10.dp))
-    }
-    val primaryLabel = when {
-        downloading -> "Pobieranie..."
-        checking -> "Sprawdzam..."
-        update != null -> "Zaktualizuj"
-        else -> detail.primaryActionLabel ?: "Sprawdź aktualizację"
-    }
-    DlaFlowPrimaryButton(
-        colors = colors,
-        icon = Icons.Rounded.Refresh,
-        text = primaryLabel,
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !checking && !downloading,
-        onClick = if (update != null) onInstallAppUpdate else onCheckAppUpdate,
-    )
-    Spacer(Modifier.height(8.dp))
-    DlaFlowSecondaryButton(
-        colors = colors,
-        icon = Icons.Rounded.Settings,
-        text = detail.secondaryActionLabel ?: "Ustawienia systemowe",
-        modifier = Modifier.fillMaxWidth(),
-        onClick = onOpenAppSystemSettings,
-    )
-}
-
-@Composable
-private fun MoreDetailRow(colors: DlaFlowComposeColors, label: String, value: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surfaceSubtle)
-            .border(1.dp, colors.border.copy(alpha = 0.62f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = label,
-            color = colors.textMuted,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(0.42f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = value,
-            color = colors.textStrong,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.ExtraBold,
-            textAlign = TextAlign.End,
-            modifier = Modifier.weight(0.58f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun MoreAccountCard(
-    colors: DlaFlowComposeColors,
-    session: MobileSession,
-    dashboard: DashboardContent?,
-) {
-    val displayName = dashboard?.userName?.takeIf { it.isNotBlank() }
-        ?: session.userEmail.substringBefore("@").replaceFirstChar { char -> char.uppercase(Locale("pl", "PL")) }
-    val tenantName = dashboard?.tenantName?.takeIf { it.isNotBlank() } ?: session.tenantName.ifBlank { "DlaFlow" }
-
-    DlaFlowCard(colors) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.linearGradient(
-                            listOf(colors.primary, colors.primary.copy(alpha = 0.72f)),
-                        ),
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = displayName.take(1).uppercase(Locale("pl", "PL")),
-                    color = Color.White,
-                    fontSize = 21.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-            }
-            Spacer(Modifier.width(13.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = displayName,
-                    color = colors.textStrong,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = tenantName,
-                    color = colors.textMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = session.userEmail,
-                    color = colors.textMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            DlaFlowStatusBadge(colors, "Połączono")
-        }
-    }
-}
-
-@Composable
-private fun MoreSettingsList(
-    colors: DlaFlowComposeColors,
-    items: List<MobileMoreSettingsItem>,
-    onSelect: (MobileMoreSettingsKind) -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.surface)
-            .border(1.dp, colors.border, RoundedCornerShape(8.dp)),
-    ) {
-        items.forEachIndexed { index, item ->
-            MoreSettingsRow(colors, item, onClick = { onSelect(item.kind) })
-            if (index < items.lastIndex) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .padding(start = 58.dp)
-                        .background(colors.border.copy(alpha = 0.72f)),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MoreSettingsRow(colors: DlaFlowComposeColors, item: MobileMoreSettingsItem, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        DlaFlowIcon(moreSettingsIcon(item.kind), colors.primary, modifier = Modifier.size(32.dp))
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = colors.textStrong,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = item.subtitle,
-                color = colors.textMuted,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Icon(
-            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-            contentDescription = null,
-            tint = colors.textMuted.copy(alpha = 0.62f),
-            modifier = Modifier.size(18.dp),
-        )
-    }
-}
-
-private fun moreSettingsIcon(kind: MobileMoreSettingsKind): ImageVector = when (kind) {
-    MobileMoreSettingsKind.ACCOUNT -> Icons.Rounded.AccountCircle
-    MobileMoreSettingsKind.SECURITY -> Icons.Rounded.Security
-    MobileMoreSettingsKind.NOTIFICATIONS -> Icons.Rounded.NotificationsNone
-    MobileMoreSettingsKind.PREFERENCES -> Icons.Rounded.Tune
-    MobileMoreSettingsKind.INTEGRATIONS -> Icons.Rounded.Settings
-    MobileMoreSettingsKind.TEAM -> Icons.Rounded.Groups
-    MobileMoreSettingsKind.APP -> Icons.Rounded.PhoneAndroid
-    MobileMoreSettingsKind.CALLER_ID -> Icons.Rounded.Call
-}
-
-@Composable
-private fun MoreDangerButton(colors: DlaFlowComposeColors, text: String, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = colors.danger.copy(alpha = if (colors.dark) 0.14f else 0.06f),
-            contentColor = colors.danger,
-        ),
-        border = BorderStroke(1.dp, colors.danger.copy(alpha = 0.24f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(46.dp),
-    ) {
-        DlaFlowIcon(Icons.AutoMirrored.Rounded.Logout, colors.danger, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(text, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

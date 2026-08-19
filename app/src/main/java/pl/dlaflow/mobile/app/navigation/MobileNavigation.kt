@@ -17,6 +17,7 @@ enum class MobileAssistantBackAction {
     CLOSE_PAIRING_HELP,
     CLOSE_PAIRING_NAME,
     CLOSE_ORDER_DETAIL,
+    CLOSE_SETTINGS_DETAIL,
     CLOSE_OVERLAY,
     NONE,
 }
@@ -31,6 +32,7 @@ sealed interface MobileRoute {
         val selectedTab: MobileAssistantTab,
         val overlayScreen: MobileAssistantOverlayScreen = MobileAssistantOverlayScreen.NONE,
         val orderDetailVisible: Boolean = false,
+        val settingsDetailVisible: Boolean = false,
     ) : MobileRoute
 }
 
@@ -44,6 +46,7 @@ fun mobileAssistantBackAction(route: MobileRoute): MobileAssistantBackAction {
 
         is MobileRoute.Assistant -> when {
             route.overlayScreen != MobileAssistantOverlayScreen.NONE -> MobileAssistantBackAction.CLOSE_OVERLAY
+            route.selectedTab == MobileAssistantTab.MORE && route.settingsDetailVisible -> MobileAssistantBackAction.CLOSE_SETTINGS_DETAIL
             route.selectedTab == MobileAssistantTab.ORDERS && route.orderDetailVisible -> MobileAssistantBackAction.CLOSE_ORDER_DETAIL
             else -> MobileAssistantBackAction.NONE
         }

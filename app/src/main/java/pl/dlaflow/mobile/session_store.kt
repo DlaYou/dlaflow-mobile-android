@@ -121,7 +121,16 @@ class MobileSessionStore(context: Context) {
 
     fun clearSession() {
         val baseUrl = readBaseUrl()
+        val updateDismissalState = readUpdateDismissalState()
         preferences.edit().clear().putString("base_url", baseUrl).apply()
+        preserveUpdateDismissalState(updateDismissalState)
+    }
+
+    private fun preserveUpdateDismissalState(updateDismissalState: MobileAppUpdateDismissalState) {
+        preferences.edit()
+            .putInt("app_update_dismissed_version_code", updateDismissalState.versionCode)
+            .putInt("app_update_dismiss_count", updateDismissalState.count)
+            .apply()
     }
 
     private fun encryptToken(token: String): EncryptedToken {

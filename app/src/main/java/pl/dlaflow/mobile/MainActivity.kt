@@ -71,6 +71,23 @@ import pl.dlaflow.mobile.feature.scanner.ScannerAction
 import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
 import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
 import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
+import pl.dlaflow.mobile.feature.settings.SettingsAction
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdLookupRequest
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdOrder
+import pl.dlaflow.mobile.feature.settings.SettingsCallerIdPreview
+import pl.dlaflow.mobile.feature.settings.SettingsCoordinator
+import pl.dlaflow.mobile.feature.settings.SettingsDisconnectRequest
+import pl.dlaflow.mobile.feature.settings.SettingsEffect
+import pl.dlaflow.mobile.feature.settings.SettingsInput
+import pl.dlaflow.mobile.feature.settings.SettingsNotificationPreference
+import pl.dlaflow.mobile.feature.settings.SettingsStateHolder
+import pl.dlaflow.mobile.feature.settings.SettingsTextResolver
+import pl.dlaflow.mobile.feature.settings.SettingsUpdateInfo
+import pl.dlaflow.mobile.feature.settings.SettingsUpdateOperation
+import pl.dlaflow.mobile.feature.settings.buildSettingsContent
+import pl.dlaflow.mobile.feature.settings.launchFirstResolvedSettingsTarget
+import pl.dlaflow.mobile.feature.settings.normalizeSettingsCallerIdPhone
+import pl.dlaflow.mobile.feature.settings.settingsSignerSetsMatch
 
 class MainActivity : ComponentActivity() {
     private val cameraRequestCode = 4101
@@ -88,6 +105,16 @@ class MainActivity : ComponentActivity() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private val settingsStateHolder = SettingsStateHolder()
+    private val settingsCoordinator by lazy {
+        SettingsCoordinator(settingsStateHolder, ::handleSettingsEffect)
+    }
+    private var settingsSessionEpoch = 0L
+    private var nextCallerIdLookupRequestId = 0L
+    private var activeCallerIdLookupRequest: SettingsCallerIdLookupRequest? = null
+    private val settingsLifecycleId = System.nanoTime()
+    private var nextSettingsUpdateOperationId = 0L
+    private var activeSettingsUpdateOperation: SettingsUpdateOperation? = null
     private val scannerStateHolder = ScannerStateHolder()
     private val scannerCoordinator by lazy {
         ScannerCoordinator(
@@ -244,12 +271,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         stopPhotoTaskDispatchPolling()
+        settingsCoordinator.reset()
+        activeCallerIdLookupRequest = null
+        activeSettingsUpdateOperation = null
         executor.shutdownNow()
         super.onDestroy()
     }
 
     override fun onResume() {
         super.onResume()
+        render()
         val pendingFile = pendingInstallApkFile
         val pendingUpdate = pendingInstallUpdate
         if (pendingFile != null && pendingUpdate != null && canInstallMobileUpdates()) {
@@ -329,6 +360,79 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun replaceSettingsSession() {
+        settingsSessionEpoch += 1L
+        settingsCoordinator.replaceSession(settingsSessionEpoch)
+        activeCallerIdLookupRequest = null
+        callerIdPreview = null
+        clearAppUpdateState()
+    }
+
+    private fun settingsContent() = buildSettingsContent(
+        SettingsInput(
+            displayName = dashboardStateHolder.state.contentOrNull()?.userName.orEmpty(),
+            userEmail = session?.userEmail.orEmpty(),
+            tenantName = dashboardStateHolder.state.contentOrNull()?.tenantName ?: session?.tenantName.orEmpty(),
+            deviceName = session?.deviceName.orEmpty(),
+            phoneStatusMessage = statusMessage,
+            callerIdLabel = dashboardStateHolder.state.contentOrNull()?.callerIdStatus?.label
+                ?: getString(if (isCallerIdOperational()) R.string.settings_value_enabled else R.string.settings_caller_id_fallback),
+            callerIdPreview = callerIdPreview?.let { preview ->
+                SettingsCallerIdPreview(
+                    displayName = preview.displayName,
+                    phone = preview.phone,
+                    primaryOrder = preview.primaryOrder?.let { order -> SettingsCallerIdOrder(order.orderNumber, order.status) },
+                )
+            },
+            callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
+            callerIdOperational = isCallerIdOperational(),
+            canAutoOpenTasks = canDrawOverOtherApps(),
+            notificationAllowed = areNotificationsAllowed(),
+            appVersionName = currentAppVersionName(),
+            update = appUpdate?.let { SettingsUpdateInfo(it.releaseTitle, it.latestVersionName, it.sizeBytes.toLong()) },
+            updateChecking = appUpdateChecking,
+            updateDownloading = appUpdateDownloading,
+            updateDownloadProgress = appUpdateDownloadProgress,
+            updateError = appUpdateError,
+            textResolver = SettingsTextResolver { resourceId, arguments -> getString(resourceId, *arguments) },
+            notificationPreferenceSummary = mobileNotificationPreferenceSummary(notificationPreferences),
+            notificationPreferences = MobileNotificationCategory.entries.map { category ->
+                SettingsNotificationPreference(category.key, category.label, category.description, notificationPreferences.isEnabled(category))
+            },
+        ),
+    )
+
+    private fun handleSettingsAction(action: SettingsAction) {
+        settingsCoordinator.onAction(action, settingsContent())
+    }
+
+    private fun handleSettingsEffect(effect: SettingsEffect) {
+        when (effect) {
+            is SettingsEffect.CallerIdPhoneChanged -> {
+                activeCallerIdLookupRequest = null
+                callerIdPreview = null
+            }
+            SettingsEffect.EnableCallerId -> requestCallerIdRole()
+            is SettingsEffect.TestCallerId -> testCallerIdLookup(effect.phone)
+            SettingsEffect.ShowCallerIdPreview -> callerIdPreview?.let { preview ->
+                runCatching { startActivity(CallerIdActivity.createIntent(this, preview)) }
+                    .onFailure { setStatus(getString(R.string.settings_host_caller_card_open_failed)) }
+            }
+            SettingsEffect.CheckAppUpdate -> refreshAppUpdate(showStatus = true)
+            SettingsEffect.InstallAppUpdate -> installAppUpdate()
+            SettingsEffect.OpenNotificationSettings -> openNotificationSettings()
+            SettingsEffect.OpenOverlaySettings -> requestOverlayPermission()
+            SettingsEffect.OpenAppSystemSettings -> openAppSystemSettings()
+            is SettingsEffect.NotificationPreferenceChanged -> {
+                val category = MobileNotificationCategory.entries.firstOrNull { it.key == effect.key } ?: return
+                notificationPreferences = notificationPreferences.withEnabled(category, effect.enabled)
+                sessionStore.saveNotificationPreferences(notificationPreferences)
+                render()
+            }
+            is SettingsEffect.Disconnect -> disconnectLocalPhone(effect.request)
+        }
+    }
+
     private fun render() {
         val theme = mobileTheme()
         focusedPhotoTaskView = null
@@ -346,12 +450,8 @@ class MainActivity : ComponentActivity() {
                     selectedTab = selectedTab,
                     apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
                     pairingState = pairingStateHolder.state,
-                    callerIdTestPhone = callerIdTestPhoneValue,
-                    callerIdPreview = callerIdPreview,
-                    callerIdOperational = isCallerIdOperational(),
-                    callerIdAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && isCallerIdRoleAvailable(),
-                    canAutoOpenTasks = canDrawOverOtherApps(),
-                    notificationAllowed = areNotificationsAllowed(),
+                    settingsState = settingsStateHolder.state,
+                    settingsContent = settingsContent(),
                     appVersionName = currentAppVersionName(),
                     appUpdate = appUpdate,
                     appUpdateDialogVisible = appUpdateDialogVisible,
@@ -376,7 +476,6 @@ class MainActivity : ComponentActivity() {
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
-                    notificationPreferences = notificationPreferences,
                     onPairingCodeChange = pairingStateHolder::updateCode,
                     onContinuePairing = { pairingStateHolder.continueToName() },
                     onScanPairingQr = { scanPairingQr() },
@@ -384,9 +483,7 @@ class MainActivity : ComponentActivity() {
                     onSubmitPairing = { submitPairing() },
                     onShowPairingHelp = pairingStateHolder::showHelp,
                     onPairingBack = { pairingStateHolder.back() },
-                    onCallerIdTestPhoneChange = {
-                        callerIdTestPhoneValue = it
-                    },
+                    onSettingsAction = ::handleSettingsAction,
                     onDashboardAction = ::handleDashboardAction,
                     onSelectTab = {
                         selectedTab = it
@@ -417,22 +514,8 @@ class MainActivity : ComponentActivity() {
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
                     onNotificationFilterChange = { mobileNotificationFilter = it },
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
-                    onNotificationPreferenceChange = { category, enabled ->
-                        notificationPreferences = notificationPreferences.withEnabled(category, enabled)
-                        sessionStore.saveNotificationPreferences(notificationPreferences)
-                    },
-                    onEnableCallerId = { requestCallerIdRole() },
-                    onTestCallerId = { testCallerIdLookup() },
-                    onShowCallerIdPreview = {
-                        callerIdPreview?.let { startActivity(CallerIdActivity.createIntent(this@MainActivity, it)) }
-                    },
-                    onCheckAppUpdate = { refreshAppUpdate(showStatus = true) },
                     onInstallAppUpdate = { installAppUpdate() },
                     onDismissAppUpdate = { dismissAppUpdate() },
-                    onOpenNotificationSettings = { openNotificationSettings() },
-                    onOpenOverlaySettings = { requestOverlayPermission() },
-                    onOpenAppSystemSettings = { openAppSystemSettings() },
-                    onDisconnect = { disconnectLocalPhone() },
                 )
             }
         }
@@ -651,6 +734,7 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
+                        replaceSettingsSession()
                         dashboardCoordinator.reset()
                         ordersCoordinator.reset()
                         scannerCoordinator.reset()
@@ -708,6 +792,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePairingSuccess(baseUrl: String, nextSession: MobileSession) {
         sessionStore.saveSession(baseUrl, nextSession)
+        replaceSettingsSession()
         updateSessionTransition(activeStepIndex = 1, progress = 46)
         dashboardCoordinator.reset()
         ordersCoordinator.reset()
@@ -1338,7 +1423,7 @@ class MainActivity : ComponentActivity() {
             }.onFailure { error ->
                 runOnUiThread {
                     appUpdateDownloading = false
-                    appUpdateError = error.message ?: "Nie udało się pobrać aktualizacji."
+                    appUpdateError = "Nie udało się pobrać aktualizacji."
                     setStatus(appUpdateError)
                 }
             }
@@ -1920,11 +2005,37 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+        openResolvedSystemSettings(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+            getString(R.string.settings_host_overlay_settings_open_failed),
+        )
     }
 
     private fun openAppSystemSettings() {
-        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        openResolvedSystemSettings(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+            getString(R.string.settings_host_app_settings_open_failed),
+            allowApplicationFallback = false,
+        )
+    }
+
+    private fun openResolvedSystemSettings(
+        intent: Intent,
+        failureMessage: String,
+        allowApplicationFallback: Boolean = true,
+    ): Boolean {
+        val candidates = buildList {
+            add(intent)
+            if (allowApplicationFallback) add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        }
+        val result = launchFirstResolvedSettingsTarget(
+            candidates = candidates,
+            canResolve = { it.resolveActivity(packageManager) != null },
+            launch = ::startActivity,
+        )
+        if (result.candidateIndex == 1) setStatus(getString(R.string.settings_host_system_settings_fallback_opened))
+        if (!result.launched) setStatus(failureMessage)
+        return result.launched
     }
 
     private fun canDrawOverOtherApps(): Boolean {
@@ -1939,32 +2050,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun testCallerIdLookup() {
+    private fun testCallerIdLookup(requestedPhone: String? = null) {
         val currentSession = session ?: return
-        val phone = callerIdTestPhoneValue.trim()
+        val phone = (requestedPhone ?: callerIdTestPhoneValue).trim()
         if (phone.isBlank()) {
             setStatus("Wpisz numer do testu Caller ID.")
             return
         }
 
+        val request = SettingsCallerIdLookupRequest(++nextCallerIdLookupRequestId, settingsSessionEpoch, phone)
+        activeCallerIdLookupRequest = request
+        callerIdPreview = null
         setStatus("Sprawdzam numer...")
         executor.execute {
             runCatching {
                 mobileApiClientForSession(sessionStore).lookupCallerId(currentSession.token, phone)
             }.onSuccess { lookup ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if (activeCallerIdLookupRequest != request || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
+                    activeCallerIdLookupRequest = null
                     callerIdPreview = lookup
                     render()
                     setStatus(if (lookup.primaryOrder == null) "Brak zamówienia dla numeru." else "Znaleziono zamówienie.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if (activeCallerIdLookupRequest != request || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
+                    activeCallerIdLookupRequest = null
                     handleMobileApiFailure(error, "Nie udało się sprawdzić numeru.")
                 }
             }
@@ -2045,7 +2161,7 @@ class MainActivity : ComponentActivity() {
 
     private fun mobileApiBusinessMessage(error: Throwable, fallbackMessage: String): String {
         if (error !is MobileApiException) {
-            return error.message ?: fallbackMessage
+            return fallbackMessage
         }
 
         return when (error.statusCode) {
@@ -2133,11 +2249,13 @@ class MainActivity : ComponentActivity() {
         setStatus(message)
     }
 
-    private fun disconnectLocalPhone() {
+    private fun disconnectLocalPhone(request: SettingsDisconnectRequest? = null) {
         val currentSession = session
 
         if (currentSession == null) {
-            clearDisconnectedSession("Telefon odłączony. Sparuj go ponownie w panelu.")
+            if (request == null || settingsCoordinator.acceptsDisconnectSuccess(request)) {
+                clearDisconnectedSession("Telefon odłączony. Sparuj go ponownie w panelu.")
+            }
             return
         }
 
@@ -2147,14 +2265,14 @@ class MainActivity : ComponentActivity() {
                 mobileApiClientForSession(sessionStore).revokeCurrentDevice(currentSession.token)
             }.onSuccess {
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if ((request != null && !settingsCoordinator.acceptsDisconnectSuccess(request)) || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
                     clearDisconnectedSession("Telefon odłączony. Panel nie będzie go już pokazywać.")
                 }
             }.onFailure { error ->
                 runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
+                    if ((request != null && !settingsCoordinator.acceptDisconnectFailure(request)) || !isCurrentSessionToken(currentSession.token)) {
                         return@runOnUiThread
                     }
                     if (!handleMobileApiFailure(error, "Nie udało się odłączyć telefonu w panelu. Sprawdź połączenie i spróbuj ponownie.")) {
