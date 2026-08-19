@@ -66,41 +66,11 @@ import pl.dlaflow.mobile.feature.pairing.PairingCoordinator
 import pl.dlaflow.mobile.feature.pairing.PairingGateway
 import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
 import pl.dlaflow.mobile.feature.pairing.pairingSmokeSeed
-
-sealed interface MobileLaunchPackageScanAction {
-    data object None : MobileLaunchPackageScanAction
-    data class StartLookup(val code: String) : MobileLaunchPackageScanAction
-    data class WaitForSession(val code: String) : MobileLaunchPackageScanAction
-}
-
-fun resolveLaunchPackageScanAction(
-    rawCode: String?,
-    hasActiveSession: Boolean,
-    hasSavedSession: Boolean,
-): MobileLaunchPackageScanAction {
-    val code = rawCode?.trim().orEmpty()
-    if (code.isBlank()) {
-        return MobileLaunchPackageScanAction.None
-    }
-
-    return if (hasActiveSession || !hasSavedSession) {
-        MobileLaunchPackageScanAction.StartLookup(code)
-    } else {
-        MobileLaunchPackageScanAction.WaitForSession(code)
-    }
-}
-
-fun shouldConsumePendingLaunchPackageScan(
-    pendingCode: String?,
-    hasActiveSession: Boolean,
-    hasSavedSession: Boolean,
-): Boolean {
-    return resolveLaunchPackageScanAction(
-        rawCode = pendingCode,
-        hasActiveSession = hasActiveSession,
-        hasSavedSession = hasSavedSession,
-    ) is MobileLaunchPackageScanAction.StartLookup
-}
+import pl.dlaflow.mobile.feature.scanner.MobileApiScannerGateway
+import pl.dlaflow.mobile.feature.scanner.ScannerAction
+import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
+import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
+import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
 
 class MainActivity : ComponentActivity() {
     private val cameraRequestCode = 4101
@@ -118,6 +88,22 @@ class MainActivity : ComponentActivity() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private val scannerStateHolder = ScannerStateHolder()
+    private val scannerCoordinator by lazy {
+        ScannerCoordinator(
+            stateHolder = scannerStateHolder,
+            gateway = MobileApiScannerGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onFeedback = ::handleScannerFeedback,
+            onRequestCapture = ::scanPackageCode,
+            onOpenOrder = { orderNumber ->
+                selectedTab = MobileAssistantTab.ORDERS
+                handleOrdersAction(OrdersAction.OpenOrder(orderNumber))
+            },
+            onUnauthorized = ::handleScannerUnauthorized,
+        )
+    }
     private val dashboardStateHolder = DashboardStateHolder()
     private val dashboardCoordinator by lazy {
         DashboardCoordinator(
@@ -174,7 +160,6 @@ class MainActivity : ComponentActivity() {
     private var callerIdTestPhoneValue by mutableStateOf("")
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
-    private var packageScanState by mutableStateOf<MobilePackageScanUiState>(MobilePackageScanUiState.Empty)
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -209,7 +194,6 @@ class MainActivity : ComponentActivity() {
     private var pendingSmokeApiUrl: String? = null
     private var pendingSmokePairingCode: String? = null
     private var pendingSmokePairingDeviceName: String? = null
-    private var pendingLaunchPackageCode: String? = null
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
     private var session by mutableStateOf<MobileSession?>(null)
@@ -239,7 +223,6 @@ class MainActivity : ComponentActivity() {
                 setStatus("Przygotowujemy aplikację...")
                 completeSessionTransition {
                     setStatus("")
-                    consumePendingLaunchPackageScan()
                 }
             }
         }
@@ -252,15 +235,6 @@ class MainActivity : ComponentActivity() {
         render()
         if (consumeSmokePairingIntent()) {
             return
-        }
-        if (
-            shouldConsumePendingLaunchPackageScan(
-                pendingCode = pendingLaunchPackageCode,
-                hasActiveSession = session != null,
-                hasSavedSession = sessionStore.readToken().isNotBlank(),
-            )
-        ) {
-            consumePendingLaunchPackageScan()
         }
         refreshPhotoTasks(showLoading = false)
         if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -291,7 +265,7 @@ class MainActivity : ComponentActivity() {
         val pairingScan = IntentIntegrator.parseActivityResult(requestCode, resultCode, data)
         if (pairingScan != null) {
             if (pendingQrScanMode == QrScanMode.PACKAGE) {
-                handlePackageQrResult(pairingScan.contents)
+                handlePackageScanCapture(pairingScan.contents)
             } else {
                 handlePairingQrResult(pairingScan.contents)
             }
@@ -367,7 +341,7 @@ class MainActivity : ComponentActivity() {
                     session = session,
                     dashboardState = dashboardStateHolder.state,
                     photoTasks = orderedPhotoTasks(),
-                    packageScanState = packageScanState,
+                    scannerState = scannerStateHolder.state,
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     apiUrl = apiUrlValue.ifBlank { sessionStore.readBaseUrl() },
@@ -679,10 +653,12 @@ class MainActivity : ComponentActivity() {
                     if (session?.token != verifiedSession.token) {
                         dashboardCoordinator.reset()
                         ordersCoordinator.reset()
+                        scannerCoordinator.reset()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
                     }
                     session = verifiedSession
+                    scannerCoordinator.resumePendingLaunch(verifiedSession.token)
                     syncPushInstallation(verifiedSession)
                     render()
                     showSessionTransition(activeStepIndex = 2, progress = 78)
@@ -694,7 +670,6 @@ class MainActivity : ComponentActivity() {
                         dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
                         refreshPhotoTasks(showLoading = false)
                         refreshAppUpdate(showStatus = false)
-                        consumePendingLaunchPackageScan()
                         if (selectedTab == MobileAssistantTab.ORDERS) {
                             ensureOrdersLoaded()
                         }
@@ -705,7 +680,7 @@ class MainActivity : ComponentActivity() {
                     if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.", confirmUnauthorized = false)) {
                         hideSessionTransition()
                     }
-                    failPendingLaunchPackageScan(mobileApiBusinessMessage(it, "Nie udało się sprawdzić paczki."))
+                    scannerCoordinator.failPendingLaunch()
                 }
             }
         }
@@ -736,6 +711,7 @@ class MainActivity : ComponentActivity() {
         updateSessionTransition(activeStepIndex = 1, progress = 46)
         dashboardCoordinator.reset()
         ordersCoordinator.reset()
+        scannerCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
@@ -781,80 +757,47 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handlePackageQrResult(rawValue: String?) {
-        val code = rawValue?.trim().orEmpty()
-        if (code.isBlank()) {
-            setStatus("Nie odczytano kodu paczki.")
-            return
-        }
-
+    private fun handlePackageScanCapture(rawValue: String?) {
         selectedTab = MobileAssistantTab.ORDERS
-        packageScanState = MobilePackageScanUiState.Loading(code)
-        setStatus("Sprawdzam paczkę w DlaFlow.")
-
-        val currentSession = session
-        if (currentSession == null) {
-            packageScanState = MobilePackageScanUiState.Failed(code, "Telefon nie jest połączony z panelem.")
-            setStatus("Telefon nie jest połączony z panelem.")
-            return
-        }
-
-        executor.execute {
-            runCatching {
-                mobileApiClientForSession(sessionStore).scanPackage(currentSession.token, code)
-            }.onSuccess { result ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    packageScanState = MobilePackageScanUiState.Resolved(result)
-                    setStatus(
-                        when {
-                            result.matched && result.ambiguous -> "Znaleziono kilka możliwych paczek w DlaFlow."
-                            result.matched -> "Paczka znaleziona w DlaFlow."
-                            else -> "Nie znaleziono paczki w DlaFlow."
-                        }
-                    )
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    if (!isCurrentSessionToken(currentSession.token)) {
-                        return@runOnUiThread
-                    }
-                    val fallbackMessage = "Nie udało się sprawdzić paczki."
-                    val message = mobileApiBusinessMessage(error, fallbackMessage)
-                    val handled = handleMobileApiFailure(error, fallbackMessage)
-                    packageScanState = MobilePackageScanUiState.Failed(code, message)
-                    if (!handled) {
-                        setStatus(message)
-                    }
-                }
-            }
-        }
+        scannerCoordinator.acceptCapture(
+            rawCode = rawValue,
+            token = session?.token,
+            hasSavedSession = sessionStore.readToken().isNotBlank(),
+        )
     }
 
-    private fun consumePendingLaunchPackageScan() {
-        val code = pendingLaunchPackageCode?.trim().orEmpty()
-        if (code.isBlank()) {
-            pendingLaunchPackageCode = null
-            return
-        }
-
-        pendingLaunchPackageCode = null
-        handlePackageQrResult(code)
+    private fun handleScannerAction(action: ScannerAction) {
+        scannerCoordinator.handleAction(action)
     }
 
-    private fun failPendingLaunchPackageScan(message: String) {
-        val code = pendingLaunchPackageCode?.trim().orEmpty()
-        if (code.isBlank()) {
-            pendingLaunchPackageCode = null
-            return
-        }
+    private fun handleScannerFeedback(feedback: ScannerFeedback) {
+        setStatus(
+            when (feedback) {
+                ScannerFeedback.CAPTURE_EMPTY -> "Nie odczytano kodu paczki."
+                ScannerFeedback.WAITING_FOR_SESSION,
+                ScannerFeedback.LOOKUP_LOADING -> "Sprawdzam paczkę w DlaFlow."
+                ScannerFeedback.MATCHED -> "Paczka znaleziona w DlaFlow."
+                ScannerFeedback.AMBIGUOUS -> "Znaleziono kilka możliwych paczek w DlaFlow."
+                ScannerFeedback.NO_MATCH -> "Nie znaleziono paczki w DlaFlow."
+                ScannerFeedback.LOAD_FAILED -> "Nie udało się sprawdzić paczki."
+            },
+        )
+        render()
+    }
 
-        pendingLaunchPackageCode = null
-        selectedTab = MobileAssistantTab.ORDERS
-        packageScanState = MobilePackageScanUiState.Failed(code, message)
-        setStatus(message)
+    private fun handleScannerUnauthorized(
+        error: Throwable,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się sprawdzić paczki.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
     }
 
     private fun handleDashboardAction(action: DashboardAction) {
@@ -868,7 +811,7 @@ class MainActivity : ComponentActivity() {
                 }
                 refreshAppUpdate(showStatus = false)
             }
-            DashboardAction.ScanPackage -> scanPackageCode()
+            DashboardAction.ScanPackage -> handleScannerAction(ScannerAction.RequestCapture)
             DashboardAction.OpenProductWork -> {
                 val decision = chooseProductPhotoTaskAction(
                     activeTaskIds = orderedPhotoTasks().map { it.id },
@@ -1685,24 +1628,19 @@ class MainActivity : ComponentActivity() {
             selectedTab = MobileAssistantTab.PRODUCTS
             statusMessage = "Otwieram zadanie zdjęciowe z panelu."
         }
-        when (
-            val packageScanAction = resolveLaunchPackageScanAction(
-                rawCode = intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode),
-                hasActiveSession = session != null,
+        val smokePackageCode = if (BuildConfig.DEBUG) {
+            intent?.getStringExtra(DlaFlowDeepLinks.extraSmokePackageCode).orEmpty()
+        } else {
+            ""
+        }
+        if (smokePackageCode.isNotBlank()) {
+            intent?.removeExtra(DlaFlowDeepLinks.extraSmokePackageCode)
+            selectedTab = MobileAssistantTab.ORDERS
+            scannerCoordinator.acceptLaunch(
+                rawCode = smokePackageCode,
+                activeToken = session?.token,
                 hasSavedSession = sessionStore.readToken().isNotBlank(),
             )
-        ) {
-            MobileLaunchPackageScanAction.None -> Unit
-            is MobileLaunchPackageScanAction.StartLookup -> {
-                pendingLaunchPackageCode = null
-                handlePackageQrResult(packageScanAction.code)
-            }
-            is MobileLaunchPackageScanAction.WaitForSession -> {
-                pendingLaunchPackageCode = packageScanAction.code
-                packageScanState = MobilePackageScanUiState.Loading(packageScanAction.code)
-                selectedTab = MobileAssistantTab.ORDERS
-                statusMessage = "Sprawdzam paczkę w DlaFlow."
-            }
         }
         val smokeApiUrl = intent?.getStringExtra(extraSmokeApiUrl).orEmpty()
         val smokePairingCode = intent?.getStringExtra(extraSmokePairingCode).orEmpty()
@@ -2175,7 +2113,7 @@ class MainActivity : ComponentActivity() {
         focusedPhotoTaskId = null
         focusedPhotoTaskView = null
         lastDispatchedPhotoTaskId = null
-        packageScanState = MobilePackageScanUiState.Empty
+        scannerCoordinator.reset()
         clearAppUpdateState()
         ordersCoordinator.reset()
         clearMobileProductsState()

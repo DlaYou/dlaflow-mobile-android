@@ -160,21 +160,17 @@ import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerState
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersUiState
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
+import pl.dlaflow.mobile.core.state.DlaFlowUiState
 import pl.dlaflow.mobile.feature.pairing.PairingFeatureScreen
 import pl.dlaflow.mobile.feature.pairing.PairingStep
 import pl.dlaflow.mobile.feature.pairing.PairingUiState
+import pl.dlaflow.mobile.feature.scanner.ScannerMatchKind
+import pl.dlaflow.mobile.feature.scanner.ScannerUiState
 
 enum class MobileNotificationFilter(val label: String) {
     ALL("Wszystkie"),
     ATTENTION("Wymaga uwagi"),
     UNREAD("Nowe"),
-}
-
-sealed class MobilePackageScanUiState {
-    data object Empty : MobilePackageScanUiState()
-    data class Loading(val code: String) : MobilePackageScanUiState()
-    data class Resolved(val result: MobilePackageScanLookupResult) : MobilePackageScanUiState()
-    data class Failed(val code: String, val message: String) : MobilePackageScanUiState()
 }
 
 data class PackageScannerResolvedCopy(
@@ -187,9 +183,9 @@ internal fun shouldShowPackageScannerHeaderAction(
     overlayScreen: MobileAssistantOverlayScreen,
 ): Boolean = selectedTab == MobileAssistantTab.ORDERS && overlayScreen == MobileAssistantOverlayScreen.NONE
 
-fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageScannerResolvedCopy {
-    if (result.matched && result.order != null) {
-        return if (result.ambiguous) {
+internal fun packageScannerResolvedCopy(result: pl.dlaflow.mobile.feature.scanner.ScannerLookupResult): PackageScannerResolvedCopy {
+    if (result.kind != ScannerMatchKind.NO_MATCH && result.order != null) {
+        return if (result.kind == ScannerMatchKind.AMBIGUOUS) {
             PackageScannerResolvedCopy(
                 title = "Znaleziono kilka możliwych paczek",
                 supportingText = "Pokazujemy najnowsze pasujące zamówienie. Sprawdź dane przed dalszą obsługą.",
@@ -204,17 +200,20 @@ fun packageScannerResolvedCopy(result: MobilePackageScanLookupResult): PackageSc
 
     return PackageScannerResolvedCopy(
         title = "Nie znaleziono paczki",
-        supportingText = result.message.ifBlank { "Ten kod nie pasuje do żadnej paczki w DlaFlow." },
+        supportingText = "Ten kod nie pasuje do żadnej paczki w DlaFlow.",
     )
 }
 
-internal fun MobilePackageScanUiState.toOrdersPackageScannerState(): OrdersPackageScannerState = when (this) {
-    MobilePackageScanUiState.Empty -> OrdersPackageScannerState.Empty
-    is MobilePackageScanUiState.Loading -> OrdersPackageScannerState.Loading
-    is MobilePackageScanUiState.Failed -> OrdersPackageScannerState.Failed(message)
-    is MobilePackageScanUiState.Resolved -> {
+internal fun ScannerUiState.toOrdersPackageScannerState(): OrdersPackageScannerState = when (val lookup = lookupState) {
+    DlaFlowUiState.Empty -> OrdersPackageScannerState.Empty
+    DlaFlowUiState.Loading -> OrdersPackageScannerState.Loading
+    is DlaFlowUiState.Error -> OrdersPackageScannerState.Failed("Nie udało się sprawdzić paczki.")
+    is DlaFlowUiState.Offline -> OrdersPackageScannerState.Failed("Sprawdź internet i spróbuj ponownie.")
+    DlaFlowUiState.NoAccess -> OrdersPackageScannerState.Failed("Twoje konto nie ma uprawnień do tej operacji.")
+    is DlaFlowUiState.Content -> {
+        val result = lookup.data
         val copy = packageScannerResolvedCopy(result)
-        val order = result.order.takeIf { result.matched }
+        val order = result.order.takeIf { result.kind != ScannerMatchKind.NO_MATCH }
         OrdersPackageScannerState.Resolved(
             title = copy.title,
             supportingText = copy.supportingText,
@@ -425,7 +424,7 @@ internal fun MobileAssistantScreen(
     session: MobileSession?,
     dashboardState: DashboardUiState,
     photoTasks: List<MobilePhotoTask>,
-    packageScanState: MobilePackageScanUiState,
+    scannerState: ScannerUiState,
     statusMessage: String,
     selectedTab: MobileAssistantTab,
     apiUrl: String,
@@ -557,7 +556,7 @@ internal fun MobileAssistantScreen(
                     dashboardState = dashboardState,
                     dashboard = dashboard,
                     photoTasks = photoTasks,
-                    packageScanState = packageScanState,
+                    scannerState = scannerState,
                     statusMessage = statusMessage,
                     selectedTab = selectedTab,
                     mobileProducts = mobileProducts,
@@ -638,7 +637,7 @@ private fun AssistantContent(
     dashboardState: DashboardUiState,
     dashboard: DashboardContent?,
     photoTasks: List<MobilePhotoTask>,
-    packageScanState: MobilePackageScanUiState,
+    scannerState: ScannerUiState,
     statusMessage: String,
     selectedTab: MobileAssistantTab,
     mobileProducts: List<MobileProduct>,
@@ -762,7 +761,7 @@ private fun AssistantContent(
                         LegacyKpiGrid(colors, dashboard?.kpis)
                         OrdersPackageScannerStrip(
                             colors = colors,
-                            scanState = packageScanState.toOrdersPackageScannerState(),
+                            scanState = scannerState.toOrdersPackageScannerState(),
                             onOpenOrder = { onOrdersAction(OrdersAction.OpenOrder(it)) },
                             onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
                         )
