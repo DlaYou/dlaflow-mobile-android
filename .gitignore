@@ -2,6 +2,7 @@
 .kotlin/
 .idea/
 .serena/
+.worktrees/
 build/
 captures/
 local.properties
