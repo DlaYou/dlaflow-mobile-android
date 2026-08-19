@@ -43,4 +43,60 @@ class OrderTimingTest {
         assertEquals(expected, ordersDeadlinePresentation("", now, warsaw))
         assertEquals(expected, ordersDeadlinePresentation("not-a-date", now, warsaw))
     }
+
+    @Test
+    fun `delivered shipment shows delivery date`() {
+        assertEquals(
+            OrdersShipmentTimingPresentation(OrdersShipmentTimingKind.DELIVERED, timestamp = "2026-08-19T09:00:00Z"),
+            ordersShipmentTimingPresentation(
+                shipmentStage = "delivered",
+                shippedAt = "2026-08-18T14:00:00Z",
+                deliveredAt = "2026-08-19T09:00:00Z",
+                shippingDeadlineAt = "2026-08-20T12:00:00Z",
+                zone = warsaw,
+            ),
+        )
+    }
+
+    @Test
+    fun `shipped or later shipment shows dispatch date`() {
+        assertEquals(
+            OrdersShipmentTimingPresentation(OrdersShipmentTimingKind.SHIPPED, timestamp = "2026-07-18T14:00:00Z"),
+            ordersShipmentTimingPresentation(
+                shipmentStage = "transit",
+                shippedAt = "2026-07-18T14:00:00Z",
+                deliveredAt = "",
+                shippingDeadlineAt = "2026-07-20T12:00:00Z",
+                zone = warsaw,
+            ),
+        )
+    }
+
+    @Test
+    fun `pre-shipment status shows deadline`() {
+        assertEquals(
+            OrdersShipmentTimingPresentation(OrdersShipmentTimingKind.DEADLINE, shippingDeadlineAt = "2026-07-20T12:00:00Z"),
+            ordersShipmentTimingPresentation(
+                shipmentStage = "pending",
+                shippedAt = "",
+                deliveredAt = "",
+                shippingDeadlineAt = "2026-07-20T12:00:00Z",
+                zone = warsaw,
+            ),
+        )
+    }
+
+    @Test
+    fun `missing integration date is explicit and never guessed`() {
+        assertEquals(
+            OrdersShipmentTimingPresentation(OrdersShipmentTimingKind.DELIVERED),
+            ordersShipmentTimingPresentation(
+                shipmentStage = "delivered",
+                shippedAt = "",
+                deliveredAt = "not-a-date",
+                shippingDeadlineAt = "2026-07-20T12:00:00Z",
+                zone = warsaw,
+            ),
+        )
+    }
 }

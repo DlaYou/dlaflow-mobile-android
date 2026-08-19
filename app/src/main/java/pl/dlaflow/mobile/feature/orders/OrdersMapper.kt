@@ -20,6 +20,10 @@ internal fun MobileOrderListItem.toOrdersListItem() = OrdersListItem(
     channel = channel,
     createdAt = createdAt,
     shippingDeadlineAt = shippingDeadlineAt,
+    shipmentStatus = shipmentStatus,
+    shipmentStage = shipmentStage,
+    shippedAt = shippedAt,
+    deliveredAt = deliveredAt,
     itemCount = itemCount,
     productSummary = productSummary,
     paymentStatus = paymentStatus,
@@ -81,8 +85,11 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
             id = shipment.id,
             carrier = shipment.carrier,
             labelReady = shipment.labelReady,
+            stage = shipment.stage,
             status = shipment.status,
             trackingNumber = shipment.trackingNumber,
+            shippedAt = shipment.shippedAt,
+            deliveredAt = shipment.deliveredAt,
         )
     },
     messages = messages.map { message ->

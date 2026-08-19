@@ -123,10 +123,23 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
     }
     OrderDetailSection(colors, stringResource(R.string.orders_section_timing)) {
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_ordered_at), ordersDisplayTimestamp(order.createdAt).ifBlank { stringResource(R.string.orders_value_missing) })
+        val shipment = order.shipments.firstOrNull()
+        val shipmentTiming = shipment?.let {
+            ordersShipmentTimingPresentation(
+                shipmentStage = it.stage,
+                shippedAt = it.shippedAt,
+                deliveredAt = it.deliveredAt,
+                shippingDeadlineAt = order.shippingDeadlineAt,
+            )
+        }
         DlaFlowKeyValue(
             colors,
-            stringResource(R.string.orders_label_shipping_deadline),
-            order.shippingDeadlineAt.takeIf { it.isNotBlank() }?.let { ordersShippingDeadlineLabel(it) }
+            when (shipmentTiming?.kind) {
+                OrdersShipmentTimingKind.SHIPPED -> stringResource(R.string.orders_label_shipped_at)
+                OrdersShipmentTimingKind.DELIVERED -> stringResource(R.string.orders_label_delivered_at)
+                else -> stringResource(R.string.orders_label_shipping_deadline)
+            },
+            shipmentTiming?.let { ordersShipmentTimingValue(it) } ?: order.shippingDeadlineAt.takeIf { it.isNotBlank() }?.let { ordersShippingDeadlineLabel(it) }
                 ?: stringResource(R.string.orders_deadline_unavailable),
         )
     }
@@ -163,11 +176,23 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
     if (order.shipments.isNotEmpty()) {
         OrderDetailSection(colors, stringResource(R.string.orders_section_shipments)) {
             order.shipments.forEach { shipment ->
+                val timing = ordersShipmentTimingPresentation(
+                    shipmentStage = shipment.stage,
+                    shippedAt = shipment.shippedAt,
+                    deliveredAt = shipment.deliveredAt,
+                    shippingDeadlineAt = order.shippingDeadlineAt,
+                )
+                val timingLabel = when (timing.kind) {
+                    OrdersShipmentTimingKind.SHIPPED -> stringResource(R.string.orders_label_shipped_at)
+                    OrdersShipmentTimingKind.DELIVERED -> stringResource(R.string.orders_label_delivered_at)
+                    OrdersShipmentTimingKind.DEADLINE -> if (shipment.labelReady) stringResource(R.string.orders_value_label_ready) else shipment.status
+                }
+                val timingValue = ordersShipmentTimingValue(timing)
                 OrderDetailListRow(
                     colors,
                     shipment.carrier.ifBlank { stringResource(R.string.orders_value_shipment) },
                     shipment.trackingNumber.ifBlank { shipment.status },
-                    if (shipment.labelReady) stringResource(R.string.orders_value_label_ready) else shipment.status,
+                    "$timingLabel: $timingValue",
                 )
             }
         }

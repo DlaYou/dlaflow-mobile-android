@@ -37,6 +37,10 @@ internal data class OrdersListItem(
     val channel: String,
     val createdAt: String = "",
     val shippingDeadlineAt: String = "",
+    val shipmentStatus: String = "",
+    val shipmentStage: String = "",
+    val shippedAt: String = "",
+    val deliveredAt: String = "",
     val itemCount: Int,
     val productSummary: String,
     val paymentStatus: String,
@@ -102,6 +106,9 @@ internal data class OrderShipment(
     val labelReady: Boolean,
     val status: String,
     val trackingNumber: String,
+    val shippedAt: String = "",
+    val deliveredAt: String = "",
+    val stage: String = "",
 )
 
 internal data class OrderMessage(

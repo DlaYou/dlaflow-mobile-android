@@ -523,9 +523,29 @@ internal fun ordersDisplayTimestamp(value: String, zone: ZoneId = ZoneId.systemD
 }.getOrDefault("")
 
 @Composable
+internal fun ordersShipmentTimingValue(presentation: OrdersShipmentTimingPresentation): String = when (presentation.kind) {
+    OrdersShipmentTimingKind.DEADLINE -> presentation.shippingDeadlineAt
+        .takeIf { ordersDisplayTimestamp(it).isNotBlank() }
+        ?.let { ordersShippingDeadlineLabel(it) }
+        ?: stringResource(R.string.orders_shipment_date_missing)
+    OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED ->
+        ordersDisplayTimestamp(presentation.timestamp).ifBlank { stringResource(R.string.orders_shipment_date_missing) }
+}
+
+@Composable
 private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem) {
     val orderedAt = ordersDisplayTimestamp(order.createdAt)
-    val deadlineAt = order.shippingDeadlineAt.takeIf { it.isNotBlank() }
+    val shipmentTiming = ordersShipmentTimingPresentation(
+        shipmentStage = order.shipmentStage,
+        shippedAt = order.shippedAt,
+        deliveredAt = order.deliveredAt,
+        shippingDeadlineAt = order.shippingDeadlineAt,
+    )
+    val shipmentLabel = when (shipmentTiming.kind) {
+        OrdersShipmentTimingKind.DEADLINE -> stringResource(R.string.orders_label_shipping_deadline)
+        OrdersShipmentTimingKind.SHIPPED -> stringResource(R.string.orders_label_shipped_at)
+        OrdersShipmentTimingKind.DELIVERED -> stringResource(R.string.orders_label_delivered_at)
+    }
     Column(modifier = Modifier.fillMaxWidth()) {
         OrderTimelineEntry(
             colors = colors,
@@ -536,10 +556,12 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
         )
         OrderTimelineEntry(
             colors = colors,
-            label = stringResource(R.string.orders_label_shipping_deadline),
-            value = deadlineAt?.let { ordersShippingDeadlineLabel(it) }
-                ?: stringResource(R.string.orders_deadline_unavailable),
-            tone = ordersShippingDeadlineColor(colors, deadlineAt.orEmpty()),
+            label = shipmentLabel,
+            value = ordersShipmentTimingValue(shipmentTiming),
+            tone = when (shipmentTiming.kind) {
+                OrdersShipmentTimingKind.DEADLINE -> ordersShippingDeadlineColor(colors, order.shippingDeadlineAt)
+                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> colors.textStrong
+            },
             showConnector = false,
         )
     }
