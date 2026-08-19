@@ -211,6 +211,9 @@
     <string name="orders_section_timing">Terminy</string>
     <string name="orders_label_ordered_at">Zamówiono</string>
     <string name="orders_label_shipping_deadline">Wyślij do</string>
+    <string name="orders_label_shipped_at">Wysłano</string>
+    <string name="orders_label_delivered_at">Dostarczono</string>
+    <string name="orders_shipment_date_missing">Brak daty z integracji</string>
     <string name="orders_list_ordered_at">Zamówiono: %1$s</string>
     <string name="orders_list_shipping_deadline">Wyślij do: %1$s</string>
     <string name="orders_deadline_unavailable">Termin niedostępny</string>

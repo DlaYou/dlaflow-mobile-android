@@ -251,7 +251,7 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun missingShippingDeadlineStillShowsAnExplicitStatus() {
+    fun missingShippingDeadlineShowsSafeIntegrationFallback() {
         setOrders(
             state = OrdersUiState(
                 listState = DlaFlowUiState.Content(ordersContent(shippingDeadlineAt = "")),
@@ -259,7 +259,37 @@ class OrdersFeatureScreenTest {
             actions = mutableListOf(),
         )
 
-        composeRule.onNodeWithText("Termin niedostępny").assertIsDisplayed()
+        composeRule.onNodeWithText("Brak daty z integracji").assertIsDisplayed()
+    }
+
+    @Test
+    fun shippedOrderReplacesDeadlineWithCanonicalDispatchDate() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(ordersContent(
+                    shipmentStatus = "W trasie",
+                    shipmentStage = "transit",
+                    shippedAt = "2026-07-18T14:00:00Z",
+                )),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Wysłano", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun deliveredOrderWithoutDateShowsSafeIntegrationFallback() {
+        setOrders(
+            state = OrdersUiState(
+                listState = DlaFlowUiState.Content(ordersContent(shipmentStatus = "Dostarczona", shipmentStage = "delivered")),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Dostarczono", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithText("Brak daty z integracji", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
@@ -483,6 +513,10 @@ class OrdersFeatureScreenTest {
 
     private fun ordersContent(
         shippingDeadlineAt: String = Instant.now().plus(Duration.ofHours(18)).toString(),
+        shipmentStatus: String = "",
+        shipmentStage: String = "",
+        shippedAt: String = "",
+        deliveredAt: String = "",
         phone: String = "",
         status: String = "Nowe",
         paymentStatus: String = "Opłacone",
@@ -497,6 +531,10 @@ class OrdersFeatureScreenTest {
                 channel = "Panel",
                 createdAt = "2026-07-18T10:00:00Z",
                 shippingDeadlineAt = shippingDeadlineAt,
+                shipmentStatus = shipmentStatus,
+                shipmentStage = shipmentStage,
+                shippedAt = shippedAt,
+                deliveredAt = deliveredAt,
                 itemCount = 1,
                 productSummary = "Produkt testowy",
                 paymentStatus = paymentStatus,

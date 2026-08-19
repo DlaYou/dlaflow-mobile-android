@@ -110,6 +110,10 @@ data class MobileOrderListItem(
     val channel: String,
     val createdAt: String,
     val shippingDeadlineAt: String = "",
+    val shipmentStatus: String = "",
+    val shipmentStage: String = "",
+    val shippedAt: String = "",
+    val deliveredAt: String = "",
     val currency: String,
     val customer: String,
     val email: String,
@@ -194,6 +198,9 @@ data class MobileOrderShipment(
     val status: String,
     val trackingNumber: String,
     val trackingUrl: String,
+    val shippedAt: String = "",
+    val deliveredAt: String = "",
+    val stage: String = "",
 )
 
 data class MobilePackageScanOrder(
@@ -976,6 +983,10 @@ class MobileApiClient(
             channel = item.optString("channel", ""),
             createdAt = item.optString("createdAt", ""),
             shippingDeadlineAt = item.optString("shippingDeadlineAt", ""),
+            shipmentStatus = item.optString("shipmentStatus", ""),
+            shipmentStage = item.optString("shipmentStage", ""),
+            shippedAt = item.optString("shippedAt", ""),
+            deliveredAt = item.optString("deliveredAt", ""),
             currency = item.optString("currency", "PLN"),
             customer = item.optString("customer", "Klient").ifBlank { "Klient" },
             email = item.optString("email", ""),
@@ -1101,9 +1112,12 @@ class MobileApiClient(
                     createdAt = item.optString("createdAt", ""),
                     id = item.optString("id", ""),
                     labelReady = item.optBoolean("labelReady", false),
+                    stage = item.optString("stage", ""),
                     status = item.optString("status", ""),
                     trackingNumber = item.optString("trackingNumber", ""),
                     trackingUrl = item.optString("trackingUrl", ""),
+                    shippedAt = item.optString("shippedAt", ""),
+                    deliveredAt = item.optString("deliveredAt", ""),
                 ),
             )
         }

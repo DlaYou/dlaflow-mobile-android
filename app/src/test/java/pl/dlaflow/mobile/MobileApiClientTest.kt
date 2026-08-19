@@ -502,6 +502,10 @@ class MobileApiClientTest {
                     "paymentTone":"success",
                     "createdAt":"2026-06-27T08:30:00.000Z",
                     "shippingDeadlineAt":"2026-06-28T16:00:00.000Z",
+                    "shipmentStatus":"W trasie",
+                    "shipmentStage":"transit",
+                    "shippedAt":"2026-06-27T10:00:00.000Z",
+                    "deliveredAt":"",
                     "badges":{"documents":1,"messages":2,"shipments":1}
                 }],
                 "meta":{"count":1,"limit":20,"offset":20,"nextOffset":"40","total":42}
@@ -525,6 +529,10 @@ class MobileApiClientTest {
             assertEquals("success", page.data.single().paymentTone)
             assertEquals("#112233", page.data.single().statusColor)
             assertEquals("2026-06-28T16:00:00.000Z", page.data.single().shippingDeadlineAt)
+            assertEquals("W trasie", page.data.single().shipmentStatus)
+            assertEquals("transit", page.data.single().shipmentStage)
+            assertEquals("2026-06-27T10:00:00.000Z", page.data.single().shippedAt)
+            assertEquals("", page.data.single().deliveredAt)
         }
     }
 

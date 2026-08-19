@@ -88,6 +88,28 @@ class OrdersMapperTest {
     }
 
     @Test
+    fun `list mapper preserves canonical shipment timing fields`() {
+        val item = MobileOrdersPage(
+            data = listOf(orderListDto().copy(
+                shipmentStatus = "W trasie",
+                shipmentStage = "transit",
+                shippedAt = "2026-08-18T14:00:00Z",
+                deliveredAt = "",
+            )),
+            count = 1,
+            limit = 20,
+            nextOffset = null,
+            offset = 0,
+            total = 1,
+        ).toOrdersListContent().items.single()
+
+        assertEquals("W trasie", item.shipmentStatus)
+        assertEquals("transit", item.shipmentStage)
+        assertEquals("2026-08-18T14:00:00Z", item.shippedAt)
+        assertEquals("", item.deliveredAt)
+    }
+
+    @Test
     fun `detail maps only presentation projections and copies nested lists`() {
         val transportItems = mutableListOf(orderItemDto())
         val transportMessages = mutableListOf(orderMessageDto())
@@ -119,7 +141,7 @@ class OrdersMapperTest {
         assertEquals("Warszawa", detail.delivery.address.city)
         assertEquals(OrderPayment("PLN", "Przelew", 123.45, "Opłacone", "success"), detail.payment)
         assertEquals(OrderItem("item-1", "Produkt A", "SKU-1", 2, 123.45, 61.725), detail.items.single())
-        assertEquals(OrderShipment("shipment-1", "InPost", true, "Nadana", "TRACK-1"), detail.shipments.single())
+        assertEquals(OrderShipment("shipment-1", "InPost", true, "Nadana", "TRACK-1", "2026-07-18T14:00:00Z", "", "sent"), detail.shipments.single())
         assertEquals(OrderMessage("message-1", "Klient", "Dziękuję", "2026-07-18T09:00:00Z"), detail.messages.single())
         assertEquals(1, detail.documentsCount)
         assertEquals(1, detail.internalNotesCount)
@@ -189,7 +211,7 @@ internal fun orderDetailDto(
     orderNumber = "ORD-1001",
     payment = MobileOrderPayment("PLN", 0.0, "Przelew", 123.45, "Opłacone", "success", 123.45),
     productSummary = "Produkt A + Produkt B",
-    shipments = listOf(MobileOrderShipment("InPost", "2026-07-18", "shipment-1", true, "Nadana", "TRACK-1", "")),
+    shipments = listOf(MobileOrderShipment("InPost", "2026-07-18", "shipment-1", true, "Nadana", "TRACK-1", "", "2026-07-18T14:00:00Z", "", "sent")),
     status = "processing",
     statusHistory = listOf(MobileOrderStatusHistory("2026-07-18", "panel", "processing")),
     statusTone = "info",
