@@ -7,6 +7,7 @@ enum class MobileOrderFilter(val queryValue: String, val label: String) {
     ALL("", "Wszystkie"),
     NEW("new", "Nowe"),
     TO_SHIP("to-ship", "Do wysyłki"),
+    OVERDUE("overdue", "Po terminie"),
     PROBLEMS("problems", "Problemy"),
     MESSAGES("messages", "Wiadomości"),
 }

@@ -102,7 +102,7 @@ import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
 import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
 import pl.dlaflow.mobile.feature.settings.SettingsAction
 import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
-import pl.dlaflow.mobile.app.navigation.toOrdersFilter
+import pl.dlaflow.mobile.app.navigation.toOrdersFilterOrNull
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdLookupRequest
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdOrder
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdPreview
@@ -2439,8 +2439,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openOrdersDestination(destination: MobileKpiDestination) {
+        if (destination == MobileKpiDestination.MESSAGES) {
+            mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+            selectedTab = MobileAssistantTab.MESSAGES
+            render()
+            return
+        }
+
         selectedTab = MobileAssistantTab.ORDERS
-        handleOrdersAction(OrdersAction.FilterChanged(destination.toOrdersFilter()))
+        destination.toOrdersFilterOrNull()?.let { filter ->
+            handleOrdersAction(OrdersAction.FilterChanged(filter))
+        }
+        render()
     }
 
     private fun releaseSystemSplash() {

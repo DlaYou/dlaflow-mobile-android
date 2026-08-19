@@ -23,4 +23,15 @@ class DashboardSourceBoundaryTest {
             assertTrue(orders.contains("MobileKpiDestination.$destination"))
         }
     }
+
+    @Test
+    fun `orders kpi grid routes through the host destination handler`() {
+        val orders = File("src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt").readText()
+        val host = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
+
+        assertTrue(orders.contains("onDashboardAction(DashboardAction.OpenOrdersFilter(destination))"))
+        assertTrue(!orders.contains("destination.toOrdersFilter()"))
+        assertTrue(host.contains("if (destination == MobileKpiDestination.MESSAGES)"))
+        assertTrue(host.contains("selectedTab = MobileAssistantTab.MESSAGES"))
+    }
 }

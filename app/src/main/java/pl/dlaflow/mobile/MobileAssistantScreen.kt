@@ -155,7 +155,6 @@ import pl.dlaflow.mobile.feature.dashboard.DashboardUiState
 import pl.dlaflow.mobile.feature.dashboard.contentOrNull
 import pl.dlaflow.mobile.feature.orders.OrdersAction
 import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
-import pl.dlaflow.mobile.app.navigation.toOrdersFilter
 import pl.dlaflow.mobile.feature.orders.OrdersFeatureScreen
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerStrip
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerState
@@ -554,7 +553,7 @@ private fun AssistantContent(
                     thumbnailLoader = thumbnailLoader,
                     leadContent = {
                         LegacyKpiGrid(colors, dashboard?.kpis) { destination ->
-                            onOrdersAction(OrdersAction.FilterChanged(destination.toOrdersFilter()))
+                            onDashboardAction(DashboardAction.OpenOrdersFilter(destination))
                         }
                         OrdersPackageScannerStrip(
                             colors = colors,

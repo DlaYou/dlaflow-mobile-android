@@ -7,6 +7,7 @@ internal enum class OrdersFilter {
     ALL,
     NEW,
     TO_SHIP,
+    OVERDUE,
     PROBLEMS,
     MESSAGES,
 }
@@ -15,8 +16,8 @@ internal val visibleOrdersFilters = listOf(
     OrdersFilter.ALL,
     OrdersFilter.NEW,
     OrdersFilter.TO_SHIP,
+    OrdersFilter.OVERDUE,
     OrdersFilter.PROBLEMS,
-    OrdersFilter.MESSAGES,
 )
 
 internal data class OrdersQuery(

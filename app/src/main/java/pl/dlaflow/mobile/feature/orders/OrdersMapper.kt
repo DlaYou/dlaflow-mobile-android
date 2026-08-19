@@ -109,6 +109,7 @@ internal fun OrdersFilter.toMobileOrderFilter(): MobileOrderFilter = when (this)
     OrdersFilter.ALL -> MobileOrderFilter.ALL
     OrdersFilter.NEW -> MobileOrderFilter.NEW
     OrdersFilter.TO_SHIP -> MobileOrderFilter.TO_SHIP
+    OrdersFilter.OVERDUE -> MobileOrderFilter.OVERDUE
     OrdersFilter.PROBLEMS -> MobileOrderFilter.PROBLEMS
     OrdersFilter.MESSAGES -> MobileOrderFilter.MESSAGES
 }

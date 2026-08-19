@@ -39,6 +39,10 @@ class MobileOrdersStateTest {
             buildMobileOrdersQuery("", MobileOrderFilter.PROBLEMS),
         )
         assertEquals(
+            "limit=20&offset=0&filter=overdue",
+            buildMobileOrdersQuery("", MobileOrderFilter.OVERDUE),
+        )
+        assertEquals(
             "limit=20&offset=0&filter=messages",
             buildMobileOrdersQuery("", MobileOrderFilter.MESSAGES),
         )

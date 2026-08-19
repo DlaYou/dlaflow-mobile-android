@@ -407,6 +407,7 @@ private fun ordersFilterLabel(filter: OrdersFilter): String = stringResource(
         OrdersFilter.ALL -> R.string.orders_filter_all
         OrdersFilter.NEW -> R.string.orders_filter_new
         OrdersFilter.TO_SHIP -> R.string.orders_filter_to_ship
+        OrdersFilter.OVERDUE -> R.string.orders_filter_overdue
         OrdersFilter.PROBLEMS -> R.string.orders_filter_problems
         OrdersFilter.MESSAGES -> R.string.orders_filter_messages
     },

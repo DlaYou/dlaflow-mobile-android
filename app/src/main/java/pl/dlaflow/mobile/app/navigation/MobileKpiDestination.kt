@@ -9,9 +9,9 @@ internal enum class MobileKpiDestination {
     MESSAGES,
 }
 
-internal fun MobileKpiDestination.toOrdersFilter(): OrdersFilter = when (this) {
+internal fun MobileKpiDestination.toOrdersFilterOrNull(): OrdersFilter? = when (this) {
     MobileKpiDestination.NEW_ORDERS -> OrdersFilter.NEW
     MobileKpiDestination.TO_SHIP -> OrdersFilter.TO_SHIP
-    MobileKpiDestination.OVERDUE -> OrdersFilter.PROBLEMS
-    MobileKpiDestination.MESSAGES -> OrdersFilter.MESSAGES
+    MobileKpiDestination.OVERDUE -> OrdersFilter.OVERDUE
+    MobileKpiDestination.MESSAGES -> null
 }

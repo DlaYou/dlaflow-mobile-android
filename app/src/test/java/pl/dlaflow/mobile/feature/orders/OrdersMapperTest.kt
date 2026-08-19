@@ -154,7 +154,16 @@ class OrdersMapperTest {
         assertEquals(MobileOrderFilter.NEW, OrdersFilter.NEW.toMobileOrderFilter())
         assertEquals(MobileOrderFilter.TO_SHIP, OrdersFilter.TO_SHIP.toMobileOrderFilter())
         assertEquals(MobileOrderFilter.PROBLEMS, OrdersFilter.PROBLEMS.toMobileOrderFilter())
+        assertEquals(MobileOrderFilter.OVERDUE, OrdersFilter.OVERDUE.toMobileOrderFilter())
         assertEquals(MobileOrderFilter.MESSAGES, OrdersFilter.MESSAGES.toMobileOrderFilter())
+    }
+
+    @Test
+    fun `visible orders filters keep messages in its dedicated tab`() {
+        assertEquals(
+            listOf(OrdersFilter.ALL, OrdersFilter.NEW, OrdersFilter.TO_SHIP, OrdersFilter.OVERDUE, OrdersFilter.PROBLEMS),
+            visibleOrdersFilters,
+        )
     }
 }
 

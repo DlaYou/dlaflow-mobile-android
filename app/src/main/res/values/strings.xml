@@ -148,6 +148,7 @@
     <string name="orders_filter_all">Wszystkie</string>
     <string name="orders_filter_new">Nowe</string>
     <string name="orders_filter_to_ship">Do wysyłki</string>
+    <string name="orders_filter_overdue">Po terminie</string>
     <string name="orders_filter_problems">Problemy</string>
     <string name="orders_filter_messages">Wiadomości</string>
     <string name="orders_no_access_title">Brak dostępu</string>
