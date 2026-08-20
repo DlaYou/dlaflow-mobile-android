@@ -104,6 +104,13 @@ data class MobileOrderBadges(
     val shipments: Int,
 )
 
+data class MobileOrderListProduct(
+    val image: String,
+    val name: String,
+    val quantity: Int,
+    val sku: String,
+)
+
 data class MobileOrderListItem(
     val amount: Double,
     val badges: MobileOrderBadges,
@@ -132,6 +139,7 @@ data class MobileOrderListItem(
     val thumbnailUrl: String,
     val updatedAt: String,
     val productNames: List<String> = emptyList(),
+    val productItems: List<MobileOrderListProduct> = emptyList(),
 )
 
 data class MobileOrdersPage(
@@ -973,6 +981,7 @@ class MobileApiClient(
 
     private fun parseMobileOrderListItem(item: JSONObject): MobileOrderListItem {
         val badges = item.optJSONObject("badges") ?: JSONObject()
+        val productItems = parseMobileOrderListProducts(item.optJSONArray("items"))
 
         return MobileOrderListItem(
             amount = item.optDouble("amount", 0.0),
@@ -1005,7 +1014,8 @@ class MobileApiClient(
             statusColor = item.optString("statusColor", ""),
             thumbnailUrl = item.optString("thumbnailUrl", ""),
             updatedAt = item.optString("updatedAt", ""),
-            productNames = parseMobileOrderItemNames(item.optJSONArray("items")),
+            productItems = productItems,
+            productNames = productItems.map { it.name },
         )
     }
 
@@ -1100,18 +1110,22 @@ class MobileApiClient(
         return items
     }
 
-    private fun parseMobileOrderItemNames(itemsJson: org.json.JSONArray?): List<String> {
+    private fun parseMobileOrderListProducts(itemsJson: org.json.JSONArray?): List<MobileOrderListProduct> {
         if (itemsJson == null) return emptyList()
 
-        val names = mutableListOf<String>()
+        val products = mutableListOf<MobileOrderListProduct>()
         for (index in 0 until itemsJson.length()) {
-            val name = itemsJson.optJSONObject(index)
-                ?.optString("name", "")
-                ?.trim()
-                .orEmpty()
-            if (name.isNotBlank()) names += name
+            val item = itemsJson.optJSONObject(index) ?: continue
+            val name = item.optString("name", "").trim()
+            if (name.isBlank()) continue
+            products += MobileOrderListProduct(
+                image = item.optString("image", "").trim(),
+                name = name,
+                quantity = item.optInt("quantity", 0),
+                sku = item.optString("sku", "").trim(),
+            )
         }
-        return names.distinct()
+        return products
     }
 
     private fun parseMobileOrderShipments(shipmentsJson: org.json.JSONArray?): List<MobileOrderShipment> {

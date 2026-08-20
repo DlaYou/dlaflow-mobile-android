@@ -506,6 +506,10 @@ class MobileApiClientTest {
                     "shipmentStage":"transit",
                     "shippedAt":"2026-06-27T10:00:00.000Z",
                     "deliveredAt":"",
+                    "items":[
+                        {"name":"Produkt A","quantity":1,"sku":"SKU-A","image":"/api/mobile/products/media/a.webp"},
+                        {"name":"Produkt B","quantity":2,"sku":"SKU-B","image":"/api/mobile/products/media/b.webp"}
+                    ],
                     "badges":{"documents":1,"messages":2,"shipments":1}
                 }],
                 "meta":{"count":1,"limit":20,"offset":20,"nextOffset":"40","total":42}
@@ -533,6 +537,13 @@ class MobileApiClientTest {
             assertEquals("transit", page.data.single().shipmentStage)
             assertEquals("2026-06-27T10:00:00.000Z", page.data.single().shippedAt)
             assertEquals("", page.data.single().deliveredAt)
+            assertEquals(
+                listOf(
+                    MobileOrderListProduct("/api/mobile/products/media/a.webp", "Produkt A", 1, "SKU-A"),
+                    MobileOrderListProduct("/api/mobile/products/media/b.webp", "Produkt B", 2, "SKU-B"),
+                ),
+                page.data.single().productItems,
+            )
         }
     }
 

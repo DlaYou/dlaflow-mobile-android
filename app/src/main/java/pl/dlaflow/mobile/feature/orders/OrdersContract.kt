@@ -29,6 +29,13 @@ internal data class OrdersBadges(
     val shipments: Int,
 )
 
+internal data class OrdersListProduct(
+    val image: String,
+    val name: String,
+    val quantity: Int,
+    val sku: String,
+)
+
 internal data class OrdersListItem(
     val id: String,
     val orderNumber: String,
@@ -54,6 +61,7 @@ internal data class OrdersListItem(
     val thumbnailUrl: String,
     val badges: OrdersBadges,
     val productNames: List<String> = emptyList(),
+    val products: List<OrdersListProduct> = emptyList(),
 )
 
 internal data class OrdersListContent(
