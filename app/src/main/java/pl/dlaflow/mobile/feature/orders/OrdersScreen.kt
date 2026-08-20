@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,9 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
-import androidx.compose.material.icons.rounded.ChatBubbleOutline
-import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Warning
@@ -27,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -48,7 +45,6 @@ import pl.dlaflow.mobile.R
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowFilterChip
-import pl.dlaflow.mobile.core.designsystem.DlaFlowIcon
 import pl.dlaflow.mobile.core.designsystem.DlaFlowInter
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
@@ -276,7 +272,6 @@ private fun OrdersListCard(
     thumbnailLoader: DlaFlowThumbnailLoader,
     onClick: () -> Unit,
 ) {
-    val statusColor = dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -285,12 +280,6 @@ private fun OrdersListCard(
     ) {
         DlaFlowCard(colors, accent = order.statusTone.equals("warning", ignoreCase = true)) {
             Row(verticalAlignment = Alignment.Top) {
-                if (order.thumbnailUrl.isNotBlank()) {
-                    DlaFlowThumbnail(colors, order.thumbnailUrl, thumbnailLoader)
-                } else {
-                    DlaFlowIcon(ordersIcon(order), statusColor, modifier = Modifier.size(38.dp))
-                }
-                Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.Top) {
                         Column(modifier = Modifier.weight(1f)) {
@@ -307,29 +296,13 @@ private fun OrdersListCard(
                         Spacer(Modifier.width(8.dp))
                         Text(formatOrdersMoney(order.amount), color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
                     }
-                    Spacer(Modifier.height(5.dp))
-                    val productLines = ordersProductLines(
-                        productNames = order.productNames,
-                        fallbackSummary = order.productSummary.ifBlank {
-                            stringResource(R.string.orders_value_products_count, order.itemCount)
-                        },
-                    )
-                    productLines.forEach { productLine ->
-                        Text(
-                            productLine,
-                            color = colors.text,
-                            fontSize = 10.8.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 13.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Spacer(Modifier.height(5.dp))
+                    Spacer(Modifier.height(12.dp))
+                    OrdersProductStrip(colors, order, thumbnailLoader)
+                    Spacer(Modifier.height(12.dp))
                     OrderStatusFields(colors, order)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(10.dp))
                     OrderTimingLine(colors, order)
-                    Spacer(Modifier.height(7.dp))
+                    Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(ordersQuickInfo(order), color = colors.textMuted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         Text(ordersBadgeSummary(order), color = colors.textMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -338,6 +311,100 @@ private fun OrdersListCard(
             }
         }
     }
+}
+
+@Composable
+private fun OrdersProductStrip(
+    colors: DlaFlowComposeColors,
+    order: OrdersListItem,
+    thumbnailLoader: DlaFlowThumbnailLoader,
+) {
+    val products = ordersDisplayProducts(order, stringResource(R.string.orders_value_product))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        products.take(2).forEachIndexed { index, product ->
+            Column(
+                modifier = if (products.size == 1) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.weight(1f)
+                },
+            ) {
+                DlaFlowThumbnail(
+                    colors = colors,
+                    url = product.image.ifBlank { if (index == 0) order.thumbnailUrl else "" },
+                    loader = thumbnailLoader,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1.45f),
+                    contentDescription = product.name,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = product.name,
+                    color = colors.textStrong,
+                    fontSize = 10.8.sp,
+                    fontWeight = FontWeight.Bold,
+                    lineHeight = 13.5.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                ordersProductMeta(product)?.let { meta ->
+                    Text(
+                        text = meta,
+                        color = colors.textMuted,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        repeat((2 - products.size.coerceAtMost(2)).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
+    }
+    if (products.size > 2) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.orders_products_more, products.size - 2),
+            color = colors.primary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+private fun ordersDisplayProducts(order: OrdersListItem, fallbackName: String): List<OrdersListProduct> {
+    if (order.products.isNotEmpty()) return order.products
+    val names = order.productNames.map(String::trim).filter(String::isNotBlank).distinct()
+    if (names.isNotEmpty()) {
+        return names.mapIndexed { index, name ->
+            OrdersListProduct(
+                image = if (index == 0) order.thumbnailUrl else "",
+                name = name,
+                quantity = 0,
+                sku = "",
+            )
+        }
+    }
+    return listOf(
+        OrdersListProduct(
+            image = order.thumbnailUrl,
+            name = order.productSummary.ifBlank { fallbackName },
+            quantity = order.itemCount,
+            sku = "",
+        ),
+    )
+}
+
+private fun ordersProductMeta(product: OrdersListProduct): String? {
+    val parts = buildList {
+        if (product.quantity > 0) add("${product.quantity} szt.")
+        if (product.sku.isNotBlank()) add("SKU ${product.sku}")
+    }
+    return parts.takeIf(List<String>::isNotEmpty)?.joinToString(" · ")
 }
 
 @Composable
@@ -439,13 +506,6 @@ internal fun ordersToneColor(colors: DlaFlowComposeColors, tone: String): Color 
     "warning" -> colors.orange
     "danger" -> colors.danger
     else -> colors.textMuted
-}
-
-private fun ordersIcon(order: OrdersListItem): ImageVector = when {
-    order.statusTone.equals("warning", ignoreCase = true) -> Icons.Rounded.Warning
-    order.badges.messages > 0 -> Icons.Rounded.ChatBubbleOutline
-    order.badges.shipments > 0 -> Icons.Rounded.LocalShipping
-    else -> Icons.AutoMirrored.Rounded.ReceiptLong
 }
 
 @Composable

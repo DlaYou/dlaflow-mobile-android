@@ -40,6 +40,14 @@ internal fun MobileOrderListItem.toOrdersListItem() = OrdersListItem(
         shipments = badges.shipments,
     ),
     productNames = productNames,
+    products = productItems.map { product ->
+        OrdersListProduct(
+            image = product.image,
+            name = product.name,
+            quantity = product.quantity,
+            sku = product.sku,
+        )
+    },
 )
 
 internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(

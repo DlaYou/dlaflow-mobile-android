@@ -12,6 +12,7 @@ import pl.dlaflow.mobile.MobileOrderDocument
 import pl.dlaflow.mobile.MobileOrderFilter
 import pl.dlaflow.mobile.MobileOrderItem
 import pl.dlaflow.mobile.MobileOrderListItem
+import pl.dlaflow.mobile.MobileOrderListProduct
 import pl.dlaflow.mobile.MobileOrderMessage
 import pl.dlaflow.mobile.MobileOrderPayment
 import pl.dlaflow.mobile.MobileOrderShipment
@@ -85,6 +86,33 @@ class OrdersMapperTest {
         assertEquals("warning", item.statusTone)
         assertEquals("Płatność przy odbiorze", item.paymentStatus)
         assertEquals("info", item.paymentTone)
+    }
+
+    @Test
+    fun `list page preserves bounded product images for the card gallery`() {
+        val item = MobileOrdersPage(
+            data = listOf(
+                orderListDto().copy(
+                    productItems = listOf(
+                        MobileOrderListProduct("/api/mobile/products/media/a.webp", "Produkt A", 1, "SKU-A"),
+                        MobileOrderListProduct("/api/mobile/products/media/b.webp", "Produkt B", 2, "SKU-B"),
+                    ),
+                ),
+            ),
+            count = 1,
+            limit = 20,
+            nextOffset = null,
+            offset = 0,
+            total = 1,
+        ).toOrdersListContent().items.single()
+
+        assertEquals(
+            listOf(
+                OrdersListProduct("/api/mobile/products/media/a.webp", "Produkt A", 1, "SKU-A"),
+                OrdersListProduct("/api/mobile/products/media/b.webp", "Produkt B", 2, "SKU-B"),
+            ),
+            item.products,
+        )
     }
 
     @Test
