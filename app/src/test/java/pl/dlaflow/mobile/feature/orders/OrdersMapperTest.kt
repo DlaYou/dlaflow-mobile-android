@@ -220,6 +220,12 @@ class OrdersMapperTest {
     }
 
     @Test
+    fun `single product card uses a shorter image frame than gallery`() {
+        assertEquals(1.7f, ordersProductImageAspectRatio(1))
+        assertEquals(1.45f, ordersProductImageAspectRatio(2))
+    }
+
+    @Test
     fun `list product presentation falls back to API summary`() {
         assertEquals(
             listOf("Produkt A + 1"),

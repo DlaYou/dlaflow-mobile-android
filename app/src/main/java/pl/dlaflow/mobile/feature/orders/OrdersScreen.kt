@@ -338,7 +338,7 @@ private fun OrdersProductStrip(
                     loader = thumbnailLoader,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .aspectRatio(1.45f),
+                        .aspectRatio(ordersProductImageAspectRatio(products.size)),
                     contentDescription = product.name,
                 )
                 Spacer(Modifier.height(6.dp))
@@ -375,6 +375,9 @@ private fun OrdersProductStrip(
         )
     }
 }
+
+internal fun ordersProductImageAspectRatio(productCount: Int): Float =
+    if (productCount == 1) 1.7f else 1.45f
 
 private fun ordersDisplayProducts(order: OrdersListItem, fallbackName: String): List<OrdersListProduct> {
     if (order.products.isNotEmpty()) return order.products
