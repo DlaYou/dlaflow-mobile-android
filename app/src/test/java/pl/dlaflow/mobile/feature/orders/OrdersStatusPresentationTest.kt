@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import pl.dlaflow.mobile.core.designsystem.dlaFlowColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusTone
 import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 
@@ -34,5 +35,15 @@ class OrdersStatusPresentationTest {
         assertNull(dlaFlowHexColor("provider-purple"))
         assertNull(dlaFlowHexColor("#123"))
         assertNull(dlaFlowHexColor(""))
+    }
+
+    @Test
+    fun `shipment milestone reuses fulfillment status color`() {
+        val colors = dlaFlowColors(dark = false)
+        val explicit = orderListDto().copy(statusColor = "#AABBCC").toOrdersListItem()
+        val fallback = orderListDto().copy(statusColor = "", statusTone = "success").toOrdersListItem()
+
+        assertEquals(dlaFlowHexColor("#AABBCC"), ordersFulfillmentStatusColor(colors, explicit))
+        assertEquals(colors.success, ordersFulfillmentStatusColor(colors, fallback))
     }
 }

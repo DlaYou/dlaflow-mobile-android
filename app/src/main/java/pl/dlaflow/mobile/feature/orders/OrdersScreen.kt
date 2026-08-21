@@ -415,6 +415,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
     val fallback = stringResource(R.string.orders_status_check)
     val fulfillment = ordersStatusValue(order.status, fallback)
     val payment = ordersStatusValue(order.paymentStatus, fallback)
+    val fulfillmentColor = ordersFulfillmentStatusColor(colors, order)
     if (ordersUsesStackedStatusLayout()) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             DlaFlowStatusField(
@@ -422,7 +423,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_fulfillment_label),
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
-                accentColor = dlaFlowHexColor(order.statusColor),
+                accentColor = fulfillmentColor,
                 modifier = Modifier.fillMaxWidth(),
             )
             DlaFlowStatusField(
@@ -440,7 +441,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_fulfillment_label),
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
-                accentColor = dlaFlowHexColor(order.statusColor),
+                accentColor = fulfillmentColor,
                 modifier = Modifier.weight(1f),
             )
             DlaFlowStatusField(
@@ -510,6 +511,9 @@ internal fun ordersToneColor(colors: DlaFlowComposeColors, tone: String): Color 
     "danger" -> colors.danger
     else -> colors.textMuted
 }
+
+internal fun ordersFulfillmentStatusColor(colors: DlaFlowComposeColors, order: OrdersListItem): Color =
+    dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone)
 
 @Composable
 private fun ordersQuickInfo(order: OrdersListItem): String {
@@ -632,7 +636,7 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
             value = ordersShipmentTimingValue(shipmentTiming),
             tone = when (shipmentTiming.kind) {
                 OrdersShipmentTimingKind.DEADLINE -> ordersShippingDeadlineColor(colors, order.shippingDeadlineAt)
-                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> colors.success
+                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> ordersFulfillmentStatusColor(colors, order)
             },
             showConnector = false,
         )
