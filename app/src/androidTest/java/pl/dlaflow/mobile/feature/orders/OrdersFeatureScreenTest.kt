@@ -263,6 +263,19 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun refreshingContentUsesAnOverlayAndKeepsTheOrderListVisible() {
+        setOrders(
+            state = contentState().copy(isRefreshing = true),
+            actions = mutableListOf(),
+        )
+
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("orders_refresh_overlay").assertIsDisplayed()
+        composeRule.onNodeWithText("Odświeżam zamówienia").assertIsDisplayed()
+        composeRule.onNodeWithText("Klient testowy").assertIsDisplayed()
+    }
+
+    @Test
     fun shippedOrderReplacesDeadlineWithCanonicalDispatchDate() {
         setOrders(
             state = OrdersUiState(

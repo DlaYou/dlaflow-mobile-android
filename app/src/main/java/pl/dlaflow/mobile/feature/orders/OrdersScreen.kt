@@ -19,7 +19,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -114,37 +121,37 @@ internal fun OrdersFeatureScreen(
 
         leadContent()
 
-        when (val listState = state.listState) {
-            DlaFlowUiState.Loading -> OrdersListSkeleton(colors)
-            DlaFlowUiState.Empty -> OrdersEmptyState(colors)
-            is DlaFlowUiState.Content -> OrdersList(
-                colors = colors,
-                content = listState.data,
-                thumbnailLoader = thumbnailLoader,
-                onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
-            )
-
-            is DlaFlowUiState.Offline -> listState.lastContent?.let { retained ->
-                OrdersList(
+        Box(modifier = Modifier.fillMaxWidth()) {
+            when (val listState = state.listState) {
+                DlaFlowUiState.Loading -> OrdersListSkeleton(colors)
+                DlaFlowUiState.Empty -> OrdersEmptyState(colors)
+                is DlaFlowUiState.Content -> OrdersList(
                     colors = colors,
-                    content = retained,
+                    content = listState.data,
                     thumbnailLoader = thumbnailLoader,
                     onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
                 )
-                OrdersFailureState(colors, state, onAction)
-            } ?: OrdersFailureState(colors, state, onAction)
+                is DlaFlowUiState.Offline -> listState.lastContent?.let { retained ->
+                    OrdersList(
+                        colors = colors,
+                        content = retained,
+                        thumbnailLoader = thumbnailLoader,
+                        onOpenOrder = { onAction(OrdersAction.OpenOrder(it)) },
+                    )
+                    OrdersFailureState(colors, state, onAction)
+                } ?: OrdersFailureState(colors, state, onAction)
 
-            is DlaFlowUiState.Error -> OrdersFailureState(colors, state, onAction)
-            DlaFlowUiState.NoAccess -> Unit
-        }
-
-        if (state.isRefreshing && content != null) {
-            DlaFlowStateCard(
+                is DlaFlowUiState.Error -> OrdersFailureState(colors, state, onAction)
+                DlaFlowUiState.NoAccess -> Unit
+            }
+            OrdersRefreshOverlay(
                 colors = colors,
-                icon = Icons.Rounded.Refresh,
-                iconColor = colors.primary,
-                title = stringResource(R.string.orders_refreshing_title),
-                description = stringResource(R.string.orders_refreshing_description),
+                visible = state.isRefreshing && content != null,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .zIndex(1f)
+                    .testTag("orders_refresh_overlay"),
             )
         }
         if (content?.nextOffset != null && content.items.isNotEmpty()) {
@@ -207,6 +214,53 @@ private fun OrdersListSkeleton(colors: DlaFlowComposeColors) {
                         Spacer(Modifier.height(7.dp))
                         DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.88f).height(10.dp))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrdersRefreshOverlay(
+    colors: DlaFlowComposeColors,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+        exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+    ) {
+        DlaFlowCard(colors, accent = true) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = colors.primary,
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.orders_refreshing_title),
+                        color = colors.textStrong,
+                        fontFamily = DlaFlowInter,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.orders_refreshing_description),
+                        color = colors.textMuted,
+                        fontFamily = DlaFlowInter,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }
