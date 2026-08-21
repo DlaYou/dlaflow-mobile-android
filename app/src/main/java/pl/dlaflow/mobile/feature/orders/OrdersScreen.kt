@@ -629,7 +629,7 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
             value = ordersShipmentTimingValue(shipmentTiming),
             tone = when (shipmentTiming.kind) {
                 OrdersShipmentTimingKind.DEADLINE -> ordersShippingDeadlineColor(colors, order.shippingDeadlineAt)
-                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> colors.textStrong
+                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> colors.success
             },
             showConnector = false,
         )
