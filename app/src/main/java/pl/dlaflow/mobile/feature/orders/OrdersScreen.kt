@@ -697,14 +697,8 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
                 value = orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
                 tone = colors.textMuted,
                 showConnector = false,
+                showMarker = false,
                 modifier = Modifier.weight(1f),
-            )
-            Box(
-                modifier = Modifier
-                    .padding(top = 5.dp)
-                    .width(1.dp)
-                    .height(28.dp)
-                    .background(colors.border),
             )
             OrderTimelineEntry(
                 colors = colors,
@@ -712,6 +706,7 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
                 value = shipmentValue,
                 tone = shipmentColor,
                 showConnector = false,
+                showMarker = false,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -742,30 +737,33 @@ private fun OrderTimelineEntry(
     value: String,
     tone: Color,
     showConnector: Boolean,
+    showMarker: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier = modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.width(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                modifier = Modifier
-                    .padding(top = 5.dp)
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(tone),
-            )
-            if (showConnector) {
+        if (showMarker) {
+            Column(
+                modifier = Modifier.width(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 Box(
                     modifier = Modifier
-                        .width(1.dp)
-                        .height(24.dp)
-                        .background(colors.border),
+                        .padding(top = 5.dp)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(tone),
                 )
+                if (showConnector) {
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(24.dp)
+                            .background(colors.border),
+                    )
+                }
             }
+            Spacer(Modifier.width(6.dp))
         }
-        Spacer(Modifier.width(6.dp))
         Column(
             modifier = Modifier
                 .weight(1f)
