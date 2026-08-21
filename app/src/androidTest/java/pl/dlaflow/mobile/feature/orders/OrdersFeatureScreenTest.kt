@@ -293,8 +293,24 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun orderTimingIsVerticalAtNormalWidth() {
+    fun orderTimingIsCompactSideBySideAtNormalWidth() {
         setOrders(contentState(), mutableListOf(), screenWidthDp = 412)
+
+        val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val shippingTop = composeRule.onNodeWithText("Wyślij do", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+
+        assertEquals(orderedTop, shippingTop, 2f)
+    }
+
+    @Test
+    fun orderTimingStacksAtNarrowWidth() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 360)
 
         val orderedTop = composeRule.onNodeWithText("Zamówiono", useUnmergedTree = true)
             .fetchSemanticsNode()

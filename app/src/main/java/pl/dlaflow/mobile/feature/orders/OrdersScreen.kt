@@ -424,6 +424,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
                 accentColor = fulfillmentColor,
+                compact = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             DlaFlowStatusField(
@@ -431,6 +432,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_payment_label),
                 value = payment,
                 tone = ordersStatusTone(order.paymentTone),
+                compact = true,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -442,6 +444,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 value = fulfillment,
                 tone = ordersStatusTone(order.statusTone),
                 accentColor = fulfillmentColor,
+                compact = true,
                 modifier = Modifier.weight(1f),
             )
             DlaFlowStatusField(
@@ -449,6 +452,7 @@ private fun OrderStatusFields(colors: DlaFlowComposeColors, order: OrdersListIte
                 label = stringResource(R.string.orders_status_payment_label),
                 value = payment,
                 tone = ordersStatusTone(order.paymentTone),
+                compact = true,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -622,24 +626,58 @@ private fun OrderTimingLine(colors: DlaFlowComposeColors, order: OrdersListItem)
         OrdersShipmentTimingKind.SHIPPED -> stringResource(R.string.orders_label_shipped_at)
         OrdersShipmentTimingKind.DELIVERED -> stringResource(R.string.orders_label_delivered_at)
     }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        OrderTimelineEntry(
-            colors = colors,
-            label = stringResource(R.string.orders_label_ordered_at),
-            value = orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
-            tone = colors.textMuted,
-            showConnector = true,
-        )
-        OrderTimelineEntry(
-            colors = colors,
-            label = shipmentLabel,
-            value = ordersShipmentTimingValue(shipmentTiming),
-            tone = when (shipmentTiming.kind) {
-                OrdersShipmentTimingKind.DEADLINE -> ordersShippingDeadlineColor(colors, order.shippingDeadlineAt)
-                OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> ordersFulfillmentStatusColor(colors, order)
-            },
-            showConnector = false,
-        )
+    val shipmentValue = ordersShipmentTimingValue(shipmentTiming)
+    val shipmentColor = when (shipmentTiming.kind) {
+        OrdersShipmentTimingKind.DEADLINE -> ordersShippingDeadlineColor(colors, order.shippingDeadlineAt)
+        OrdersShipmentTimingKind.SHIPPED, OrdersShipmentTimingKind.DELIVERED -> ordersFulfillmentStatusColor(colors, order)
+    }
+    if (ordersUsesCompactTimingLayout()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            OrderTimelineEntry(
+                colors = colors,
+                label = stringResource(R.string.orders_label_ordered_at),
+                value = orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
+                tone = colors.textMuted,
+                showConnector = false,
+                modifier = Modifier.weight(1f),
+            )
+            Box(
+                modifier = Modifier
+                    .padding(top = 5.dp)
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(colors.border),
+            )
+            OrderTimelineEntry(
+                colors = colors,
+                label = shipmentLabel,
+                value = shipmentValue,
+                tone = shipmentColor,
+                showConnector = false,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            OrderTimelineEntry(
+                colors = colors,
+                label = stringResource(R.string.orders_label_ordered_at),
+                value = orderedAt.ifBlank { stringResource(R.string.orders_value_missing) },
+                tone = colors.textMuted,
+                showConnector = true,
+            )
+            OrderTimelineEntry(
+                colors = colors,
+                label = shipmentLabel,
+                value = shipmentValue,
+                tone = shipmentColor,
+                showConnector = false,
+            )
+        }
     }
 }
 
@@ -650,8 +688,9 @@ private fun OrderTimelineEntry(
     value: String,
     tone: Color,
     showConnector: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    Row(modifier = Modifier.fillMaxWidth()) {
+    Row(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.width(14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -699,6 +738,14 @@ private fun OrderTimelineEntry(
             )
         }
     }
+}
+
+@Composable
+private fun ordersUsesCompactTimingLayout(): Boolean {
+    val configuration = LocalConfiguration.current
+    val fontScale = LocalDensity.current.fontScale
+    return configuration.screenWidthDp > 360 &&
+        !(configuration.screenWidthDp < 480 && fontScale >= 1.2f)
 }
 
 private fun ordersShippingDeadlineColor(colors: DlaFlowComposeColors, value: String): Color {

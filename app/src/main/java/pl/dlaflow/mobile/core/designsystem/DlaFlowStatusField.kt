@@ -36,19 +36,20 @@ internal fun DlaFlowStatusField(
     value: String,
     tone: DlaFlowStatusTone,
     accentColor: Color? = null,
+    compact: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val toneColor = accentColor ?: tone.color(colors)
     val shape = RoundedCornerShape(DlaFlowDimensions.controlRadius)
     Column(
         modifier = modifier
-            .heightIn(min = 58.dp)
+            .heightIn(min = if (compact) 50.dp else 58.dp)
             .clip(shape)
             .background(colors.surfaceSubtle)
             .border(DlaFlowDimensions.borderWidth, toneColor.copy(alpha = 0.24f), shape)
             .semantics(mergeDescendants = true) { contentDescription = "$label, $value" }
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+            .padding(horizontal = 10.dp, vertical = if (compact) 6.dp else 8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 3.dp),
     ) {
         Text(
             text = label,
