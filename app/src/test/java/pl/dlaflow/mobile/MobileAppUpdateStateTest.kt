@@ -27,6 +27,64 @@ class MobileAppUpdateStateTest {
     }
 
     @Test
+    fun `debug bypass leaves required update dismissible`() {
+        val update = mobileUpdate(required = true, latestVersionCode = 5)
+
+        assertFalse(
+            mobileAppUpdateIsBlocking(
+                update,
+                MobileAppUpdateDismissalState(versionCode = 5, count = 3),
+                bypassRequiredUpdate = true,
+            ),
+        )
+        assertEquals(
+            3,
+            mobileAppUpdateDismissalsRemaining(
+                update,
+                MobileAppUpdateDismissalState(),
+                bypassRequiredUpdate = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `debug bypass disables optional dismissal limit`() {
+        val update = mobileUpdate(required = false, latestVersionCode = 5)
+
+        assertFalse(
+            mobileAppUpdateIsBlocking(
+                update,
+                MobileAppUpdateDismissalState(versionCode = 5, count = 3),
+                bypassRequiredUpdate = true,
+            ),
+        )
+        assertEquals(
+            3,
+            mobileAppUpdateDismissalsRemaining(
+                update,
+                MobileAppUpdateDismissalState(versionCode = 5, count = 3),
+                bypassRequiredUpdate = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `debug bypass also handles required status when boolean is absent`() {
+        val update = mobileUpdate(required = false, latestVersionCode = 5).copy(
+            status = MobileAppUpdateStatus.REQUIRED_UPDATE,
+        )
+
+        assertFalse(
+            mobileAppUpdateIsBlocking(
+                update,
+                MobileAppUpdateDismissalState(versionCode = 5, count = 3),
+                bypassRequiredUpdate = true,
+            ),
+        )
+        assertTrue(mobileAppUpdateIsBlocking(update, MobileAppUpdateDismissalState()))
+    }
+
+    @Test
     fun `new update version resets optional dismissals`() {
         val update = mobileUpdate(required = false, latestVersionCode = 6)
         val previousDismissals = MobileAppUpdateDismissalState(versionCode = 5, count = 3)

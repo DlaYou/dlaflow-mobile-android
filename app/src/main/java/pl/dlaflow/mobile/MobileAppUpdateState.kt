@@ -42,16 +42,38 @@ data class MobileAppUpdateDismissalState(
     val count: Int = 0,
 )
 
-fun mobileAppUpdateIsBlocking(update: MobileAppUpdate?, dismissals: MobileAppUpdateDismissalState): Boolean {
+fun mobileAppUpdateIsBlocking(
+    update: MobileAppUpdate?,
+    dismissals: MobileAppUpdateDismissalState,
+    bypassRequiredUpdate: Boolean = false,
+): Boolean {
     if (update == null) {
         return false
     }
 
-    return update.required || mobileAppUpdateDismissalsUsed(update, dismissals) >= MOBILE_APP_UPDATE_MAX_DEFERRALS
+    if (bypassRequiredUpdate) {
+        return false
+    }
+
+    val required = update.required || update.status == MobileAppUpdateStatus.REQUIRED_UPDATE
+    return required || mobileAppUpdateDismissalsUsed(update, dismissals) >= MOBILE_APP_UPDATE_MAX_DEFERRALS
 }
 
-fun mobileAppUpdateDismissalsRemaining(update: MobileAppUpdate?, dismissals: MobileAppUpdateDismissalState): Int {
-    if (update == null || update.required) {
+fun mobileAppUpdateDismissalsRemaining(
+    update: MobileAppUpdate?,
+    dismissals: MobileAppUpdateDismissalState,
+    bypassRequiredUpdate: Boolean = false,
+): Int {
+    if (update == null) {
+        return 0
+    }
+
+    if (bypassRequiredUpdate) {
+        return MOBILE_APP_UPDATE_MAX_DEFERRALS
+    }
+
+    val required = update.required || update.status == MobileAppUpdateStatus.REQUIRED_UPDATE
+    if (required) {
         return 0
     }
 

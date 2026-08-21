@@ -41,12 +41,14 @@ android {
     buildTypes {
         debug {
             manifestPlaceholders["usesCleartextTraffic"] = "true"
+            buildConfigField("boolean", "BYPASS_REQUIRED_APP_UPDATE", "true")
         }
 
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             manifestPlaceholders["usesCleartextTraffic"] = "false"
+            buildConfigField("boolean", "BYPASS_REQUIRED_APP_UPDATE", "false")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")

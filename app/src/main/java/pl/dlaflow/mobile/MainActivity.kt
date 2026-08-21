@@ -609,8 +609,16 @@ class MainActivity : ComponentActivity() {
                     appVersionName = currentAppVersionName(),
                     appUpdate = appUpdate,
                     appUpdateDialogVisible = appUpdateDialogVisible,
-                    appUpdateBlocking = mobileAppUpdateIsBlocking(appUpdate, appUpdateDismissalState),
-                    appUpdateDismissalsRemaining = mobileAppUpdateDismissalsRemaining(appUpdate, appUpdateDismissalState),
+                    appUpdateBlocking = mobileAppUpdateIsBlocking(
+                        appUpdate,
+                        appUpdateDismissalState,
+                        bypassRequiredUpdate = BuildConfig.BYPASS_REQUIRED_APP_UPDATE,
+                    ),
+                    appUpdateDismissalsRemaining = mobileAppUpdateDismissalsRemaining(
+                        appUpdate,
+                        appUpdateDismissalState,
+                        bypassRequiredUpdate = BuildConfig.BYPASS_REQUIRED_APP_UPDATE,
+                    ),
                     appUpdateChecking = appUpdateChecking,
                     appUpdateDownloading = appUpdateDownloading,
                     appUpdateDownloadProgress = appUpdateDownloadProgress,
@@ -1358,7 +1366,11 @@ class MainActivity : ComponentActivity() {
             return false
         }
 
-        return mobileAppUpdateIsBlocking(update, appUpdateDismissalState) || dismissedAppUpdateVersionInRuntime != update.latestVersionCode
+        return mobileAppUpdateIsBlocking(
+            update,
+            appUpdateDismissalState,
+            bypassRequiredUpdate = BuildConfig.BYPASS_REQUIRED_APP_UPDATE,
+        ) || dismissedAppUpdateVersionInRuntime != update.latestVersionCode
     }
 
     private fun dismissAppUpdate() {
@@ -1366,7 +1378,12 @@ class MainActivity : ComponentActivity() {
         if (appUpdateDownloading) {
             return
         }
-        if (mobileAppUpdateIsBlocking(update, appUpdateDismissalState)) {
+        if (mobileAppUpdateIsBlocking(
+                update,
+                appUpdateDismissalState,
+                bypassRequiredUpdate = BuildConfig.BYPASS_REQUIRED_APP_UPDATE,
+            )
+        ) {
             appUpdateDialogVisible = true
             return
         }
@@ -1374,7 +1391,12 @@ class MainActivity : ComponentActivity() {
         val nextState = nextMobileAppUpdateDismissalState(update, appUpdateDismissalState)
         sessionStore.saveUpdateDismissalState(nextState)
         appUpdateDismissalState = nextState
-        if (mobileAppUpdateIsBlocking(update, nextState)) {
+        if (mobileAppUpdateIsBlocking(
+                update,
+                nextState,
+                bypassRequiredUpdate = BuildConfig.BYPASS_REQUIRED_APP_UPDATE,
+            )
+        ) {
             appUpdateDialogVisible = true
             setStatus("Aktualizacja jest teraz wymagana do dalszej pracy.")
         } else {
