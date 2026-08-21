@@ -263,16 +263,16 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
-    fun refreshingContentUsesAnOverlayAndKeepsTheOrderListVisible() {
+    fun refreshingContentUsesSkeletonsInsteadOfStaleOrders() {
         setOrders(
             state = contentState().copy(isRefreshing = true),
             actions = mutableListOf(),
         )
 
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("orders_refresh_overlay").assertIsDisplayed()
-        composeRule.onNodeWithText("Odświeżam zamówienia").assertIsDisplayed()
-        composeRule.onNodeWithText("Klient testowy").assertIsDisplayed()
+        composeRule.onNodeWithTag("orders_refresh_overlay").assertDoesNotExist()
+        composeRule.onNodeWithText("Odświeżam zamówienia").assertDoesNotExist()
+        composeRule.onNodeWithText("Klient testowy").assertDoesNotExist()
     }
 
     @Test

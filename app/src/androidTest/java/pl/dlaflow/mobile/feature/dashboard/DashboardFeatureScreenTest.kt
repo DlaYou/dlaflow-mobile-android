@@ -86,7 +86,7 @@ class DashboardFeatureScreenTest {
     }
 
     @Test
-    fun refreshingShowsProgressAndRetainsContent() {
+    fun refreshingShowsSkeletonInsteadOfStaleContent() {
         setDashboard(
             state = DashboardUiState(
                 contentState = DlaFlowUiState.Content(dashboardContent()),
@@ -95,8 +95,8 @@ class DashboardFeatureScreenTest {
             actions = mutableListOf(),
         )
 
-        composeRule.onNodeWithText("Odświeżamy dane").assertIsDisplayed()
-        composeRule.onNodeWithText("Przychód dzisiaj").assertIsDisplayed()
+        composeRule.onNodeWithText("Odświeżamy dane").assertDoesNotExist()
+        composeRule.onNodeWithText("Przychód dzisiaj").assertDoesNotExist()
         composeRule.onNodeWithText("Ponów").assertDoesNotExist()
     }
 

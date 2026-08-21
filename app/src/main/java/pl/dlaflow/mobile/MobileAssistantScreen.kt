@@ -2,6 +2,11 @@ package pl.dlaflow.mobile
 
 import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -27,6 +32,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -69,6 +75,7 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -82,6 +89,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -109,6 +118,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.zIndex
 import java.text.NumberFormat
 import java.time.Duration
 import java.time.OffsetDateTime
@@ -312,6 +322,7 @@ internal fun MobileAssistantScreen(
     onPairingBack: () -> Unit,
     onSettingsAction: (SettingsAction) -> Unit,
     onDashboardAction: (DashboardAction) -> Unit,
+    onRefreshCurrentTab: () -> Unit = {},
     onSelectTab: (MobileAssistantTab) -> Unit,
     onOrdersAction: (OrdersAction) -> Unit = {},
     onProductsSearchChange: (String) -> Unit = {},
@@ -355,7 +366,8 @@ internal fun MobileAssistantScreen(
                 MobileAssistantBackAction.NONE -> Unit
             }
         }
-        Scaffold(
+        Box(modifier = Modifier.fillMaxSize()) {
+            Scaffold(
             containerColor = colors.appBg,
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
@@ -414,6 +426,7 @@ internal fun MobileAssistantScreen(
                     ordersState = ordersState,
                     onSettingsAction = onSettingsAction,
                     onDashboardAction = onDashboardAction,
+                    onRefreshCurrentTab = onRefreshCurrentTab,
                     onOrdersAction = onOrdersAction,
                     onProductsSearchChange = onProductsSearchChange,
                     onProductsFilterChange = onProductsFilterChange,
@@ -426,6 +439,26 @@ internal fun MobileAssistantScreen(
                     onMarkNotificationsRead = onMarkNotificationsRead,
                     )
                 }
+            }
+            }
+            if (session != null) {
+                RefreshPopupOverlay(
+                    colors = colors,
+                    visible = shouldShowRefreshOverlay(
+                        selectedTab = selectedTab,
+                        overlayScreen = mobileOverlayScreen,
+                        dashboardState = dashboardState,
+                        ordersState = ordersState,
+                        mobileProductsLoading = mobileProductsLoading,
+                        mobileNotificationsLoading = mobileNotificationsLoading,
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp)
+                        .zIndex(10f),
+                )
             }
         }
         if (session != null && appUpdateDialogVisible && appUpdate != null) {
@@ -440,6 +473,93 @@ internal fun MobileAssistantScreen(
                 onInstall = onInstallAppUpdate,
                 onDismiss = onDismissAppUpdate,
             )
+        }
+    }
+}
+
+private fun shouldShowRefreshOverlay(
+    selectedTab: MobileAssistantTab,
+    overlayScreen: MobileAssistantOverlayScreen,
+    dashboardState: DashboardUiState,
+    ordersState: OrdersUiState,
+    mobileProductsLoading: Boolean,
+    mobileNotificationsLoading: Boolean,
+): Boolean = when (selectedTab) {
+    MobileAssistantTab.DASHBOARD,
+    MobileAssistantTab.MESSAGES,
+    MobileAssistantTab.MORE,
+    -> dashboardState.isRefreshing
+    MobileAssistantTab.ORDERS -> ordersState.isRefreshing
+    MobileAssistantTab.PRODUCTS -> mobileProductsLoading
+}.let { tabRefreshing ->
+    if (overlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) mobileNotificationsLoading else tabRefreshing
+}
+
+@Composable
+private fun RefreshPopupOverlay(
+    colors: DlaFlowComposeColors,
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = fadeIn() + slideInVertically(initialOffsetY = { -it }),
+        exit = fadeOut() + slideOutVertically(targetOffsetY = { -it }),
+    ) {
+        Surface(
+            color = colors.surface,
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, colors.primarySoftBorder),
+            shadowElevation = 3.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(colors.primarySoft),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Refresh,
+                        contentDescription = null,
+                        tint = colors.primary,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.dashboard_refreshing_title),
+                        color = colors.textStrong,
+                        fontFamily = DlaFlowInter,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.dashboard_refreshing_description),
+                        color = colors.textMuted,
+                        fontFamily = DlaFlowInter,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = colors.primary,
+                    strokeWidth = 2.dp,
+                )
+            }
         }
     }
 }
@@ -475,6 +595,7 @@ private fun AssistantContent(
     onSettingsAction: (SettingsAction) -> Unit,
     onDashboardAction: (DashboardAction) -> Unit,
     onOrdersAction: (OrdersAction) -> Unit,
+    onRefreshCurrentTab: () -> Unit,
     onProductsSearchChange: (String) -> Unit,
     onProductsFilterChange: (MobileProductFilter) -> Unit,
     onLoadMoreProducts: () -> Unit,
@@ -494,120 +615,134 @@ private fun AssistantContent(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    val isRefreshing = when {
+        mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS -> mobileNotificationsLoading
+        selectedTab == MobileAssistantTab.DASHBOARD || selectedTab == MobileAssistantTab.MESSAGES -> dashboardState.isRefreshing
+        selectedTab == MobileAssistantTab.ORDERS -> ordersState.isRefreshing
+        selectedTab == MobileAssistantTab.PRODUCTS -> mobileProductsLoading
+        else -> false
+    }
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefreshCurrentTab,
+        state = rememberPullToRefreshState(),
+        modifier = Modifier.fillMaxSize(),
     ) {
-        AppHeader(
-            colors = colors,
-            status = "Połączono",
-            unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
-            unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
-            onScanPackage = if (shouldShowPackageScannerHeaderAction(selectedTab, mobileOverlayScreen)) {
-                { onDashboardAction(DashboardAction.ScanPackage) }
-            } else {
-                null
-            },
-            onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
-        )
-        if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
-            NotificationsScreen(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            AppHeader(
                 colors = colors,
-                notifications = if (mobileNotifications.isNotEmpty()) {
-                    mobileNotifications.map { it.toDashboardNotification() }
+                status = "Połączono",
+                unreadCount = dashboard?.notificationSummary?.unreadCount ?: 0,
+                unreadAttentionCount = dashboard?.notificationSummary?.unreadAttentionCount ?: 0,
+                onScanPackage = if (shouldShowPackageScannerHeaderAction(selectedTab, mobileOverlayScreen)) {
+                    { onDashboardAction(DashboardAction.ScanPackage) }
                 } else {
-                    dashboard?.notifications.orEmpty()
+                    null
                 },
-                loading = mobileNotificationsLoading,
-                selectedFilter = mobileNotificationFilter,
-                onFilterChange = onNotificationFilterChange,
-                onBack = onCloseOverlay,
-                onMarkRead = onMarkNotificationsRead,
+                onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
             )
-        } else {
-            when (selectedTab) {
-                MobileAssistantTab.DASHBOARD -> DashboardFeatureScreen(
+            if (mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS) {
+                NotificationsScreen(
                     colors = colors,
-                    sessionUserName = session.userEmail,
-                    state = dashboardState,
-                    fallbackPhotoTask = photoTasks.firstOrNull()?.let { task ->
-                        DashboardPhotoTask(
-                            id = task.id,
-                            productName = task.productName,
-                            productSku = task.productSku,
-                            productImage = "",
-                            status = task.status,
-                            mediaCount = task.mediaCount,
-                            maxPhotos = task.maxPhotos,
-                            expiresAt = task.expiresAt,
-                        )
+                    notifications = if (mobileNotifications.isNotEmpty()) {
+                        mobileNotifications.map { it.toDashboardNotification() }
+                    } else {
+                        dashboard?.notifications.orEmpty()
                     },
-                    onAction = onDashboardAction,
+                    loading = mobileNotificationsLoading,
+                    selectedFilter = mobileNotificationFilter,
+                    onFilterChange = onNotificationFilterChange,
+                    onBack = onCloseOverlay,
+                    onMarkRead = onMarkNotificationsRead,
                 )
-                MobileAssistantTab.ORDERS -> OrdersFeatureScreen(
-                    colors = colors,
-                    state = ordersState,
-                    thumbnailLoader = thumbnailLoader,
-                    leadContent = {
-                        LegacyKpiGrid(colors, dashboard?.kpis) { destination ->
-                            onDashboardAction(DashboardAction.OpenOrdersFilter(destination))
-                        }
-                        OrdersPackageScannerStrip(
-                            colors = colors,
-                            scanState = scannerState.toOrdersPackageScannerState(),
-                            onOpenOrder = { onOrdersAction(OrdersAction.OpenOrder(it)) },
-                            onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
-                        )
-                    },
-                    onAction = onOrdersAction,
-                )
-                MobileAssistantTab.PRODUCTS -> ProductsTab(
-                    colors = colors,
-                    mobileMediaClient = mobileMediaClient,
-                    mobileToken = session.token,
-                    dashboard = dashboard,
-                    photoTasks = photoTasks,
-                    mobileProducts = mobileProducts,
-                    mobileProductsNextCursor = mobileProductsNextCursor,
-                    mobileProductsTotal = mobileProductsTotal,
-                    mobileProductsLoading = mobileProductsLoading,
-                    mobileProductsSearch = mobileProductsSearch,
-                    mobileProductsFilter = mobileProductsFilter,
-                    mobileProductVariants = mobileProductVariants,
-                    mobileProductVariantsLoading = mobileProductVariantsLoading,
-                    mobileProductsReadOnly = mobileProductsReadOnly,
-                    mobileProductsNoAccess = mobileProductsNoAccess,
-                    onRefresh = { onDashboardAction(DashboardAction.Refresh) },
-                    onProductsSearchChange = onProductsSearchChange,
-                    onProductsFilterChange = onProductsFilterChange,
-                    onLoadMoreProducts = onLoadMoreProducts,
-                    onToggleProductVariants = onToggleProductVariants,
-                    onQuickEditProduct = onQuickEditProduct,
-                    onQuickEditVariant = onQuickEditVariant,
-                    onTakePhoto = { taskId -> onDashboardAction(DashboardAction.TakePhoto(taskId)) },
-                    onPickPhoto = { taskId -> onDashboardAction(DashboardAction.PickPhoto(taskId)) },
-                    onCompletePhotoTask = { taskId -> onDashboardAction(DashboardAction.CompletePhotoTask(taskId)) },
-                )
-                MobileAssistantTab.MESSAGES -> MessagesTab(
-                    colors = colors,
-                    dashboard = dashboard,
-                    onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
-                )
-                MobileAssistantTab.MORE -> SettingsFeatureScreen(
-                    colors = colors,
-                    state = settingsState,
-                    content = settingsContent,
-                    onAction = onSettingsAction,
-                )
+            } else {
+                when (selectedTab) {
+                    MobileAssistantTab.DASHBOARD -> DashboardFeatureScreen(
+                        colors = colors,
+                        sessionUserName = session.userEmail,
+                        state = dashboardState,
+                        fallbackPhotoTask = photoTasks.firstOrNull()?.let { task ->
+                            DashboardPhotoTask(
+                                id = task.id,
+                                productName = task.productName,
+                                productSku = task.productSku,
+                                productImage = "",
+                                status = task.status,
+                                mediaCount = task.mediaCount,
+                                maxPhotos = task.maxPhotos,
+                                expiresAt = task.expiresAt,
+                            )
+                        },
+                        onAction = onDashboardAction,
+                    )
+                    MobileAssistantTab.ORDERS -> OrdersFeatureScreen(
+                        colors = colors,
+                        state = ordersState,
+                        thumbnailLoader = thumbnailLoader,
+                        leadContent = {
+                            LegacyKpiGrid(colors, dashboard?.kpis) { destination ->
+                                onDashboardAction(DashboardAction.OpenOrdersFilter(destination))
+                            }
+                            OrdersPackageScannerStrip(
+                                colors = colors,
+                                scanState = scannerState.toOrdersPackageScannerState(),
+                                onOpenOrder = { onOrdersAction(OrdersAction.OpenOrder(it)) },
+                                onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
+                            )
+                        },
+                        onAction = onOrdersAction,
+                    )
+                    MobileAssistantTab.PRODUCTS -> ProductsTab(
+                        colors = colors,
+                        mobileMediaClient = mobileMediaClient,
+                        mobileToken = session.token,
+                        dashboard = dashboard,
+                        photoTasks = photoTasks,
+                        mobileProducts = mobileProducts,
+                        mobileProductsNextCursor = mobileProductsNextCursor,
+                        mobileProductsTotal = mobileProductsTotal,
+                        mobileProductsLoading = mobileProductsLoading,
+                        mobileProductsSearch = mobileProductsSearch,
+                        mobileProductsFilter = mobileProductsFilter,
+                        mobileProductVariants = mobileProductVariants,
+                        mobileProductVariantsLoading = mobileProductVariantsLoading,
+                        mobileProductsReadOnly = mobileProductsReadOnly,
+                        mobileProductsNoAccess = mobileProductsNoAccess,
+                        onRefresh = { onDashboardAction(DashboardAction.Refresh) },
+                        onProductsSearchChange = onProductsSearchChange,
+                        onProductsFilterChange = onProductsFilterChange,
+                        onLoadMoreProducts = onLoadMoreProducts,
+                        onToggleProductVariants = onToggleProductVariants,
+                        onQuickEditProduct = onQuickEditProduct,
+                        onQuickEditVariant = onQuickEditVariant,
+                        onTakePhoto = { taskId -> onDashboardAction(DashboardAction.TakePhoto(taskId)) },
+                        onPickPhoto = { taskId -> onDashboardAction(DashboardAction.PickPhoto(taskId)) },
+                        onCompletePhotoTask = { taskId -> onDashboardAction(DashboardAction.CompletePhotoTask(taskId)) },
+                    )
+                    MobileAssistantTab.MESSAGES -> MessagesTab(
+                        colors = colors,
+                        dashboard = dashboard,
+                        onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
+                    )
+                    MobileAssistantTab.MORE -> SettingsFeatureScreen(
+                        colors = colors,
+                        state = settingsState,
+                        content = settingsContent,
+                        onAction = onSettingsAction,
+                    )
+                }
             }
+            if (shouldShowAssistantStatus(statusMessage)) {
+                DlaFlowStatusStrip(colors, statusMessage)
+            }
+            Spacer(Modifier.height(8.dp))
         }
-        if (shouldShowAssistantStatus(statusMessage)) {
-            DlaFlowStatusStrip(colors, statusMessage)
-        }
-        Spacer(Modifier.height(8.dp))
     }
 }
 

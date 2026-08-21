@@ -1,5 +1,10 @@
 package pl.dlaflow.mobile.core.designsystem
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -315,10 +320,20 @@ internal fun DlaFlowSkeletonBlock(
     modifier: Modifier,
     radius: Dp = DlaFlowDimensions.controlRadius,
 ) {
+    val transition = rememberInfiniteTransition(label = "dlaflow-skeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.46f,
+        targetValue = 0.82f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "dlaflow-skeleton-alpha",
+    )
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(radius))
-            .background(colors.surfaceSubtle)
+            .background(colors.surfaceSubtle.copy(alpha = alpha))
             .border(
                 DlaFlowDimensions.borderWidth,
                 colors.borderSubtle.copy(alpha = 0.55f),

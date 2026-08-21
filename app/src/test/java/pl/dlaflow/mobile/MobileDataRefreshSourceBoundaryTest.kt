@@ -16,11 +16,23 @@ class MobileDataRefreshSourceBoundaryTest {
     }
 
     @Test
-    fun `tab changes request a refresh through the shared controller`() {
+    fun `tab changes keep cached data and leave refresh to explicit actions`() {
         val source = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
 
-        assertTrue(source.contains("dataRefreshController.refreshAfterTabSelection(it)"))
+        assertTrue(!source.contains("dataRefreshController.refreshAfterTabSelection(it)"))
         assertTrue(source.contains("dataRefreshIntervalMs"))
-        assertTrue(source.contains("ensureOrdersLoaded(showFeedback = false)"))
+        assertTrue(source.contains("ensureOrdersLoaded(showFeedback = false, refreshExisting = false)"))
+    }
+
+    @Test
+    fun `pull to refresh is owned by the shared scroll container`() {
+        val screen = File("src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt").readText()
+        val activity = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
+
+        assertTrue(screen.contains("PullToRefreshBox("))
+        assertTrue(screen.contains("onRefresh = onRefreshCurrentTab"))
+        assertTrue(screen.contains(".verticalScroll(rememberScrollState())"))
+        assertTrue(activity.contains("onRefreshCurrentTab = ::refreshCurrentTab"))
+        assertTrue(activity.contains("private fun refreshCurrentTab()"))
     }
 }

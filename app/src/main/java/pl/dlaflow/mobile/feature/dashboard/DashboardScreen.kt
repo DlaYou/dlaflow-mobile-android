@@ -67,6 +67,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationPreviewCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowNotificationRow
 import pl.dlaflow.mobile.core.designsystem.DlaFlowPhotoTaskCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
+import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
 
@@ -97,15 +98,8 @@ internal fun DashboardFeatureScreen(
         is DashboardSurface.Dashboard -> {
             val content = surface.content
             GreetingRow(colors, content?.userName ?: sessionUserName)
-            if (surface.isRefreshing) {
-                DashboardStateNotice(
-                    colors = colors,
-                    title = stringResource(R.string.dashboard_refreshing_title),
-                    description = stringResource(R.string.dashboard_refreshing_description),
-                    showRetry = false,
-                    showProgress = true,
-                    onRetry = { onAction(DashboardAction.Refresh) },
-                )
+            if (surface.isRefreshing || content == null) {
+                DashboardLoadingSkeleton(colors, layoutPolicy)
             } else {
                 surface.notice?.let { notice ->
                     DashboardStateNotice(
@@ -117,14 +111,14 @@ internal fun DashboardFeatureScreen(
                         onRetry = { onAction(DashboardAction.Refresh) },
                     )
                 }
+                RevenueCard(colors, content, layoutPolicy)
+                KpiGrid(colors, content.kpis, layoutPolicy) { destination ->
+                    onAction(DashboardAction.OpenOrdersFilter(destination))
+                }
+                NotificationsList(colors, content.notifications) { onAction(DashboardAction.OpenNotifications) }
+                QuickActions(colors, layoutPolicy, onAction)
+                ActivePhotoTaskSection(colors, content.activePhotoTask, fallbackPhotoTask, onAction)
             }
-            RevenueCard(colors, content, layoutPolicy)
-            KpiGrid(colors, content?.kpis, layoutPolicy) { destination ->
-                onAction(DashboardAction.OpenOrdersFilter(destination))
-            }
-            NotificationsList(colors, content?.notifications.orEmpty()) { onAction(DashboardAction.OpenNotifications) }
-            QuickActions(colors, layoutPolicy, onAction)
-            ActivePhotoTaskSection(colors, content?.activePhotoTask, fallbackPhotoTask, onAction)
         }
 
         is DashboardSurface.Failure -> {
@@ -152,6 +146,51 @@ internal fun DashboardFeatureScreen(
                 onRetry = { onAction(DashboardAction.Refresh) },
             )
         }
+    }
+}
+
+@Composable
+private fun DashboardLoadingSkeleton(
+    colors: DlaFlowComposeColors,
+    layoutPolicy: DashboardLayoutPolicy,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        DlaFlowSkeletonBlock(
+            colors,
+            Modifier
+                .fillMaxWidth()
+                .height(layoutPolicy.revenueCardHeightDp.dp),
+            radius = 15.dp,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(2) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    repeat(layoutPolicy.kpiColumns) {
+                        DlaFlowSkeletonBlock(
+                            colors,
+                            Modifier
+                                .weight(1f)
+                                .height(layoutPolicy.kpiTileHeightDp.dp),
+                            radius = 12.dp,
+                        )
+                    }
+                }
+            }
+        }
+        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth().height(120.dp), radius = 12.dp)
+        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.36f).height(15.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            repeat(4) {
+                DlaFlowSkeletonBlock(
+                    colors,
+                    Modifier
+                        .weight(1f)
+                        .height(layoutPolicy.quickActionHeightDp.dp),
+                    radius = 8.dp,
+                )
+            }
+        }
+        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth().height(112.dp), radius = 12.dp)
     }
 }
 

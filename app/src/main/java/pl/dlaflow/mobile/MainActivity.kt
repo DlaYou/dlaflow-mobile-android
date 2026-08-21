@@ -647,11 +647,11 @@ class MainActivity : ComponentActivity() {
                     onPairingBack = { pairingStateHolder.back() },
                     onSettingsAction = ::handleSettingsAction,
                     onDashboardAction = ::handleDashboardAction,
+                    onRefreshCurrentTab = ::refreshCurrentTab,
                     onSelectTab = {
                         selectedTab = it
-                        dataRefreshController.refreshAfterTabSelection(it)
                         if (it == MobileAssistantTab.ORDERS) {
-                            ensureOrdersLoaded()
+                            ensureOrdersLoaded(showFeedback = false, refreshExisting = false)
                         }
                         if (it == MobileAssistantTab.PRODUCTS) {
                             ensureProductsLoaded()
@@ -1105,6 +1105,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun refreshCurrentTab() {
+        val currentSession = session ?: return
+        when {
+            mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS -> {
+                notificationsCoordinator.refresh(currentSession.token)
+            }
+            selectedTab == MobileAssistantTab.DASHBOARD ||
+                selectedTab == MobileAssistantTab.MESSAGES ||
+                selectedTab == MobileAssistantTab.MORE -> {
+                dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
+                photoTasksCoordinator.refresh(currentSession.token)
+            }
+            selectedTab == MobileAssistantTab.ORDERS -> {
+                ordersCoordinator.refreshList(currentSession.token, showFeedback = true)
+            }
+            selectedTab == MobileAssistantTab.PRODUCTS -> {
+                productsCoordinator.handleAction(currentSession.token, ProductsAction.Refresh, showFeedback = true)
+                photoTasksCoordinator.refresh(currentSession.token)
+            }
+        }
+    }
+
     private fun handleDashboardFeedback(feedback: DashboardFeedback) {
         setStatus(
             when (feedback) {
@@ -1176,7 +1198,7 @@ class MainActivity : ComponentActivity() {
         pairingStateHolder.acceptQrResult(rawValue)
     }
 
-    private fun ensureOrdersLoaded(showFeedback: Boolean = true) {
+    private fun ensureOrdersLoaded(showFeedback: Boolean = true, refreshExisting: Boolean = true) {
         val currentSession = session ?: return
         val state = ordersStateHolder.state
         if (state.activeListRequestId != null || state.activeDetailRequestId != null) {
@@ -1190,7 +1212,7 @@ class MainActivity : ComponentActivity() {
                         query = state.query,
                         showFeedback = showFeedback,
                     )
-                } else {
+                } else if (refreshExisting) {
                     ordersCoordinator.refreshList(currentSession.token, showFeedback = showFeedback)
                 }
             }
