@@ -35,4 +35,14 @@ class MobileDataRefreshSourceBoundaryTest {
         assertTrue(activity.contains("onRefreshCurrentTab = ::refreshCurrentTab"))
         assertTrue(activity.contains("private fun refreshCurrentTab()"))
     }
+
+    @Test
+    fun `refresh hides retained lists behind shared skeleton surfaces`() {
+        val screen = File("src/main/java/pl/dlaflow/mobile/MobileAssistantScreen.kt").readText()
+
+        assertTrue(screen.contains("mobileProductsLoading -> ProductListSkeleton(colors)"))
+        assertTrue(screen.contains("loading = dashboardState.isRefreshing"))
+        assertTrue(screen.contains("if (loading) {\n            NotificationPreviewSkeleton(colors)"))
+        assertTrue(screen.contains("NotificationPreviewSkeleton(colors)"))
+    }
 }

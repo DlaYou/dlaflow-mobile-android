@@ -33,6 +33,12 @@ class DlaFlowDesignTokensTest {
     }
 
     @Test
+    fun `skeleton colors follow the panel lazy-loader palette`() {
+        assertEquals(Color(0xFFEEF2F7), dlaFlowColors(dark = false).skeleton)
+        assertEquals(Color(0xFF263143), dlaFlowColors(dark = true).skeleton)
+    }
+
+    @Test
     fun `shared dimensions freeze current component geometry`() {
         assertEquals(48.dp, DlaFlowDimensions.minimumTouchTarget)
         assertEquals(8.dp, DlaFlowDimensions.controlRadius)

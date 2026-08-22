@@ -728,6 +728,7 @@ private fun AssistantContent(
                     MobileAssistantTab.MESSAGES -> MessagesTab(
                         colors = colors,
                         dashboard = dashboard,
+                        loading = dashboardState.isRefreshing,
                         onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
                     )
                     MobileAssistantTab.MORE -> SettingsFeatureScreen(
@@ -815,7 +816,7 @@ private fun ProductsTab(
         ProductsReadOnlyNotice(colors)
     }
     when {
-        mobileProductsLoading && mobileProducts.isEmpty() -> ProductListSkeleton(colors)
+        mobileProductsLoading -> ProductListSkeleton(colors)
         mobileProducts.isEmpty() -> ProductStateCard(
             colors = colors,
             icon = Icons.Rounded.Search,
@@ -853,15 +854,6 @@ private fun ProductsTab(
                 )
             }
         }
-    }
-    if (mobileProductsLoading && mobileProducts.isNotEmpty()) {
-        ProductStateCard(
-            colors = colors,
-            icon = Icons.Rounded.Refresh,
-            iconColor = colors.primary,
-            title = "Odświeżam listę",
-            description = "Możesz dalej przeglądać widoczne produkty.",
-        )
     }
     if (mobileProductsNextCursor != null && mobileProducts.isNotEmpty()) {
         DlaFlowSecondaryButton(
@@ -1668,9 +1660,14 @@ private fun ProductPhotoTaskMicroNotice(
 }
 
 @Composable
-private fun MessagesTab(colors: DlaFlowComposeColors, dashboard: DashboardContent?, onOpenNotifications: () -> Unit) {
+private fun MessagesTab(
+    colors: DlaFlowComposeColors,
+    dashboard: DashboardContent?,
+    loading: Boolean,
+    onOpenNotifications: () -> Unit,
+) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
-    LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications)
+    LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications, loading)
 }
 
 @Composable
@@ -1692,6 +1689,7 @@ private fun LegacyNotificationsList(
     colors: DlaFlowComposeColors,
     notifications: List<DashboardNotification>,
     onOpenNotifications: () -> Unit,
+    loading: Boolean = false,
 ) {
     DlaFlowNotificationPreviewCard(
         colors = colors,
@@ -1702,17 +1700,37 @@ private fun LegacyNotificationsList(
         isEmpty = notifications.isEmpty(),
         onOpenNotifications = onOpenNotifications,
     ) {
-        Column {
-            notifications.take(4).forEachIndexed { index, notification ->
-                NotificationRow(colors, notification)
-                if (index < notifications.take(4).lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 40.dp)
-                            .height(1.dp)
-                            .background(colors.borderSubtle),
-                    )
+        if (loading) {
+            NotificationPreviewSkeleton(colors)
+        } else {
+            Column {
+                notifications.take(4).forEachIndexed { index, notification ->
+                    NotificationRow(colors, notification)
+                    if (index < notifications.take(4).lastIndex) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 40.dp)
+                                .height(1.dp)
+                                .background(colors.borderSubtle),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotificationPreviewSkeleton(colors: DlaFlowComposeColors) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        repeat(4) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                DlaFlowSkeletonBlock(colors, Modifier.size(34.dp), radius = 8.dp)
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.62f).height(11.dp))
+                    DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.88f).height(9.dp))
                 }
             }
         }
@@ -1998,8 +2016,8 @@ private fun NotificationsScreen(
         NotificationFilterTabs(colors, selectedFilter, onFilterChange)
         val visible = filterDashboardNotifications(notifications, selectedFilter)
         DlaFlowCard(colors, accent = visible.any { toneColorKey(it.tone) == "attention" }) {
-            if (loading && notifications.isEmpty()) {
-                NotificationEmptyRow(colors, "Ładujemy powiadomienia", "Za chwilę pokażemy najnowsze sprawy z panelu.")
+            if (loading) {
+                NotificationPreviewSkeleton(colors)
                 return@DlaFlowCard
             }
             if (visible.isEmpty()) {

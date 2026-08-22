@@ -3,8 +3,10 @@ package pl.dlaflow.mobile.core.designsystem
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +61,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -321,25 +325,37 @@ internal fun DlaFlowSkeletonBlock(
     radius: Dp = DlaFlowDimensions.controlRadius,
 ) {
     val transition = rememberInfiniteTransition(label = "dlaflow-skeleton")
-    val alpha by transition.animateFloat(
-        initialValue = 0.46f,
-        targetValue = 0.82f,
+    val shimmerProgress by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900),
-            repeatMode = RepeatMode.Reverse,
+            animation = tween(durationMillis = 1250, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
         ),
-        label = "dlaflow-skeleton-alpha",
+        label = "dlaflow-skeleton-shimmer",
     )
+    val shape = RoundedCornerShape(radius)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(radius))
-            .background(colors.surfaceSubtle.copy(alpha = alpha))
+            .clip(shape)
+            .background(colors.skeleton)
             .border(
                 DlaFlowDimensions.borderWidth,
                 colors.borderSubtle.copy(alpha = 0.55f),
-                RoundedCornerShape(radius),
+                shape,
             ),
-    )
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val sweepStart = -size.width + (size.width * 2f * shimmerProgress)
+            drawRect(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color.Transparent, colors.skeletonShimmer, Color.Transparent),
+                    start = Offset(sweepStart, 0f),
+                    end = Offset(sweepStart + size.width, size.height),
+                ),
+            )
+        }
+    }
 }
 
 @Composable
