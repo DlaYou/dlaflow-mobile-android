@@ -7,16 +7,27 @@ import com.google.firebase.messaging.RemoteMessage
 import java.time.Instant
 
 /**
- * Receives data messages issued by the DlaFlow panel after a committed order import.
- * The server remains the source of truth; no customer address or full payload is included.
+ * Receives bounded data messages issued by the DlaFlow panel after committed changes.
+ * The server remains the source of truth; no customer address, message body or full payload is included.
  */
 class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
-        if (message.data["event"] != "order.created") return
+        val event = message.data["event"] ?: return
+        val notification = when (event) {
+            "order.created" -> newOrderNotification(message)
+            "message.created" -> newCustomerMessageNotification(message)
+            else -> null
+        } ?: return
 
+        if (shouldShowNativePanelNotification(notification, MobileSessionStore(applicationContext).readNotificationPreferences())) {
+            DlaFlowNotifications.showPanelAlertNotification(applicationContext, notification)
+        }
+    }
+
+    private fun newOrderNotification(message: RemoteMessage): MobileAssistantNotification {
         val orderId = message.data["orderId"].orEmpty()
         val orderNumber = message.data["orderNumber"].orEmpty().ifBlank { "nowe zamówienie" }
-        val notification = MobileAssistantNotification(
+        return MobileAssistantNotification(
             id = "push-order:$orderId",
             title = "Nowe zamówienie",
             description = "Zamówienie $orderNumber oczekuje na obsługę.",
@@ -32,9 +43,36 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
                 label = "Otwórz zamówienia",
             ),
         )
-        if (shouldShowNativePanelNotification(notification, MobileSessionStore(applicationContext).readNotificationPreferences())) {
-            DlaFlowNotifications.showPanelAlertNotification(applicationContext, notification)
+    }
+
+    private fun newCustomerMessageNotification(message: RemoteMessage): MobileAssistantNotification? {
+        val messageId = message.data["messageId"].orEmpty()
+        val threadId = message.data["threadId"].orEmpty()
+        if (messageId.isBlank() && threadId.isBlank()) return null
+
+        val orderNumber = message.data["orderNumber"].orEmpty()
+        val description = if (orderNumber.isNotBlank()) {
+            "Klient napisał w sprawie zamówienia $orderNumber."
+        } else {
+            "Klient napisał nową wiadomość."
         }
+
+        return MobileAssistantNotification(
+            id = "push-message:${messageId.ifBlank { threadId }}",
+            title = "Nowa wiadomość od klienta",
+            description = description,
+            tone = "attention",
+            source = "push",
+            account = "",
+            occurredAt = Instant.ofEpochMilli(
+                message.sentTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            ).toString(),
+            readAt = null,
+            mobileAction = MobileNotificationAction(
+                type = "OPEN_MESSAGES",
+                label = "Otwórz wiadomości",
+            ),
+        )
     }
 
     override fun onNewToken(token: String) {
