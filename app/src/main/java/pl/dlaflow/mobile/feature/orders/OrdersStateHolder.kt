@@ -288,7 +288,7 @@ internal class OrdersStateHolder {
         if (items.isEmpty()) return this
 
         val enrichedItems = items.mapIndexed { index, item ->
-            if (item.image.isNotBlank()) {
+            if (item.image.isCanonicalMobileMediaReference()) {
                 item
             } else {
                 val matchedProduct = listItem.products.firstOrNull { product ->
@@ -305,6 +305,12 @@ internal class OrdersStateHolder {
             }
         }
         return copy(items = enrichedItems)
+    }
+
+    private fun String.isCanonicalMobileMediaReference(): Boolean {
+        val normalized = trim()
+        return normalized.startsWith("/api/mobile/orders/media/") ||
+            normalized.startsWith("/api/mobile/products/media/")
     }
 
     private fun setNoAccess() {

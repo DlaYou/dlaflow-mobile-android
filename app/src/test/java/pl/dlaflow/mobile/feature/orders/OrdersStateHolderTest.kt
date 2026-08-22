@@ -144,6 +144,42 @@ class OrdersStateHolderTest {
     }
 
     @Test
+    fun `detail replaces a non mobile product image with the canonical list image`() {
+        val holder = OrdersStateHolder()
+        val listRequest = holder.beginListReset("session-a", OrdersQuery())
+        assertTrue(
+            holder.acceptListSuccess(
+                listRequest,
+                page(
+                    order("id-1", "ORD-1").copy(
+                        products = listOf(
+                            OrdersListProduct(
+                                image = "/api/mobile/orders/media/canonical.webp?variant=thumb",
+                                name = "Produkt",
+                                quantity = 1,
+                                sku = "SKU-1",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val detailRequest = holder.beginDetailLoad("session-a", "ORD-1")
+        val detail = detail("ORD-1").copy(
+            items = listOf(
+                OrderItem("item-1", "Produkt", "SKU-1", 1, 10.0, 10.0, "/api/products/media/legacy.webp"),
+            ),
+        )
+
+        assertTrue(holder.acceptDetailSuccess(detailRequest, detail))
+        assertEquals(
+            "/api/mobile/orders/media/canonical.webp?variant=thumb",
+            holder.state.detailContentOrNull()?.items?.single()?.image,
+        )
+    }
+
+    @Test
     fun `list and detail requests can complete independently`() {
         val holder = OrdersStateHolder()
         val listRequest = holder.beginListReset("session-a", OrdersQuery())
