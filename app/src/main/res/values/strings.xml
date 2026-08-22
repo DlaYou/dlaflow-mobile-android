@@ -83,6 +83,7 @@
     <string name="pairing_help_mock_emergency_code">Kod awaryjny</string>
     <string name="pairing_help_mock_code">ABC-123</string>
     <string name="dashboard_greeting">Dzień dobry, %1$s! 👋</string>
+    <string name="dashboard_greeting_loading_title">Dzień dobry,</string>
     <string name="dashboard_greeting_subtitle">Oto co dzieje się w Twoim sklepie</string>
     <string name="dashboard_name_fallback_display">DlaFlow</string>
     <string name="dashboard_name_fallback_first">Maciek</string>

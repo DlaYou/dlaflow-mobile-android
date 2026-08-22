@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -97,7 +98,11 @@ internal fun DashboardFeatureScreen(
     when (surface) {
         is DashboardSurface.Dashboard -> {
             val content = surface.content
-            GreetingRow(colors, content?.userName ?: sessionUserName)
+            GreetingRow(
+                colors = colors,
+                userName = content?.userName.orEmpty(),
+                loading = content == null,
+            )
             if (surface.isRefreshing || content == null) {
                 DashboardLoadingSkeleton(colors, layoutPolicy)
             } else {
@@ -195,7 +200,62 @@ private fun DashboardLoadingSkeleton(
 }
 
 @Composable
-private fun GreetingRow(colors: DlaFlowComposeColors, userName: String) {
+private fun GreetingRow(
+    colors: DlaFlowComposeColors,
+    userName: String,
+    loading: Boolean = false,
+) {
+    if (loading) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.dashboard_greeting_loading_title),
+                    color = colors.textStrong,
+                    fontSize = 16.5.sp,
+                    fontFamily = DlaFlowInter,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.sp,
+                    lineHeight = 20.sp,
+                )
+                Spacer(Modifier.width(4.dp))
+                DlaFlowSkeletonBlock(
+                    colors = colors,
+                    modifier = Modifier
+                        .width(68.dp)
+                        .height(18.dp)
+                        .testTag("dashboard_greeting_loading_name"),
+                    radius = 5.dp,
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    text = "! 👋",
+                    color = colors.textStrong,
+                    fontSize = 16.5.sp,
+                    fontFamily = DlaFlowInter,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.sp,
+                    lineHeight = 20.sp,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.dashboard_greeting_subtitle),
+                color = colors.textMuted,
+                fontSize = 10.5.sp,
+                fontFamily = DlaFlowInter,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.sp,
+                lineHeight = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        return
+    }
+
     val firstName = displayFirstName(
         value = userName,
         displayFallback = stringResource(R.string.dashboard_name_fallback_display),

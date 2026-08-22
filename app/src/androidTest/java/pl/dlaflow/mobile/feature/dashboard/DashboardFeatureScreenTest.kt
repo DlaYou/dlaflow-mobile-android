@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -98,6 +99,18 @@ class DashboardFeatureScreenTest {
         composeRule.onNodeWithText("Odświeżamy dane").assertDoesNotExist()
         composeRule.onNodeWithText("Przychód dzisiaj").assertDoesNotExist()
         composeRule.onNodeWithText("Ponów").assertDoesNotExist()
+    }
+
+    @Test
+    fun initialLoadingKeepsGreetingAndUsesNameSkeleton() {
+        setDashboard(
+            state = DashboardUiState(),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Dzień dobry,").assertIsDisplayed()
+        composeRule.onNodeWithTag("dashboard_greeting_loading_name").assertIsDisplayed()
+        composeRule.onNodeWithText("Operator").assertDoesNotExist()
     }
 
     @Test
