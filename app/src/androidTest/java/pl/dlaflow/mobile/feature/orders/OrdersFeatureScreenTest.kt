@@ -453,7 +453,7 @@ class OrdersFeatureScreenTest {
                         OrdersFeatureScreen(
                             colors = colors,
                             state = state,
-                            thumbnailLoader = DlaFlowThumbnailLoader { null },
+                            thumbnailLoader = DlaFlowThumbnailLoader { _, _ -> null },
                             leadContent = { Text("lead-content") },
                             onAction = actions::add,
                         )

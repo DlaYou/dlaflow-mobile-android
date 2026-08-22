@@ -17,10 +17,17 @@ class MobileImageDecodePlanTest {
     }
 
     @Test
+    fun `decode plan uses the measured thumbnail target without upscaling`() {
+        assertEquals(4, mobileImageDecodePlan(width = 1_600, height = 900, targetMaxDimension = 400)?.inSampleSize)
+        assertEquals(1, mobileImageDecodePlan(width = 120, height = 80, targetMaxDimension = 400)?.inSampleSize)
+    }
+
+    @Test
     fun `decode plan rejects invalid dimensions and decompression bombs`() {
         assertNull(mobileImageDecodePlan(width = 0, height = 100))
         assertNull(mobileImageDecodePlan(width = 100, height = -1))
         assertNull(mobileImageDecodePlan(width = 20_000, height = 100))
         assertNull(mobileImageDecodePlan(width = 10_000, height = 10_000))
+        assertNull(mobileImageDecodePlan(width = 100, height = 100, targetMaxDimension = 0))
     }
 }

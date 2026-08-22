@@ -259,6 +259,87 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `mobile media response exposes etag and cache freshness`() {
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val body = byteArrayOf(9, 8, 7)
+                val headers = buildString {
+                    append("HTTP/1.1 200 OK\r\n")
+                    append("Content-Type: image/webp\r\n")
+                    append("Cache-Control: private, max-age=1800\r\n")
+                    append("ETag: \"media-v1\"\r\n")
+                    append("Content-Length: ${body.size}\r\n")
+                    append("Connection: close\r\n\r\n")
+                }
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val response = MobileApiClient("http://127.0.0.1:${server.localPort}")
+                .getMobileMediaResponse("mobile-token", "/api/mobile/products/media/thumb.webp")
+
+            assertEquals(listOf<Byte>(9, 8, 7), response?.bytes?.toList())
+            assertEquals("\"media-v1\"", response?.etag)
+            assertEquals(1_800_000L, response?.maxAgeMillis)
+            assertTrue(response?.notModified == false)
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `mobile media response sends etag and accepts not modified`() {
+        val ifNoneMatch = AtomicReference("")
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                generateSequence { reader.readLine() }
+                    .takeWhile { it.isNotEmpty() }
+                    .forEach { header ->
+                        if (header.startsWith("If-None-Match:", ignoreCase = true)) {
+                            ifNoneMatch.set(header.substringAfter(":").trim())
+                        }
+                    }
+                socket.getOutputStream().use { output ->
+                    output.write(
+                        "HTTP/1.1 304 Not Modified\r\nCache-Control: private, max-age=1800\r\nETag: \"media-v1\"\r\nConnection: close\r\n\r\n"
+                            .toByteArray(Charsets.UTF_8),
+                    )
+                }
+            }
+        }
+
+        try {
+            val response = MobileApiClient("http://127.0.0.1:${server.localPort}")
+                .getMobileMediaResponse(
+                    token = "mobile-token",
+                    pathWithQuery = "/api/mobile/products/media/thumb.webp",
+                    ifNoneMatch = "\"media-v1\"",
+                )
+
+            assertEquals("\"media-v1\"", ifNoneMatch.get())
+            assertNull(response?.bytes)
+            assertEquals("\"media-v1\"", response?.etag)
+            assertEquals(1_800_000L, response?.maxAgeMillis)
+            assertTrue(response?.notModified == true)
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `unauthorized helper media response returns no bytes`() {
         val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val executor = Executors.newSingleThreadExecutor()
