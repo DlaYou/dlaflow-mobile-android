@@ -87,6 +87,7 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
             quantity = item.quantity,
             lineTotal = item.lineTotal,
             unitPrice = item.unitPrice,
+            image = item.image,
         )
     },
     shipments = shipments.map { shipment ->

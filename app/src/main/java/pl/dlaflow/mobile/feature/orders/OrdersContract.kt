@@ -108,6 +108,7 @@ internal data class OrderItem(
     val quantity: Int,
     val lineTotal: Double,
     val unitPrice: Double,
+    val image: String = "",
 )
 
 internal data class OrderShipment(

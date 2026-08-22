@@ -388,6 +388,33 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun detailDisplaysProductThumbnailWhenApiProvidesImage() {
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(
+                    orderDetail(status = "mPOS gotowe").copy(
+                        items = listOf(
+                            OrderItem(
+                                id = "item-1",
+                                name = "Produkt ze zdjęciem",
+                                sku = "SKU-IMAGE",
+                                quantity = 1,
+                                lineTotal = 49.99,
+                                unitPrice = 49.99,
+                                image = "/api/mobile/products/media/product.webp",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithContentDescription("Produkt ze zdjęciem").assertIsDisplayed()
+    }
+
+    @Test
     fun offlineRetainsRowsAndRetryEmitsTypedAction() {
         val actions = mutableListOf<OrdersAction>()
         val content = ordersContent()

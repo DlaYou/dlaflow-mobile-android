@@ -95,6 +95,7 @@ internal fun OrdersFeatureScreen(
             OrderDetailPanel(
                 colors = colors,
                 state = state.detailState,
+                thumbnailLoader = thumbnailLoader,
                 onClose = { onAction(OrdersAction.CloseDetail) },
                 onRetry = { onAction(OrdersAction.Retry) },
             )
