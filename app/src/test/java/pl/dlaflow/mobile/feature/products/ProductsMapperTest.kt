@@ -27,6 +27,29 @@ class ProductsMapperTest {
     }
 
     @Test
+    fun `legacy panel product media reference maps to the mobile thumbnail route`() {
+        val item = productDto(
+            image = "/api/products/media/product.webp",
+            thumbnailUrl = "",
+        ).toProductItem()
+
+        assertEquals(
+            "/api/mobile/products/media/product.webp?variant=thumb",
+            item.thumbnailUrl,
+        )
+    }
+
+    @Test
+    fun `external product media reference is ignored instead of leaving the signed mobile path`() {
+        val item = productDto(
+            image = "https://cdn.example.test/product.webp",
+            thumbnailUrl = "",
+        ).toProductItem()
+
+        assertEquals("", item.thumbnailUrl)
+    }
+
+    @Test
     fun `unknown product status is closed neutral copy`() {
         val item = productDto(status = "RAW_BACKEND_STATUS").toProductItem()
 
@@ -93,13 +116,15 @@ internal fun productDto(
     grossPrice: Double = 19.99,
     status: String = "ACTIVE",
     variantCount: Int = 1,
+    image: String = "/api/products/media/product.webp",
+    thumbnailUrl: String = "/api/mobile/products/media/product.webp",
 ) = MobileProduct(
     id = id,
     name = "Produkt testowy",
     sku = "SKU-1",
     ean = "5900000000001",
-    image = "/api/products/media/product.webp",
-    thumbnailUrl = "/api/mobile/products/media/product.webp",
+    image = image,
+    thumbnailUrl = thumbnailUrl,
     grossPrice = grossPrice,
     stock = 7,
     status = status,
