@@ -15,4 +15,12 @@ class NotificationLaunchIntentTest {
 
         assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenOrders, false))
     }
+
+    @Test
+    fun customerMessageNotificationIntentTargetsMessagesTab() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = DlaFlowDeepLinks.messagesIntent(context)
+
+        assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false))
+    }
 }

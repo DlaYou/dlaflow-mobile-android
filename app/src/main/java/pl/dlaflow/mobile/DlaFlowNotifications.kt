@@ -18,6 +18,7 @@ import java.util.Locale
 object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
     const val extraOpenOrders = "pl.dlaflow.mobile.OPEN_ORDERS"
+    const val extraOpenMessages = "pl.dlaflow.mobile.OPEN_MESSAGES"
     const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
 
     fun photoTaskIntent(context: Context, taskId: String): Intent {
@@ -29,6 +30,12 @@ object DlaFlowDeepLinks {
     fun ordersIntent(context: Context): Intent {
         return Intent(context, MainActivity::class.java)
             .putExtra(extraOpenOrders, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+
+    fun messagesIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenMessages, true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 }
@@ -158,10 +165,10 @@ object DlaFlowNotifications {
             return false
         }
 
-        val appIntent = if (isOrdersNotificationAction(notification.mobileAction.type)) {
-            DlaFlowDeepLinks.ordersIntent(context)
-        } else {
-            Intent(context, MainActivity::class.java)
+        val appIntent = when {
+            isOrdersNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.ordersIntent(context)
+            isMessagesNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.messagesIntent(context)
+            else -> Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
@@ -194,6 +201,9 @@ object DlaFlowNotifications {
 
 internal fun isOrdersNotificationAction(actionType: String): Boolean =
     actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_ORDERS", "ORDERS")
+
+internal fun isMessagesNotificationAction(actionType: String): Boolean =
+    actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_MESSAGES", "MESSAGES")
 
 internal fun panelAlertNotificationId(id: String): Int {
     if (id.isBlank()) {

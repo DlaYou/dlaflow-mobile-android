@@ -68,6 +68,13 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `customer message actions open the messages screen`() {
+        assertTrue(isMessagesNotificationAction("OPEN_MESSAGES"))
+        assertTrue(isMessagesNotificationAction("messages"))
+        assertFalse(isMessagesNotificationAction("OPEN_LOGS_SUMMARY"))
+    }
+
+    @Test
     fun `mobile notifications page parses summary actions and read state`() {
         val payload = """
             {

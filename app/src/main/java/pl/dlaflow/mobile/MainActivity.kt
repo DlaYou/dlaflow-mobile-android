@@ -1714,6 +1714,10 @@ class MainActivity : ComponentActivity() {
             selectedTab = MobileAssistantTab.ORDERS
             statusMessage = "Otwieram zamówienia z powiadomienia."
         }
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false) == true) {
+            selectedTab = MobileAssistantTab.MESSAGES
+            statusMessage = "Otwieram wiadomości z powiadomienia."
+        }
         val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {
             photoTasksStateHolder.consumeExternalFocus(taskId)
