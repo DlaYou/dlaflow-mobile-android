@@ -3,16 +3,20 @@ package pl.dlaflow.mobile.feature.orders
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Text
@@ -21,8 +25,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,17 +41,19 @@ import pl.dlaflow.mobile.R
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
-import pl.dlaflow.mobile.core.designsystem.DlaFlowMetricBox
-import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
+import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnail
+import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
+import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
 @Composable
 internal fun OrderDetailPanel(
     colors: DlaFlowComposeColors,
     state: DlaFlowUiState<OrderDetailContent>?,
+    thumbnailLoader: DlaFlowThumbnailLoader,
     onClose: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -61,8 +72,8 @@ internal fun OrderDetailPanel(
         }
         when (state) {
             null, DlaFlowUiState.Loading -> OrderDetailSkeleton(colors)
-            is DlaFlowUiState.Content -> OrderDetailContentBody(colors, state.data)
-            is DlaFlowUiState.Offline -> state.lastContent?.let { OrderDetailContentBody(colors, it) }
+            is DlaFlowUiState.Content -> OrderDetailContentBody(colors, state.data, thumbnailLoader)
+            is DlaFlowUiState.Offline -> state.lastContent?.let { OrderDetailContentBody(colors, it, thumbnailLoader) }
                 ?: OrderDetailFailure(colors, state = state, onRetry = onRetry)
             is DlaFlowUiState.Error -> OrderDetailFailure(colors, state = state, onRetry = onRetry)
             DlaFlowUiState.Empty -> Text(stringResource(R.string.orders_detail_load_failed), color = colors.textMuted, fontSize = 12.sp)
@@ -106,23 +117,22 @@ private fun OrderDetailFailure(
 }
 
 @Composable
-private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDetailContent) {
+private fun OrderDetailContentBody(
+    colors: DlaFlowComposeColors,
+    order: OrderDetailContent,
+    thumbnailLoader: DlaFlowThumbnailLoader,
+) {
     Spacer(Modifier.height(6.dp))
     Text(stringResource(R.string.orders_number, order.orderNumber), color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-    Text(order.customer.name, color = colors.textStrong, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-    Spacer(Modifier.height(10.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        DlaFlowMetricBox(colors, stringResource(R.string.orders_metric_value), formatOrdersMoney(order.amount), modifier = Modifier.weight(1f))
-        DlaFlowMetricBox(
-            colors,
-            stringResource(R.string.orders_metric_status),
-            ordersStatusValue(order.status, stringResource(R.string.orders_status_check)),
-            valueColor = dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone),
-            modifier = Modifier.weight(1f),
-        )
-    }
+    OrderDetailProductCard(colors, order, thumbnailLoader)
     OrderDetailSection(colors, stringResource(R.string.orders_section_timing)) {
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_ordered_at), ordersDisplayTimestamp(order.createdAt).ifBlank { stringResource(R.string.orders_value_missing) })
+        OrderDetailColoredValue(
+            colors = colors,
+            label = stringResource(R.string.orders_label_order_status),
+            value = ordersStatusValue(order.status, stringResource(R.string.orders_status_check)),
+            color = dlaFlowHexColor(order.statusColor) ?: ordersToneColor(colors, order.statusTone),
+        )
         val shipment = order.shipments.firstOrNull()
         val shipmentTiming = shipment?.let {
             ordersShipmentTimingPresentation(
@@ -144,6 +154,7 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
         )
     }
     OrderDetailSection(colors, stringResource(R.string.orders_section_customer)) {
+        DlaFlowKeyValue(colors, stringResource(R.string.orders_label_customer_name), order.customer.name.ifBlank { stringResource(R.string.orders_value_missing) })
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_phone), order.customer.phone.ifBlank { stringResource(R.string.orders_value_missing) })
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_email), order.customer.email.ifBlank { stringResource(R.string.orders_value_missing) })
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_login), order.customer.nick.ifBlank { stringResource(R.string.orders_value_missing) })
@@ -154,8 +165,7 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_paid), formatOrdersMoney(order.payment.paidAmount))
     }
     OrderDetailSection(colors, stringResource(R.string.orders_section_delivery)) {
-        DlaFlowKeyValue(colors, stringResource(R.string.orders_label_delivery_method), order.delivery.method.ifBlank { stringResource(R.string.orders_value_delivery) })
-        Text(orderAddressLabel(order.delivery.address), color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp)
+        OrderDetailDeliveryCard(colors, order)
     }
     OrderDetailSection(colors, stringResource(R.string.orders_section_products)) {
         val items = order.items.ifEmpty {
@@ -167,9 +177,12 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
                 item.name,
                 listOfNotNull(
                     item.sku.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_sku, it) },
+                    item.variantId.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_variant, it) },
                     stringResource(R.string.orders_value_quantity, item.quantity),
                 ).joinToString(" · "),
                 formatOrdersMoney(item.lineTotal.takeIf { it > 0.0 } ?: item.unitPrice * item.quantity.coerceAtLeast(1)),
+                imageUrl = item.image,
+                thumbnailLoader = thumbnailLoader,
             )
         }
     }
@@ -191,7 +204,7 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
                 OrderDetailListRow(
                     colors,
                     shipment.carrier.ifBlank { stringResource(R.string.orders_value_shipment) },
-                    shipment.trackingNumber.ifBlank { shipment.status },
+                    shipment.status,
                     "$timingLabel: $timingValue",
                 )
             }
@@ -208,6 +221,154 @@ private fun OrderDetailContentBody(colors: DlaFlowComposeColors, order: OrderDet
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun OrderDetailProductCard(
+    colors: DlaFlowComposeColors,
+    order: OrderDetailContent,
+    thumbnailLoader: DlaFlowThumbnailLoader,
+) {
+    val item = order.items.firstOrNull() ?: OrderItem(
+        id = "",
+        name = order.productSummary.ifBlank { stringResource(R.string.orders_value_product) },
+        sku = "",
+        quantity = order.itemCount,
+        lineTotal = order.amount,
+        unitPrice = order.amount,
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("orders_detail_product_card")
+            .semantics(mergeDescendants = true) {},
+    ) {
+        DlaFlowCard(colors, accent = true) {
+            Row(verticalAlignment = Alignment.Top) {
+                DlaFlowThumbnail(
+                    colors = colors,
+                    url = item.image,
+                    loader = thumbnailLoader,
+                    modifier = Modifier.size(96.dp),
+                    contentDescription = stringResource(R.string.orders_label_product_image, item.name),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        item.name,
+                        color = colors.textStrong,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        lineHeight = 19.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        formatOrdersMoney(item.lineTotal.takeIf { it > 0.0 } ?: item.unitPrice * item.quantity.coerceAtLeast(1)),
+                        color = colors.textStrong,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    val metadata = listOfNotNull(
+                        item.sku.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_sku, it) },
+                        item.variantId.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_variant, it) },
+                        stringResource(R.string.orders_value_quantity, item.quantity),
+                    ).joinToString(" · ")
+                    Text(
+                        metadata,
+                        color = colors.textMuted,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 14.sp,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderDetailColoredValue(
+    colors: DlaFlowComposeColors,
+    label: String,
+    value: String,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, color = colors.textMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Text(value, color = color, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun OrderDetailDeliveryCard(colors: DlaFlowComposeColors, order: OrderDetailContent) {
+    val shipment = order.shipments.firstOrNull()
+    val carrier = shipment?.carrier.orEmpty().ifBlank { order.delivery.method }
+    val isInPost = carrier.contains("inpost", ignoreCase = true) ||
+        order.delivery.method.contains("paczkomat", ignoreCase = true)
+    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .size(58.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.surface)
+                .border(1.dp, colors.borderSubtle, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isInPost) {
+                androidx.compose.foundation.Image(
+                    painter = painterResource(R.drawable.inpost_logo),
+                    contentDescription = stringResource(R.string.orders_delivery_inpost),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().padding(5.dp),
+                )
+            } else {
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.Rounded.LocalShipping,
+                    contentDescription = stringResource(R.string.orders_value_delivery),
+                    tint = colors.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                order.delivery.method.ifBlank { carrier.ifBlank { stringResource(R.string.orders_value_delivery) } },
+                color = colors.textStrong,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(orderAddressLabel(order.delivery.address), color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, lineHeight = 15.sp)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    Column(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(stringResource(R.string.orders_label_tracking), color = colors.textMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(3.dp))
+        Text(
+            shipment?.trackingNumber?.ifBlank { stringResource(R.string.orders_value_tracking_missing) }
+                ?: stringResource(R.string.orders_value_tracking_missing),
+            color = colors.textStrong,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            lineHeight = 17.sp,
+        )
     }
 }
 
@@ -233,8 +394,25 @@ private fun OrderDetailSection(
 }
 
 @Composable
-private fun OrderDetailListRow(colors: DlaFlowComposeColors, title: String, subtitle: String, value: String) {
+private fun OrderDetailListRow(
+    colors: DlaFlowComposeColors,
+    title: String,
+    subtitle: String,
+    value: String,
+    imageUrl: String = "",
+    thumbnailLoader: DlaFlowThumbnailLoader? = null,
+) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
+        if (thumbnailLoader != null) {
+            DlaFlowThumbnail(
+                colors = colors,
+                url = imageUrl,
+                loader = thumbnailLoader,
+                modifier = Modifier.size(46.dp),
+                contentDescription = title,
+            )
+            Spacer(Modifier.width(9.dp))
+        }
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle.isNotBlank()) {
@@ -242,7 +420,7 @@ private fun OrderDetailListRow(colors: DlaFlowComposeColors, title: String, subt
             }
         }
         Spacer(Modifier.width(8.dp))
-        Text(value, color = colors.textStrong, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+        Text(value, color = colors.textStrong, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 

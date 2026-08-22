@@ -421,6 +421,36 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun variantBKeepsOrderFactsOutsideTheProductCardAndShowsDeliveryTracking() {
+        val trackingNumber = "INPOST-PL-123456789012345678901234"
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(
+                    orderDetail(status = "W realizacji").copy(
+                        items = listOf(OrderItem("item-1", "Kurtka techniczna", "SKU-KURTKA", 2, 249.98, 124.99, "")),
+                        shipments = listOf(OrderShipment("shipment-1", "InPost", true, "Nadana", trackingNumber)),
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+            screenWidthDp = 360,
+        )
+
+        val productCard = composeRule.onNodeWithTag("orders_detail_product_card")
+        productCard.assertIsDisplayed()
+        productCard.assert(hasText("Kurtka techniczna", substring = true))
+        productCard.assert(!hasText("W realizacji", substring = true))
+        productCard.assert(!hasText("Opłacone", substring = true))
+
+        composeRule.onNodeWithText("W realizacji", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Status: Opłacone").assertIsDisplayed()
+        composeRule.onNodeWithText("Paczkomat", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Numer przesyłki", substring = true).performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText(trackingNumber, substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun offlineRetainsRowsAndRetryEmitsTypedAction() {
         val actions = mutableListOf<OrdersAction>()
         val content = ordersContent()

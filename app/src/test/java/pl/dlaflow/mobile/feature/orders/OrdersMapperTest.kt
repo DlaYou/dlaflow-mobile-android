@@ -191,6 +191,15 @@ class OrdersMapperTest {
     }
 
     @Test
+    fun `detail preserves product image for the product card`() {
+        val detail = orderDetailDto(
+            items = listOf(orderItemDto().copy(image = "/api/mobile/products/media/product-a.webp")),
+        ).toOrderDetailContent()
+
+        assertEquals("/api/mobile/products/media/product-a.webp", detail.items.single().image)
+    }
+
+    @Test
     fun `orders filters map to unchanged legacy API values only at mapper seam`() {
         assertEquals(MobileOrderFilter.ALL, OrdersFilter.ALL.toMobileOrderFilter())
         assertEquals(MobileOrderFilter.NEW, OrdersFilter.NEW.toMobileOrderFilter())

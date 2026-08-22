@@ -164,6 +164,13 @@
     <string name="orders_detail_title">Szczegóły zamówienia</string>
     <string name="orders_detail_back">Wróć</string>
     <string name="orders_detail_load_failed">Nie udało się pobrać zamówienia.</string>
+    <string name="orders_label_order_status">Status zamówienia</string>
+    <string name="orders_label_customer_name">Nazwa</string>
+    <string name="orders_label_product_image">Zdjęcie produktu: %1$s</string>
+    <string name="orders_value_variant">Wariant: %1$s</string>
+    <string name="orders_label_tracking">Numer przesyłki</string>
+    <string name="orders_value_tracking_missing">Brak numeru przesyłki</string>
+    <string name="orders_delivery_inpost">InPost</string>
     <string name="orders_metric_value">Wartość</string>
     <string name="orders_metric_status">Status</string>
     <string name="orders_section_customer">Klient</string>
