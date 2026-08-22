@@ -107,6 +107,43 @@ class OrdersStateHolderTest {
     }
 
     @Test
+    fun `detail fills missing product image from the normalized list item`() {
+        val holder = OrdersStateHolder()
+        val listRequest = holder.beginListReset("session-a", OrdersQuery())
+        assertTrue(
+            holder.acceptListSuccess(
+                listRequest,
+                page(
+                    order("id-1", "ORD-1").copy(
+                        thumbnailUrl = "/api/mobile/products/media/order.webp",
+                        products = listOf(
+                            OrdersListProduct(
+                                image = "/api/mobile/products/media/product.webp",
+                                name = "Produkt",
+                                quantity = 1,
+                                sku = "SKU-1",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val detailRequest = holder.beginDetailLoad("session-a", "ORD-1")
+        val detail = detail("ORD-1").copy(
+            items = listOf(
+                OrderItem("item-1", "Produkt", "SKU-1", 1, 10.0, 10.0),
+            ),
+        )
+
+        assertTrue(holder.acceptDetailSuccess(detailRequest, detail))
+        assertEquals(
+            "/api/mobile/products/media/product.webp",
+            holder.state.detailContentOrNull()?.items?.single()?.image,
+        )
+    }
+
+    @Test
     fun `list and detail requests can complete independently`() {
         val holder = OrdersStateHolder()
         val listRequest = holder.beginListReset("session-a", OrdersQuery())

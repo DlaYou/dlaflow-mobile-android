@@ -153,7 +153,7 @@ internal class OrdersStateHolder {
 
     fun acceptDetailSuccess(request: OrdersDetailRequest, content: OrderDetailContent): Boolean {
         if (!matches(request)) return false
-        finishDetail(DlaFlowUiState.Content(content))
+        finishDetail(DlaFlowUiState.Content(content.withListImageFallback()))
         return true
     }
 
@@ -279,6 +279,32 @@ internal class OrdersStateHolder {
     private fun invalidateDetail() {
         activeDetailSessionKey = null
         pendingDetailUnauthorizedRequestId = null
+    }
+
+    private fun OrderDetailContent.withListImageFallback(): OrderDetailContent {
+        val listItem = state.listContentOrNull()?.items?.firstOrNull { item ->
+            item.orderNumber == orderNumber || item.id == id
+        } ?: return this
+        if (items.isEmpty()) return this
+
+        val enrichedItems = items.mapIndexed { index, item ->
+            if (item.image.isNotBlank()) {
+                item
+            } else {
+                val matchedProduct = listItem.products.firstOrNull { product ->
+                    product.image.isNotBlank() && (
+                        item.sku.isNotBlank() && product.sku.equals(item.sku, ignoreCase = true) ||
+                            item.name.isNotBlank() && product.name.equals(item.name, ignoreCase = true)
+                        )
+                }
+                item.copy(
+                    image = matchedProduct?.image.orEmpty().ifBlank {
+                        if (index == 0) listItem.thumbnailUrl else ""
+                    },
+                )
+            }
+        }
+        return copy(items = enrichedItems)
     }
 
     private fun setNoAccess() {
