@@ -106,6 +106,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -696,6 +697,7 @@ private fun AssistantContent(
                                 onScanAgain = { onDashboardAction(DashboardAction.ScanPackage) },
                             )
                         },
+                        leadLoadingContent = { OrdersKpiSkeleton(colors) },
                         onAction = onOrdersAction,
                     )
                     MobileAssistantTab.PRODUCTS -> ProductsTab(
@@ -1716,6 +1718,33 @@ private fun LegacyNotificationsList(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrdersKpiSkeleton(colors: DlaFlowComposeColors) {
+    Row(
+        modifier = Modifier.testTag("orders_kpi_skeleton").fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        repeat(4) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(98.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colors.surface)
+                    .border(1.dp, colors.border.copy(alpha = 0.78f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 9.dp, vertical = 9.dp),
+                verticalArrangement = Arrangement.Top,
+            ) {
+                DlaFlowSkeletonBlock(colors, Modifier.size(25.dp), radius = 7.dp)
+                Spacer(Modifier.height(6.dp))
+                DlaFlowSkeletonBlock(colors, Modifier.width(30.dp).height(18.dp), radius = 5.dp)
+                Spacer(Modifier.height(2.dp))
+                DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.72f).height(9.dp), radius = 4.dp)
             }
         }
     }

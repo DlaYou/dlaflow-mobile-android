@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -267,12 +268,15 @@ class OrdersFeatureScreenTest {
         setOrders(
             state = contentState().copy(isRefreshing = true),
             actions = mutableListOf(),
+            leadLoadingContent = { Text("orders-kpi-skeleton") },
         )
 
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("orders_refresh_overlay").assertDoesNotExist()
         composeRule.onNodeWithText("Odświeżam zamówienia").assertDoesNotExist()
         composeRule.onNodeWithText("Klient testowy").assertDoesNotExist()
+        composeRule.onNodeWithText("orders-kpi-skeleton").assertIsDisplayed()
+        composeRule.onNodeWithTag("orders_list_skeleton").assertIsDisplayed()
     }
 
     @Test
@@ -462,6 +466,7 @@ class OrdersFeatureScreenTest {
         actions: MutableList<OrdersAction>,
         fontScale: Float = 1f,
         screenWidthDp: Int? = null,
+        leadLoadingContent: @Composable () -> Unit = {},
     ) {
         composeRule.setContent {
             DlaFlowTheme(dark = false) { colors ->
@@ -484,6 +489,7 @@ class OrdersFeatureScreenTest {
                             state = state,
                             thumbnailLoader = DlaFlowThumbnailLoader { null },
                             leadContent = { Text("lead-content") },
+                            leadLoadingContent = leadLoadingContent,
                             onAction = actions::add,
                         )
                     }

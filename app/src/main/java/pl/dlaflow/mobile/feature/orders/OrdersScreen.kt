@@ -65,6 +65,7 @@ internal fun OrdersFeatureScreen(
     state: OrdersUiState,
     thumbnailLoader: DlaFlowThumbnailLoader,
     leadContent: @Composable () -> Unit,
+    leadLoadingContent: @Composable () -> Unit = {},
     onAction: (OrdersAction) -> Unit,
 ) {
     val content = state.listContentOrNull()
@@ -112,13 +113,11 @@ internal fun OrdersFeatureScreen(
             return@Column
         }
 
-        if (!state.isRefreshing) {
-            leadContent()
-        }
-
         if (state.isRefreshing) {
+            leadLoadingContent()
             OrdersListSkeleton(colors)
         } else {
+            leadContent()
             when (val listState = state.listState) {
                 DlaFlowUiState.Loading -> OrdersListSkeleton(colors)
                 DlaFlowUiState.Empty -> OrdersEmptyState(colors)
@@ -189,18 +188,67 @@ private fun ordersUsesCompactLayout(): Boolean =
 
 @Composable
 private fun OrdersListSkeleton(colors: DlaFlowComposeColors) {
-    Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        repeat(4) {
+    Column(
+        modifier = Modifier.testTag("orders_list_skeleton"),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        repeat(3) {
             DlaFlowCard(colors) {
-                Row(verticalAlignment = Alignment.Top) {
-                    DlaFlowSkeletonBlock(colors, Modifier.size(38.dp), radius = 8.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.68f).height(15.dp))
-                        Spacer(Modifier.height(7.dp))
-                        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.44f).height(10.dp))
-                        Spacer(Modifier.height(7.dp))
-                        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.88f).height(10.dp))
+                Column {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.54f).height(15.dp))
+                            Spacer(Modifier.height(5.dp))
+                            DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.38f).height(10.dp))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        DlaFlowSkeletonBlock(colors, Modifier.width(68.dp).height(15.dp))
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        repeat(2) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                DlaFlowSkeletonBlock(
+                                    colors,
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .aspectRatio(ordersProductImageAspectRatio(2)),
+                                    radius = 8.dp,
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.82f).height(11.dp))
+                                Spacer(Modifier.height(4.dp))
+                                DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.56f).height(9.dp))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                        repeat(2) {
+                            DlaFlowSkeletonBlock(
+                                colors,
+                                Modifier.weight(1f).height(42.dp),
+                                radius = 8.dp,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        repeat(2) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.42f).height(9.dp))
+                                DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.76f).height(12.dp))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.46f).height(9.dp))
+                        Spacer(Modifier.weight(1f))
+                        DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth(0.23f).height(9.dp))
                     }
                 }
             }
