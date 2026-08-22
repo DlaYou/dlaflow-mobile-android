@@ -67,6 +67,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -443,7 +444,7 @@ internal fun DlaFlowMetricBox(
 }
 
 internal fun interface DlaFlowThumbnailLoader {
-    suspend fun load(url: String): ImageBitmap?
+    suspend fun load(url: String, targetMaxDimension: Int): ImageBitmap?
 }
 
 @Composable
@@ -456,14 +457,16 @@ internal fun DlaFlowThumbnail(
     contentDescription: String? = null,
 ) {
     var bitmap by remember(loader, url) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(loader, url) {
+    var targetMaxDimension by remember(loader, url) { mutableStateOf(0) }
+    LaunchedEffect(loader, url, targetMaxDimension) {
         bitmap = null
-        if (url.isNotBlank()) {
-            bitmap = runCatching { loader.load(url) }.getOrNull()
+        if (url.isNotBlank() && targetMaxDimension > 0) {
+            bitmap = runCatching { loader.load(url, targetMaxDimension) }.getOrNull()
         }
     }
     Box(
         modifier = modifier
+            .onSizeChanged { size -> targetMaxDimension = maxOf(size.width, size.height) }
             .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
             .background(colors.primarySoft)
             .border(DlaFlowDimensions.borderWidth, colors.primarySoftBorder, RoundedCornerShape(DlaFlowDimensions.controlRadius)),

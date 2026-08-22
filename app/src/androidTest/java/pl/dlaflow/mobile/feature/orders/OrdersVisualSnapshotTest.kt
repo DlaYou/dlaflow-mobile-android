@@ -61,7 +61,7 @@ class OrdersVisualSnapshotTest {
                         OrdersFeatureScreen(
                             colors = colors,
                             state = state,
-                            thumbnailLoader = DlaFlowThumbnailLoader { null },
+                            thumbnailLoader = DlaFlowThumbnailLoader { _, _ -> null },
                             leadContent = {},
                             onAction = {},
                         )

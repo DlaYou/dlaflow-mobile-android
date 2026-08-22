@@ -30,6 +30,13 @@ data class MobileSession(
     val userEmail: String,
 )
 
+internal data class MobileMediaResponse(
+    val bytes: ByteArray?,
+    val etag: String?,
+    val maxAgeMillis: Long?,
+    val notModified: Boolean,
+)
+
 data class MobilePhotoTask(
     val id: String,
     val productName: String,
@@ -469,12 +476,23 @@ class MobileApiClient(
     }
 
     fun getMobileMedia(token: String, pathWithQuery: String): ByteArray? {
+        return getMobileMediaResponse(token, pathWithQuery)?.bytes
+    }
+
+    internal fun getMobileMediaResponse(
+        token: String,
+        pathWithQuery: String,
+        ifNoneMatch: String? = null,
+    ): MobileMediaResponse? {
         val canonicalPath = resolveMobileMediaPath(baseUrl, pathWithQuery) ?: return null
 
         val connection = openConnection(canonicalPath)
         connection.instanceFollowRedirects = false
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "image/*")
+        ifNoneMatch?.takeIf { it.isNotBlank() && '\r' !in it && '\n' !in it }?.let { etag ->
+            connection.setRequestProperty("If-None-Match", etag)
+        }
         applyAuthorizationAndSignature(
             connection = connection,
             method = "GET",
@@ -485,15 +503,29 @@ class MobileApiClient(
 
         return try {
             val status = connection.responseCode
-            if (status !in 200..299) {
+            val etag = connection.getHeaderField("ETag")?.takeIf { it.isNotBlank() }
+            val maxAgeMillis = parseMobileMediaMaxAgeMillis(connection.getHeaderField("Cache-Control"))
+            if (status == HttpURLConnection.HTTP_NOT_MODIFIED) {
+                MobileMediaResponse(
+                    bytes = null,
+                    etag = etag,
+                    maxAgeMillis = maxAgeMillis,
+                    notModified = true,
+                )
+            } else if (status !in 200..299) {
                 connection.errorStream?.use { Unit }
                 null
             } else if (connection.contentLengthLong > mobileMediaMaxBytes.toLong()) {
                 null
             } else {
-                connection.inputStream.use { input ->
-                    readMobileMediaWithinLimit(input, mobileMediaMaxBytes)
-                }
+                MobileMediaResponse(
+                    bytes = connection.inputStream.use { input ->
+                        readMobileMediaWithinLimit(input, mobileMediaMaxBytes)
+                    },
+                    etag = etag,
+                    maxAgeMillis = maxAgeMillis,
+                    notModified = false,
+                )
             }
         } finally {
             connection.disconnect()
@@ -1490,6 +1522,27 @@ private fun readMobileMediaWithinLimit(input: InputStream, maxBytes: Int): ByteA
         }
         output.write(buffer, 0, read)
     }
+}
+
+private fun parseMobileMediaMaxAgeMillis(cacheControl: String?): Long? {
+    val seconds = cacheControl
+        ?.split(',')
+        ?.asSequence()
+        ?.map { directive -> directive.trim() }
+        ?.firstNotNullOfOrNull { directive ->
+            val normalizedDirective = directive.replace(" ", "")
+            val prefix = "max-age="
+            if (!normalizedDirective.startsWith(prefix, ignoreCase = true)) {
+                return@firstNotNullOfOrNull null
+            }
+            normalizedDirective.substring(prefix.length).trim('"').toLongOrNull()
+        }
+        ?: return null
+
+    return seconds
+        .coerceAtLeast(0L)
+        .coerceAtMost(Long.MAX_VALUE / 1_000L)
+        .times(1_000L)
 }
 
 private fun mobilePhotoUploadSha256(source: MobilePhotoUploadSource): String {

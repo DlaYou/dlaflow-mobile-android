@@ -2416,6 +2416,7 @@ class MainActivity : ComponentActivity() {
 
     private fun clearDisconnectedSession(message: String) {
         sessionStore.clearSession()
+        MobileImageCache.clearAll(cacheDir)
         DlaFlowBackgroundSyncService.stop(this)
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()

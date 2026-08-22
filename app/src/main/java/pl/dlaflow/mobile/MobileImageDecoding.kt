@@ -12,7 +12,11 @@ internal data class MobileImageDecodePlan(
     val inSampleSize: Int,
 )
 
-internal fun mobileImageDecodePlan(width: Int, height: Int): MobileImageDecodePlan? {
+internal fun mobileImageDecodePlan(
+    width: Int,
+    height: Int,
+    targetMaxDimension: Int = MOBILE_IMAGE_DECODE_MAX_DIMENSION,
+): MobileImageDecodePlan? {
     if (width <= 0 || height <= 0) {
         return null
     }
@@ -22,6 +26,12 @@ internal fun mobileImageDecodePlan(width: Int, height: Int): MobileImageDecodePl
     if (width.toLong() * height.toLong() > MOBILE_IMAGE_HARD_MAX_PIXELS) {
         return null
     }
+    if (targetMaxDimension <= 0) {
+        return null
+    }
+
+    val boundedTargetDimension = minOf(targetMaxDimension, MOBILE_IMAGE_DECODE_MAX_DIMENSION)
+    val boundedTargetPixels = boundedTargetDimension.toLong() * boundedTargetDimension.toLong()
 
     var sampleSize = 1
     while (true) {
@@ -29,9 +39,9 @@ internal fun mobileImageDecodePlan(width: Int, height: Int): MobileImageDecodePl
         val sampledHeight = ceilDiv(height, sampleSize)
         val sampledPixels = sampledWidth.toLong() * sampledHeight.toLong()
         if (
-            sampledWidth <= MOBILE_IMAGE_DECODE_MAX_DIMENSION &&
-            sampledHeight <= MOBILE_IMAGE_DECODE_MAX_DIMENSION &&
-            sampledPixels <= MOBILE_IMAGE_DECODE_MAX_PIXELS
+            sampledWidth <= boundedTargetDimension &&
+            sampledHeight <= boundedTargetDimension &&
+            sampledPixels <= boundedTargetPixels
         ) {
             return MobileImageDecodePlan(inSampleSize = sampleSize)
         }
@@ -39,7 +49,10 @@ internal fun mobileImageDecodePlan(width: Int, height: Int): MobileImageDecodePl
     }
 }
 
-internal fun decodeMobileImageBitmap(bytes: ByteArray): Bitmap? {
+internal fun decodeMobileImageBitmap(
+    bytes: ByteArray,
+    targetMaxDimension: Int = MOBILE_IMAGE_DECODE_MAX_DIMENSION,
+): Bitmap? {
     if (bytes.isEmpty()) {
         return null
     }
@@ -48,16 +61,17 @@ internal fun decodeMobileImageBitmap(bytes: ByteArray): Bitmap? {
         inJustDecodeBounds = true
     }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    val plan = mobileImageDecodePlan(bounds.outWidth, bounds.outHeight) ?: return null
+    val plan = mobileImageDecodePlan(bounds.outWidth, bounds.outHeight, targetMaxDimension) ?: return null
+    val boundedTargetDimension = minOf(targetMaxDimension, MOBILE_IMAGE_DECODE_MAX_DIMENSION)
     val options = BitmapFactory.Options().apply {
         inSampleSize = plan.inSampleSize
     }
     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
     val decodedPixels = bitmap.width.toLong() * bitmap.height.toLong()
     if (
-        bitmap.width > MOBILE_IMAGE_DECODE_MAX_DIMENSION ||
-        bitmap.height > MOBILE_IMAGE_DECODE_MAX_DIMENSION ||
-        decodedPixels > MOBILE_IMAGE_DECODE_MAX_PIXELS
+        bitmap.width > boundedTargetDimension ||
+        bitmap.height > boundedTargetDimension ||
+        decodedPixels > boundedTargetDimension.toLong() * boundedTargetDimension.toLong()
     ) {
         bitmap.recycle()
         return null

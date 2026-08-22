@@ -1,6 +1,5 @@
 package pl.dlaflow.mobile
 
-import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -107,6 +106,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -125,8 +125,6 @@ import java.time.Duration
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import pl.dlaflow.mobile.app.navigation.MobileAssistantBackAction
 import pl.dlaflow.mobile.app.navigation.MobileAssistantOverlayScreen
 import pl.dlaflow.mobile.app.navigation.MobileAssistantTab
@@ -171,6 +169,7 @@ import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerStrip
 import pl.dlaflow.mobile.feature.orders.OrdersPackageScannerState
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersUiState
+import pl.dlaflow.mobile.feature.orders.listContentOrNull
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 import pl.dlaflow.mobile.feature.pairing.PairingFeatureScreen
@@ -607,13 +606,35 @@ private fun AssistantContent(
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
 ) {
+    val context = LocalContext.current
     val mobileMediaClient = remember(apiUrl, session.deviceId) {
         mobileApiClientForDevice(apiUrl, session.deviceId)
     }
-    val thumbnailLoader = remember(mobileMediaClient, session.token) {
-        DlaFlowThumbnailLoader { url ->
-            loadMobileImageBitmap(mobileMediaClient, url, session.token)?.asImageBitmap()
+    val imageCache = remember(apiUrl, session.deviceId, session.token) {
+        MobileImageCache(
+            cacheDir = context.cacheDir,
+            sessionScope = mobileImageCacheSessionScope(apiUrl, session.deviceId, session.token),
+        )
+    }
+    val imageLoader = remember(mobileMediaClient, session.token, imageCache) {
+        MobileImageLoader(apiUrl, mobileMediaClient, session.token, imageCache)
+    }
+    val thumbnailLoader = remember(imageLoader) {
+        DlaFlowThumbnailLoader { url, targetMaxDimension ->
+            imageLoader.load(url, targetMaxDimension)?.asImageBitmap()
         }
+    }
+    LaunchedEffect(selectedTab, ordersState.listContentOrNull(), mobileProducts) {
+        val urls = when (selectedTab) {
+            MobileAssistantTab.ORDERS -> ordersState.listContentOrNull()?.items.orEmpty().flatMap { order ->
+                listOf(order.thumbnailUrl) + order.products.map { product -> product.image }
+            }
+            MobileAssistantTab.PRODUCTS -> mobileProducts.flatMap { product ->
+                listOf(product.thumbnailUrl, product.image)
+            }
+            else -> emptyList()
+        }
+        imageLoader.prefetch(urls)
     }
 
     val isRefreshing = when {
@@ -702,8 +723,7 @@ private fun AssistantContent(
                     )
                     MobileAssistantTab.PRODUCTS -> ProductsTab(
                         colors = colors,
-                        mobileMediaClient = mobileMediaClient,
-                        mobileToken = session.token,
+                        thumbnailLoader = thumbnailLoader,
                         dashboard = dashboard,
                         photoTasks = photoTasks,
                         mobileProducts = mobileProducts,
@@ -763,8 +783,7 @@ private fun shouldShowAssistantStatus(message: String): Boolean {
 @Composable
 private fun ProductsTab(
     colors: DlaFlowComposeColors,
-    mobileMediaClient: MobileApiClient,
-    mobileToken: String,
+    thumbnailLoader: DlaFlowThumbnailLoader,
     dashboard: DashboardContent?,
     photoTasks: List<MobilePhotoTask>,
     mobileProducts: List<MobileProduct>,
@@ -830,8 +849,7 @@ private fun ProductsTab(
             mobileProducts.forEach { product ->
                 MobileProductCard(
                     colors = colors,
-                    mobileMediaClient = mobileMediaClient,
-                    mobileToken = mobileToken,
+                    thumbnailLoader = thumbnailLoader,
                     product = product,
                     variants = mobileProductVariants[product.id],
                     variantsLoading = product.id in mobileProductVariantsLoading,
@@ -1027,8 +1045,7 @@ private fun ProductStateCard(
 @Composable
 private fun MobileProductCard(
     colors: DlaFlowComposeColors,
-    mobileMediaClient: MobileApiClient,
-    mobileToken: String,
+    thumbnailLoader: DlaFlowThumbnailLoader,
     product: MobileProduct,
     variants: List<MobileProductVariant>?,
     variantsLoading: Boolean,
@@ -1050,8 +1067,7 @@ private fun MobileProductCard(
         Row(verticalAlignment = Alignment.Top) {
             ProductThumbTile(
                 colors = colors,
-                mobileMediaClient = mobileMediaClient,
-                mobileToken = mobileToken,
+                loader = thumbnailLoader,
                 thumbnailUrl = product.thumbnailUrl.ifBlank { product.image },
             )
             Spacer(Modifier.width(10.dp))
@@ -1156,8 +1172,7 @@ private fun MobileProductCard(
                         items.forEach { variant ->
                             MobileProductVariantRow(
                                 colors = colors,
-                                mobileMediaClient = mobileMediaClient,
-                                mobileToken = mobileToken,
+                                thumbnailLoader = thumbnailLoader,
                                 product = product,
                                 variant = variant,
                                 readOnly = readOnly,
@@ -1178,30 +1193,14 @@ private fun MobileProductCard(
 @Composable
 private fun ProductThumbTile(
     colors: DlaFlowComposeColors,
-    mobileMediaClient: MobileApiClient,
-    mobileToken: String,
+    loader: DlaFlowThumbnailLoader,
     thumbnailUrl: String,
 ) {
-    val loader = remember(mobileMediaClient, mobileToken) {
-        DlaFlowThumbnailLoader { url ->
-            loadMobileImageBitmap(mobileMediaClient, url, mobileToken)?.asImageBitmap()
-        }
-    }
     DlaFlowThumbnail(
         colors = colors,
         url = thumbnailUrl,
         loader = loader,
     )
-}
-
-private suspend fun loadMobileImageBitmap(
-    mobileMediaClient: MobileApiClient,
-    mediaUrl: String,
-    mobileToken: String,
-): Bitmap? = withContext(Dispatchers.IO) {
-    val bytes = mobileMediaClient.getMobileMedia(mobileToken, mediaUrl) ?: return@withContext null
-
-    decodeMobileImageBitmap(bytes)
 }
 
 @Composable
@@ -1248,8 +1247,7 @@ private fun ProductMetricBox(
 @Composable
 private fun MobileProductVariantRow(
     colors: DlaFlowComposeColors,
-    mobileMediaClient: MobileApiClient,
-    mobileToken: String,
+    thumbnailLoader: DlaFlowThumbnailLoader,
     product: MobileProduct,
     variant: MobileProductVariant,
     readOnly: Boolean,
@@ -1270,8 +1268,7 @@ private fun MobileProductVariantRow(
         Row(verticalAlignment = Alignment.Top) {
             ProductThumbTile(
                 colors = colors,
-                mobileMediaClient = mobileMediaClient,
-                mobileToken = mobileToken,
+                loader = thumbnailLoader,
                 thumbnailUrl = mobileVariantThumbnailUrl(variant, product),
             )
             Spacer(Modifier.width(8.dp))
