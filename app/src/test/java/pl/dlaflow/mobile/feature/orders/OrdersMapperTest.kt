@@ -182,7 +182,10 @@ class OrdersMapperTest {
         assertEquals("Paczkomat", detail.delivery.method)
         assertEquals("Warszawa", detail.delivery.address.city)
         assertEquals(OrderPayment("PLN", "Przelew", 123.45, "Opłacone", "success"), detail.payment)
-        assertEquals(OrderItem("item-1", "Produkt A", "SKU-1", 2, 123.45, 61.725), detail.items.single())
+        assertEquals(
+            OrderItem("item-1", "Produkt A", "SKU-1", 2, 123.45, 61.725, "/api/mobile/products/media/produkt-a.webp"),
+            detail.items.single(),
+        )
         assertEquals(OrderShipment("shipment-1", "InPost", true, "Nadana", "TRACK-1", "2026-07-18T14:00:00Z", "", "sent"), detail.shipments.single())
         assertEquals(OrderMessage("message-1", "Klient", "Dziękuję", "2026-07-18T09:00:00Z"), detail.messages.single())
         assertEquals(1, detail.documentsCount)
@@ -322,7 +325,7 @@ private fun orderItemDto() = MobileOrderItem(
     currency = "PLN",
     ean = "5900000000000",
     id = "item-1",
-    image = "",
+    image = "/api/mobile/products/media/produkt-a.webp",
     lineTotal = 123.45,
     name = "Produkt A",
     offerId = "offer-1",
