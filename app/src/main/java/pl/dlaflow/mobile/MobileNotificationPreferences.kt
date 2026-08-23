@@ -83,20 +83,7 @@ fun shouldShowNativePanelNotification(
     preferences: MobileNotificationPreferences,
 ): Boolean {
     val category = classifyMobileNotification(notification)
-    if (!preferences.isEnabled(category)) return false
-
-    return when (category) {
-        MobileNotificationCategory.NEW_ORDERS,
-        MobileNotificationCategory.CUSTOMER_MESSAGES,
-        MobileNotificationCategory.ORDER_STATUS,
-        MobileNotificationCategory.SHIPMENT_STATUS,
-        MobileNotificationCategory.PHOTO_TASKS,
-        -> true
-        MobileNotificationCategory.IMPORTANT_PANEL -> {
-            val tone = notification.tone.lowercase(Locale.ROOT)
-            tone == "error" || tone == "warning"
-        }
-    }
+    return preferences.isEnabled(category)
 }
 
 fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean =

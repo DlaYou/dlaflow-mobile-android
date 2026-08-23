@@ -290,6 +290,7 @@ class MainActivity : ComponentActivity() {
             removeCallbacks = dispatchHandler::removeCallbacks,
             refreshDashboard = ::refreshDashboardIfIdle,
             refreshOrders = ::refreshOrdersIfIdle,
+            refreshNotifications = ::refreshNotificationsIfIdle,
             selectedTab = { selectedTab },
             intervalMs = dataRefreshIntervalMs,
         )
@@ -920,6 +921,7 @@ class MainActivity : ComponentActivity() {
                         DlaFlowBackgroundSyncService.start(this)
                         startPhotoTaskDispatchPolling()
                         dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
+                        notificationsCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
                         photoTasksCoordinator.refresh(verifiedSession.token)
                         refreshAppUpdate(showStatus = false)
                         if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -981,6 +983,7 @@ class MainActivity : ComponentActivity() {
             DlaFlowBackgroundSyncService.start(this)
             startPhotoTaskDispatchPolling()
             dashboardCoordinator.refresh(nextSession.token, showFeedback = false)
+            notificationsCoordinator.refresh(nextSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -1238,6 +1241,13 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshOrdersIfIdle() {
         ensureOrdersLoaded(showFeedback = false)
+    }
+
+    private fun refreshNotificationsIfIdle() {
+        val currentSession = session ?: return
+        if (notificationsStateHolder.state.activeLoadRequestId == null) {
+            notificationsCoordinator.refresh(currentSession.token, allowUnauthorizedRetry = false)
+        }
     }
 
     private fun handleOrdersAction(action: OrdersAction) {

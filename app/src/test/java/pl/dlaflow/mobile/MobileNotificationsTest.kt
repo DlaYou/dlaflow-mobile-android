@@ -19,13 +19,13 @@ class MobileNotificationsTest {
     }
 
     @Test
-    fun `urgent notification policy is limited to actionable items`() {
+    fun `legacy notification policy does not filter panel entries`() {
         assertTrue(shouldShowNativePanelNotification("error", "OPEN_ORDERS"))
         assertTrue(shouldShowNativePanelNotification("warning", "OPEN_PRODUCTS"))
         assertTrue(shouldShowNativePanelNotification("info", "OPEN_MESSAGES"))
         assertTrue(shouldShowNativePanelNotification("info", "OPEN_PHOTO_TASKS"))
-        assertFalse(shouldShowNativePanelNotification("success", "OPEN_LOGS_SUMMARY"))
-        assertFalse(shouldShowNativePanelNotification("info", "OPEN_LOGS_SUMMARY"))
+        assertTrue(shouldShowNativePanelNotification("success", "OPEN_LOGS_SUMMARY"))
+        assertTrue(shouldShowNativePanelNotification("info", "OPEN_LOGS_SUMMARY"))
     }
 
     @Test

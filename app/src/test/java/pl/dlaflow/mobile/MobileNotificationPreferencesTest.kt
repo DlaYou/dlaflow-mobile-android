@@ -44,6 +44,33 @@ class MobileNotificationPreferencesTest {
 
         assertFalse(shouldShowNativePanelNotification(testNotification("Nowe zamówienie", "OPEN_ORDERS"), preferences))
         assertTrue(shouldShowNativePanelNotification(testNotification("Wiadomość od klienta", "OPEN_MESSAGES"), preferences))
+
+        val importantDisabled = MobileNotificationPreferences.defaults()
+            .withEnabled(MobileNotificationCategory.IMPORTANT_PANEL, false)
+        assertFalse(
+            shouldShowNativePanelNotification(
+                testNotification("Informacja z panelu", "OPEN_LOGS_SUMMARY", tone = "info"),
+                importantDisabled,
+            ),
+        )
+    }
+
+    @Test
+    fun `enabled important panel category accepts every tone`() {
+        val preferences = MobileNotificationPreferences.defaults()
+
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Informacja z panelu", "OPEN_LOGS_SUMMARY", tone = "info"),
+                preferences,
+            ),
+        )
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Zakończono synchronizację", "OPEN_LOGS_SUMMARY", tone = "success"),
+                preferences,
+            ),
+        )
     }
 
     @Test
@@ -67,11 +94,11 @@ class MobileNotificationPreferencesTest {
         assertEquals("Powiadomienia wyłączone", mobileNotificationPreferenceSummary(MobileNotificationPreferences(emptySet())))
     }
 
-    private fun testNotification(title: String, actionType: String) = MobileAssistantNotification(
+    private fun testNotification(title: String, actionType: String, tone: String = "info") = MobileAssistantNotification(
         id = title,
         title = title,
         description = "Opis",
-        tone = "info",
+        tone = tone,
         source = "DlaFlow",
         account = "Panel",
         occurredAt = "2026-08-19T08:00:00Z",

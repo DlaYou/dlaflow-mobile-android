@@ -16,12 +16,14 @@ class MobileDataRefreshControllerTest {
 
         assertEquals(1, scheduler.dashboardRefreshes)
         assertEquals(1, scheduler.ordersRefreshes)
+        assertEquals(1, scheduler.notificationRefreshes)
         assertEquals(60_000L, scheduler.scheduledDelayMs)
 
         scheduler.runScheduledRefresh()
 
         assertEquals(2, scheduler.dashboardRefreshes)
         assertEquals(2, scheduler.ordersRefreshes)
+        assertEquals(2, scheduler.notificationRefreshes)
         assertEquals(60_000L, scheduler.scheduledDelayMs)
     }
 
@@ -35,6 +37,7 @@ class MobileDataRefreshControllerTest {
 
         assertEquals(1, scheduler.dashboardRefreshes)
         assertEquals(1, scheduler.ordersRefreshes)
+        assertEquals(0, scheduler.notificationRefreshes)
     }
 
     @Test
@@ -50,6 +53,7 @@ class MobileDataRefreshControllerTest {
         staleTick!!.run()
         assertEquals(1, scheduler.dashboardRefreshes)
         assertEquals(1, scheduler.ordersRefreshes)
+        assertEquals(1, scheduler.notificationRefreshes)
         assertFalse(scheduler.hasScheduledRefresh)
     }
 
@@ -63,6 +67,7 @@ class MobileDataRefreshControllerTest {
 
         assertEquals(1, scheduler.dashboardRefreshes)
         assertEquals(0, scheduler.ordersRefreshes)
+        assertEquals(1, scheduler.notificationRefreshes)
         assertSame(firstTick, scheduler.scheduledRunnable)
         assertTrue(scheduler.hasScheduledRefresh)
     }
@@ -73,6 +78,7 @@ private class RefreshSchedulerHarness(
 ) {
     var dashboardRefreshes = 0
     var ordersRefreshes = 0
+    var notificationRefreshes = 0
     var scheduledRunnable: Runnable? = null
     var scheduledDelayMs: Long? = null
     var removedRunnable: Runnable? = null
@@ -91,6 +97,7 @@ private class RefreshSchedulerHarness(
         },
         refreshDashboard = { dashboardRefreshes += 1 },
         refreshOrders = { ordersRefreshes += 1 },
+        refreshNotifications = { notificationRefreshes += 1 },
         selectedTab = { selectedTab },
         intervalMs = 60_000L,
     )

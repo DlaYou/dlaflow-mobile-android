@@ -399,12 +399,9 @@ fun notificationBadgeState(unreadCount: Int, unreadAttentionCount: Int): Notific
 }
 
 fun shouldShowNativePanelNotification(tone: String, actionType: String): Boolean {
-    val normalizedTone = tone.lowercase()
-
-    return normalizedTone == "error" ||
-        normalizedTone == "warning" ||
-        actionType == "OPEN_MESSAGES" ||
-        actionType == "OPEN_PHOTO_TASKS"
+    // Kept for source/backward compatibility with older callers. Eligibility is
+    // decided by category preferences in MobileNotificationPreferences.
+    return true
 }
 
 fun parseMobilePackageScanLookupResult(data: JSONObject): MobilePackageScanLookupResult {
