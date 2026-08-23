@@ -106,7 +106,7 @@ class MobileFeatureIntegrationGuardTest {
                 preferences,
             ),
         )
-        assertFalse(
+        assertTrue(
             shouldShowNativePanelNotification(
                 testNotification("Informacja z panelu", "info", "OPEN_LOGS_SUMMARY"),
                 preferences,

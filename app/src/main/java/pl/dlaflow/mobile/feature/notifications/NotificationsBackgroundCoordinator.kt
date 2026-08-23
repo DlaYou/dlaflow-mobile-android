@@ -8,7 +8,6 @@ import pl.dlaflow.mobile.core.session.NotificationSessionSynchronization
 import pl.dlaflow.mobile.forgetShownNotificationId
 import pl.dlaflow.mobile.hasShownNotificationId
 import pl.dlaflow.mobile.rememberShownNotificationId
-import pl.dlaflow.mobile.shouldShowNativePanelNotification
 
 internal interface NotificationsBackgroundDeliveryMemory {
     fun readLastPhotoTaskId(): String
@@ -70,7 +69,6 @@ internal class NotificationsBackgroundCoordinator(
                     .asSequence()
                     .filter { it.id.isNotBlank() }
                     .filter { it.readAt.isNullOrBlank() }
-                    .filter { shouldShowNativePanelNotification(it.tone, it.mobileAction.type) }
                     .forEach { notification ->
                         deliverPanelAlert(
                             capturedSessionKey = capturedSessionKey,

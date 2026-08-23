@@ -186,7 +186,7 @@ class NotificationsBackgroundCoordinatorTest {
     }
 
     @Test
-    fun `successful effects are claimed once and non actionable panel alerts are ignored`() {
+    fun `successful effects are claimed once and every unread panel alert is delivered`() {
         val coordinator = coordinator()
         val session = key("device-a", "token-a")
         val memory = FakeMemory()
@@ -212,11 +212,11 @@ class NotificationsBackgroundCoordinatorTest {
         }
 
         assertEquals(1, photoAttempts.get())
-        assertEquals(1, panelAttempts.get())
+        assertEquals(2, panelAttempts.get())
         assertEquals("photo-a", memory.photoTaskId)
         assertTrue(memory.panelAlertIds.contains("panel-a"))
         assertFalse(memory.panelAlertIds.contains("read-panel"))
-        assertFalse(memory.panelAlertIds.contains("quiet-panel"))
+        assertTrue(memory.panelAlertIds.contains("quiet-panel"))
     }
 
     @Test

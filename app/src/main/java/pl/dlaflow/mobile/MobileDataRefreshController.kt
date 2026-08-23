@@ -8,6 +8,7 @@ internal class MobileDataRefreshController(
     private val removeCallbacks: (Runnable) -> Unit,
     private val refreshDashboard: () -> Unit,
     private val refreshOrders: () -> Unit,
+    private val refreshNotifications: () -> Unit,
     private val selectedTab: () -> MobileAssistantTab,
     private val intervalMs: Long,
 ) {
@@ -41,6 +42,7 @@ internal class MobileDataRefreshController(
 
     private fun refreshVisibleData() {
         refreshDashboard()
+        refreshNotifications()
         if (selectedTab() == MobileAssistantTab.ORDERS) {
             refreshOrders()
         }
