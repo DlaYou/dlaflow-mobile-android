@@ -1,5 +1,6 @@
 package pl.dlaflow.mobile.feature.products
 
+import java.net.URI
 import java.util.Locale
 import pl.dlaflow.mobile.MobileProduct
 import pl.dlaflow.mobile.MobileProductFilter
@@ -35,7 +36,7 @@ internal fun MobileProduct.toProductItem(expectedId: String? = null): ProductIte
         name = name.trim().ifBlank { "Produkt" },
         sku = sku.trim(),
         ean = ean.trim(),
-        thumbnailUrl = firstMobileProductThumbnail(thumbnailUrl, image),
+        thumbnailUrl = firstMobileProductThumbnail(thumbnailUrl, image, *media.toTypedArray()),
         grossPrice = grossPrice,
         stock = stock,
         status = normalizedProductStatus(status, lowStock),
@@ -67,7 +68,7 @@ internal fun MobileProductVariant.toProductVariant(
         name = name.trim().ifBlank { "Wariant" },
         sku = sku.trim(),
         ean = ean.trim(),
-        thumbnailUrl = firstMobileProductThumbnail(thumbnailUrl, image, parentThumbnailUrl),
+        thumbnailUrl = firstMobileProductThumbnail(thumbnailUrl, image, *media.toTypedArray(), parentThumbnailUrl),
         price = price,
         stock = stock,
         status = normalizedProductStatus(status, lowStock = false),
@@ -88,6 +89,26 @@ private fun normalizeMobileProductThumbnailUrl(raw: String): String {
     val candidate = raw.trim()
     if (candidate.isBlank()) return ""
     if (candidate.startsWith(MOBILE_PRODUCT_MEDIA_PREFIX)) return candidate
+
+    val absolute = runCatching { URI(candidate) }.getOrNull()
+    val absolutePath = absolute?.rawPath.orEmpty()
+    if (absolute != null && absolute.isAbsolute && absolute.rawFragment == null && absolute.rawUserInfo == null) {
+        if (absolutePath.startsWith(MOBILE_PRODUCT_MEDIA_PREFIX)) return candidate
+        if (absolutePath.startsWith(LEGACY_PRODUCT_MEDIA_PREFIX)) {
+            val filename = absolutePath.removePrefix(LEGACY_PRODUCT_MEDIA_PREFIX)
+            if (!SAFE_PRODUCT_MEDIA_FILENAME.matches(filename)) return ""
+            return buildString {
+                append(absolute.scheme)
+                append("://")
+                append(absolute.rawAuthority)
+                append(MOBILE_PRODUCT_MEDIA_PREFIX)
+                append(filename)
+                append("?variant=thumb")
+            }
+        }
+        return ""
+    }
+
     if (!candidate.startsWith(LEGACY_PRODUCT_MEDIA_PREFIX)) return ""
 
     val filename = candidate

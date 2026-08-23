@@ -629,6 +629,34 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `products page parser preserves gallery media when primary image is missing`() {
+        withSingleJsonResponse(
+            """{
+                "data":[{
+                    "id":"product-flowers",
+                    "name":"Sztuczne kwiatki",
+                    "grossPrice":12.5,
+                    "stock":4,
+                    "status":"ACTIVE",
+                    "media":["/api/mobile/products/media/flowers.webp?variant=thumb"],
+                    "image":"",
+                    "thumbnailUrl":""
+                }],
+                "meta":{"total":1,"nextCursor":null,"canEdit":false}
+            }""".trimIndent(),
+        ) { client, requestPath ->
+            val page = client.listProducts("synthetic-token", "", MobileProductFilter.ALL)
+
+            assertEquals(
+                "/api/mobile/products?limit=20&countMode=window&sort=id&direction=asc",
+                requestPath.get(),
+            )
+            assertEquals(listOf("/api/mobile/products/media/flowers.webp?variant=thumb"), page.data.single().media)
+            assertEquals("", page.data.single().thumbnailUrl)
+        }
+    }
+
+    @Test
     fun `order detail parser applies safe defaults to partial response`() {
         withSingleJsonResponse(
             """{

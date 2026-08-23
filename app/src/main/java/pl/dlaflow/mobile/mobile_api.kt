@@ -70,6 +70,7 @@ data class MobileProduct(
     val ean: String,
     val image: String,
     val thumbnailUrl: String,
+    val media: List<String> = emptyList(),
     val grossPrice: Double,
     val stock: Int,
     val status: String,
@@ -92,6 +93,7 @@ data class MobileProductVariant(
     val ean: String,
     val image: String,
     val thumbnailUrl: String,
+    val media: List<String> = emptyList(),
     val price: Double,
     val stock: Int,
     val status: String,
@@ -1263,6 +1265,7 @@ class MobileApiClient(
             ean = item.optString("ean", ""),
             image = item.optString("image", ""),
             thumbnailUrl = item.optString("thumbnailUrl", item.optString("image", "")),
+            media = parseMobileStringArray(item.optJSONArray("media")),
             grossPrice = item.getDouble("grossPrice"),
             stock = item.getInt("stock"),
             status = item.optString("status", ""),
@@ -1287,6 +1290,7 @@ class MobileApiClient(
             ean = item.optString("ean", ""),
             image = item.optString("image", ""),
             thumbnailUrl = item.optString("thumbnailUrl", item.optString("image", "")),
+            media = parseMobileStringArray(item.optJSONArray("media")),
             price = item.getDouble("price"),
             stock = item.getInt("stock"),
             status = item.optString("status", ""),
@@ -1295,6 +1299,17 @@ class MobileApiClient(
                 stock = editable.optBoolean("stock", false),
             ),
         )
+    }
+
+    private fun parseMobileStringArray(itemsJson: org.json.JSONArray?): List<String> {
+        if (itemsJson == null) return emptyList()
+
+        val items = ArrayList<String>(itemsJson.length())
+        for (index in 0 until itemsJson.length()) {
+            val value = itemsJson.optString(index, "").trim()
+            if (value.isNotBlank()) items += value
+        }
+        return items
     }
 
     private fun parseAssistantDashboard(data: JSONObject): MobileAssistantDashboard {

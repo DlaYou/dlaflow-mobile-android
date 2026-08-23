@@ -50,6 +50,33 @@ class ProductsMapperTest {
     }
 
     @Test
+    fun `product gallery media is used when primary image fields are empty`() {
+        val item = productDto(
+            image = "",
+            thumbnailUrl = "",
+            media = listOf("/api/mobile/products/media/flowers.webp?variant=thumb"),
+        ).toProductItem()
+
+        assertEquals(
+            "/api/mobile/products/media/flowers.webp?variant=thumb",
+            item.thumbnailUrl,
+        )
+    }
+
+    @Test
+    fun `absolute canonical mobile media keeps its path for same-origin resolution`() {
+        val item = productDto(
+            image = "",
+            thumbnailUrl = "https://panel.dlayou.pl/api/mobile/products/media/flowers.webp?variant=thumb",
+        ).toProductItem()
+
+        assertEquals(
+            "https://panel.dlayou.pl/api/mobile/products/media/flowers.webp?variant=thumb",
+            item.thumbnailUrl,
+        )
+    }
+
+    @Test
     fun `unknown product status is closed neutral copy`() {
         val item = productDto(status = "RAW_BACKEND_STATUS").toProductItem()
 
@@ -118,6 +145,7 @@ internal fun productDto(
     variantCount: Int = 1,
     image: String = "/api/products/media/product.webp",
     thumbnailUrl: String = "/api/mobile/products/media/product.webp",
+    media: List<String> = emptyList(),
 ) = MobileProduct(
     id = id,
     name = "Produkt testowy",
@@ -125,6 +153,7 @@ internal fun productDto(
     ean = "5900000000001",
     image = image,
     thumbnailUrl = thumbnailUrl,
+    media = media,
     grossPrice = grossPrice,
     stock = 7,
     status = status,
