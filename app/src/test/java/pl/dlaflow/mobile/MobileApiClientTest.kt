@@ -4,6 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -681,6 +682,135 @@ class MobileApiClientTest {
             assertTrue(detail.documents.isEmpty())
             assertTrue(detail.shipments.isEmpty())
         }
+    }
+
+    @Test
+    fun `message list parses bounded provider customer preview and cursor`() {
+        withSingleJsonResponse(
+            """{
+                "data": {
+                    "items": [{
+                        "id": "thread-1",
+                        "providerId": "allegro",
+                        "integrationId": "connection-1",
+                        "buyer": {"name": "Anna Kowalska", "login": "anna"},
+                        "subject": "Pytanie",
+                        "lastMessage": {"body": "Czy paczka wyjdzie dzisiaj?", "direction": "inbound", "messageAt": "2026-08-24T10:00:00Z"},
+                        "lastMessageAt": "2026-08-24T10:00:00Z",
+                        "messageCount": 3,
+                        "orderLink": {"id": "12345", "orderId": "order-1"},
+                        "readAt": null,
+                        "status": "unread"
+                    }],
+                    "total": 1,
+                    "nextCursor": "cursor-next",
+                    "unreadCount": 1
+                }
+            }""".trimIndent(),
+        ) { client, requestPath ->
+            val page = client.listMessages("token", "Anna", "all", true, null, 99)
+
+            assertEquals("/api/mobile/messages?limit=20&search=Anna&unreadOnly=true", requestPath.get())
+            assertEquals("thread-1", page.items.single().id)
+            assertEquals("allegro", page.items.single().providerId)
+            assertEquals("Anna Kowalska", page.items.single().buyer.name)
+            assertEquals("cursor-next", page.nextCursor)
+            assertEquals("inbound", page.items.single().lastMessage?.direction)
+            assertEquals("12345", page.items.single().orderLink?.id)
+        }
+    }
+
+    @Test
+    fun `message detail parses bounded messages attachments and cursor`() {
+        withSingleJsonResponse(
+            """{
+                "data": {
+                    "id": "thread/one",
+                    "providerId": "gmail",
+                    "integrationId": "connection-1",
+                    "buyer": {"name": "Anna", "login": "anna", "email": "anna@example.test"},
+                    "subject": "Temat",
+                    "lastMessageAt": "2026-08-24T10:00:00Z",
+                    "readAt": null,
+                    "status": "unread",
+                    "orderLink": null,
+                    "customerContext": {"orderCount": 2, "totalOrderAmount": 99.5, "currency": "PLN", "customerSince": "2025-01-01", "activeConversationCount": 1},
+                    "messages": [{
+                        "id": "message-1",
+                        "author": "Anna",
+                        "direction": "inbound",
+                        "body": "Treść",
+                        "messageAt": "2026-08-24T10:00:00Z",
+                        "status": "received",
+                        "attachments": [{"id":"attachment-1","filename":"invoice.pdf","contentType":"application/pdf","size":12,"status":"ready","url":"/api/orders/messages/media/invoice.pdf"}]
+                    }]
+                },
+                "meta": {"total": 1, "nextCursor": "detail-next"}
+            }""".trimIndent(),
+        ) { client, requestPath ->
+            val detail = client.getMessageThread("token", "thread/one", "opaque cursor", 101)
+
+            assertEquals("/api/mobile/messages/thread%2Fone?limit=100&cursor=opaque+cursor", requestPath.get())
+            assertEquals("thread/one", detail.id)
+            assertEquals("detail-next", detail.nextCursor)
+            assertEquals("message-1", detail.messages.single().id)
+            assertEquals("invoice.pdf", detail.messages.single().attachments.single().filename)
+            assertEquals("/api/orders/messages/media/invoice.pdf", detail.messages.single().attachments.single().url)
+            assertEquals(2, detail.customerContext?.orderCount)
+        }
+    }
+
+    @Test
+    fun `message mutations use encoded thread paths and expose operation data`() {
+        val responses = ArrayDeque(
+            listOf(
+                """{"data":{"operationId":"read-op","status":"read"}}""",
+                """{"data":{"operationId":"refresh-op","queued":true,"status":"queued"}}""",
+                """{"data":{"operationId":"reply-op","messageId":"message-1","queued":true,"duplicate":false,"status":"queued"}}""",
+            ),
+        )
+        val requests = mutableListOf<String>()
+        val server = ServerSocket(0, 3, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        val future = executor.submit {
+            repeat(3) {
+                server.accept().use { socket ->
+                    val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                    requests += reader.readLine().orEmpty().split(" ").getOrElse(1) { "" }
+                    generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                    val body = responses.removeFirst().toByteArray(Charsets.UTF_8)
+                    val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                    socket.getOutputStream().use { output -> output.write(headers.toByteArray(Charsets.UTF_8)); output.write(body) }
+                }
+            }
+        }
+        try {
+            val client = MobileApiClient("http://127.0.0.1:${server.localPort}")
+            assertEquals("read-op", client.markMessageRead("token", "thread/one").operationId)
+            assertEquals("refresh-op", client.refreshMessageThread("token", "thread/one").operationId)
+            assertEquals("reply-op", client.replyToMessageThread("token", "thread/one", " Odpowiedź ", "request-1").operationId)
+            future.get(2, TimeUnit.SECONDS)
+            assertEquals(
+                listOf(
+                    "/api/mobile/messages/thread%2Fone/read",
+                    "/api/mobile/messages/thread%2Fone/refresh",
+                    "/api/mobile/messages/thread%2Fone/reply",
+                ),
+                requests,
+            )
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `message methods reject blank ids and invalid reply bodies`() {
+        val client = MobileApiClient("http://127.0.0.1:1")
+        assertThrows(IllegalArgumentException::class.java) { client.getMessageThread("token", " ", null, 1) }
+        assertThrows(IllegalArgumentException::class.java) { client.markMessageRead("token", "") }
+        assertThrows(IllegalArgumentException::class.java) { client.replyToMessageThread("token", "thread-1", " ", "request-1") }
+        assertThrows(IllegalArgumentException::class.java) { client.replyToMessageThread("token", "thread-1", "x".repeat(2001), "request-1") }
     }
 
     private fun withSingleJsonResponse(

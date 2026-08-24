@@ -16,6 +16,20 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
+private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 2_000
+private const val MOBILE_MESSAGE_SEARCH_MAX_CHARS = 120
+private const val MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS = 120
+private const val MOBILE_MESSAGE_CURSOR_MAX_CHARS = 512
+private const val MOBILE_MESSAGE_ID_MAX_CHARS = 200
+private const val MOBILE_MESSAGE_SUBJECT_MAX_CHARS = 240
+private const val MOBILE_MESSAGE_TEXT_MAX_CHARS = 120
+private const val MOBILE_MESSAGE_AUTHOR_MAX_CHARS = 120
+private const val MOBILE_MESSAGE_FILENAME_MAX_CHARS = 240
+private val MOBILE_MESSAGE_CHANNELS = setOf("all", "marketplace", "store", "email", "social")
+
+private fun JSONObject.optNullableInt(key: String): Int? = if (has(key) && !isNull(key)) optInt(key) else null
+
+private fun JSONObject.optNullableDouble(key: String): Double? = if (has(key) && !isNull(key)) optDouble(key) else null
 
 internal class MobilePhotoUploadSource(
     val byteCount: Long,
@@ -460,6 +474,95 @@ data class MobileCallerIdLookup(
     val primaryOrder: MobileCallerIdOrder?,
 )
 
+data class MobileMessageBuyer(
+    val name: String,
+    val login: String,
+    val email: String = "",
+)
+
+data class MobileMessagePreview(
+    val body: String,
+    val direction: String,
+    val messageAt: String,
+)
+
+data class MobileMessageOrderLink(
+    val id: String,
+    val orderId: String,
+)
+
+data class MobileMessageThread(
+    val id: String,
+    val providerId: String,
+    val integrationId: String,
+    val buyer: MobileMessageBuyer,
+    val subject: String,
+    val lastMessage: MobileMessagePreview?,
+    val lastMessageAt: String,
+    val messageCount: Int,
+    val orderLink: MobileMessageOrderLink?,
+    val readAt: String?,
+    val status: String,
+)
+
+data class MobileMessagesPage(
+    val items: List<MobileMessageThread>,
+    val total: Int,
+    val nextCursor: String?,
+    val unreadCount: Int,
+)
+
+data class MobileMessageAttachment(
+    val id: String,
+    val filename: String,
+    val contentType: String,
+    val size: Long,
+    val status: String,
+    val url: String,
+)
+
+data class MobileMessage(
+    val id: String,
+    val author: String,
+    val direction: String,
+    val body: String,
+    val messageAt: String,
+    val status: String,
+    val attachments: List<MobileMessageAttachment>,
+)
+
+data class MobileMessageCustomerContext(
+    val activeConversationCount: Int,
+    val customerSince: String,
+    val currency: String,
+    val orderCount: Int,
+    val totalOrderAmount: Double,
+)
+
+data class MobileMessageThreadDetail(
+    val id: String,
+    val providerId: String,
+    val integrationId: String,
+    val buyer: MobileMessageBuyer,
+    val subject: String,
+    val lastMessageAt: String,
+    val readAt: String?,
+    val status: String,
+    val orderLink: MobileMessageOrderLink?,
+    val customerContext: MobileMessageCustomerContext?,
+    val messages: List<MobileMessage>,
+    val total: Int,
+    val nextCursor: String?,
+)
+
+data class MobileMessageOperation(
+    val operationId: String,
+    val messageId: String?,
+    val queued: Boolean,
+    val duplicate: Boolean,
+    val status: String,
+)
+
 class MobileApiClient(
     private val baseUrl: String,
     private val requestSigner: MobileRequestSigner? = null,
@@ -621,6 +724,101 @@ class MobileApiClient(
         val body = JSONObject().put("notificationIds", org.json.JSONArray(notificationIds))
 
         postJson("/api/mobile/notifications/read", body, token)
+    }
+
+    fun listMessages(
+        token: String,
+        search: String,
+        channel: String,
+        unreadOnly: Boolean,
+        cursor: String?,
+        limit: Int,
+    ): MobileMessagesPage {
+        require(channel in MOBILE_MESSAGE_CHANNELS) { "Unsupported message channel." }
+        val params = mutableListOf("limit=${limit.coerceIn(1, 20)}")
+        if (channel != "all") params += "channel=${encodeQueryValue(channel)}"
+        search.trim().takeIf { it.isNotBlank() }?.let { params += "search=${encodeQueryValue(it.take(MOBILE_MESSAGE_SEARCH_MAX_CHARS))}" }
+        cursor?.trim()?.takeIf { it.isNotBlank() }?.let { params += "cursor=${encodeQueryValue(it.take(MOBILE_MESSAGE_CURSOR_MAX_CHARS))}" }
+        params += "unreadOnly=$unreadOnly"
+
+        val data = getJson("/api/mobile/messages?${params.joinToString("&")}", token).getJSONObject("data")
+        val itemsJson = data.optJSONArray("items")
+        val items = mutableListOf<MobileMessageThread>()
+        if (itemsJson != null) {
+            for (index in 0 until itemsJson.length()) {
+                items += parseMobileMessageThread(itemsJson.optJSONObject(index) ?: continue)
+            }
+        }
+
+        return MobileMessagesPage(
+            items = items,
+            total = data.optInt("total", items.size).coerceAtLeast(0),
+            nextCursor = nullableBoundedString(data, "nextCursor", MOBILE_MESSAGE_CURSOR_MAX_CHARS),
+            unreadCount = data.optInt("unreadCount", 0).coerceAtLeast(0),
+        )
+    }
+
+    fun getMessageThread(token: String, threadId: String, cursor: String?, limit: Int): MobileMessageThreadDetail {
+        val safeThreadId = requireMobileMessageId(threadId)
+        val params = mutableListOf("limit=${limit.coerceIn(1, 100)}")
+        cursor?.trim()?.takeIf { it.isNotBlank() }?.let { params += "cursor=${encodeQueryValue(it.take(MOBILE_MESSAGE_CURSOR_MAX_CHARS))}" }
+        val response = getJson(
+            "/api/mobile/messages/${encodePathSegment(safeThreadId)}?${params.joinToString("&")}",
+            token,
+        )
+        val data = response.getJSONObject("data")
+        val messagesJson = data.optJSONArray("messages")
+        val messages = mutableListOf<MobileMessage>()
+        if (messagesJson != null) {
+            for (index in 0 until messagesJson.length()) {
+                messages += parseMobileMessage(messagesJson.optJSONObject(index) ?: continue)
+            }
+        }
+        val meta = response.optJSONObject("meta") ?: JSONObject()
+        val total = if (data.has("total")) data.optInt("total", messages.size) else meta.optInt("total", messages.size)
+        val nextCursor = nullableBoundedString(data, "nextCursor", MOBILE_MESSAGE_CURSOR_MAX_CHARS)
+            ?: nullableBoundedString(meta, "nextCursor", MOBILE_MESSAGE_CURSOR_MAX_CHARS)
+
+        return MobileMessageThreadDetail(
+            id = boundedString(data.optString("id", safeThreadId), MOBILE_MESSAGE_ID_MAX_CHARS),
+            providerId = boundedString(data.optString("providerId", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            integrationId = boundedString(data.optString("integrationId", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            buyer = parseMobileMessageBuyer(data.optJSONObject("buyer")),
+            subject = boundedString(data.optString("subject", ""), MOBILE_MESSAGE_SUBJECT_MAX_CHARS),
+            lastMessageAt = boundedString(data.optString("lastMessageAt", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            readAt = nullableBoundedString(data, "readAt", MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            status = boundedString(data.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            orderLink = parseMobileMessageOrderLink(data.optJSONObject("orderLink")),
+            customerContext = parseMobileMessageCustomerContext(data.optJSONObject("customerContext")),
+            messages = messages,
+            total = total.coerceAtLeast(messages.size),
+            nextCursor = nextCursor,
+        )
+    }
+
+    fun markMessageRead(token: String, threadId: String): MobileMessageOperation {
+        return parseMobileMessageOperation(postJson("/api/mobile/messages/${encodePathSegment(requireMobileMessageId(threadId))}/read", JSONObject(), token))
+    }
+
+    fun refreshMessageThread(token: String, threadId: String): MobileMessageOperation {
+        return parseMobileMessageOperation(postJson("/api/mobile/messages/${encodePathSegment(requireMobileMessageId(threadId))}/refresh", JSONObject(), token))
+    }
+
+    fun replyToMessageThread(token: String, threadId: String, body: String, requestId: String): MobileMessageOperation {
+        val safeBody = body.trim()
+        require(safeBody.length in 1..MOBILE_MESSAGE_BODY_MAX_CHARS) {
+            "Message reply must contain between 1 and $MOBILE_MESSAGE_BODY_MAX_CHARS characters."
+        }
+        val safeRequestId = requestId.trim()
+        require(safeRequestId.isNotBlank() && safeRequestId.length <= MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS) {
+            "Message request ID must be non-blank and bounded."
+        }
+        val payload = JSONObject()
+            .put("body", safeBody)
+            .put("requestId", safeRequestId)
+        return parseMobileMessageOperation(
+            postJson("/api/mobile/messages/${encodePathSegment(requireMobileMessageId(threadId))}/reply", payload, token),
+        )
     }
 
     fun checkAppUpdate(token: String, currentVersionCode: Int, currentVersionName: String): MobileAppUpdate? {
@@ -1008,6 +1206,114 @@ class MobileApiClient(
             maxPhotos = task.optInt("maxPhotos", 0),
             expiresAt = task.optString("expiresAt", ""),
         )
+    }
+
+    private fun parseMobileMessageThread(item: JSONObject): MobileMessageThread {
+        return MobileMessageThread(
+            id = boundedString(item.optString("id", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            providerId = boundedString(item.optString("providerId", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            integrationId = boundedString(item.optString("integrationId", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            buyer = parseMobileMessageBuyer(item.optJSONObject("buyer")),
+            subject = boundedString(item.optString("subject", ""), MOBILE_MESSAGE_SUBJECT_MAX_CHARS),
+            lastMessage = item.optJSONObject("lastMessage")?.let { parseMobileMessagePreview(it) },
+            lastMessageAt = boundedString(item.optString("lastMessageAt", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            messageCount = item.optInt("messageCount", 0).coerceAtLeast(0),
+            orderLink = parseMobileMessageOrderLink(item.optJSONObject("orderLink")),
+            readAt = nullableBoundedString(item, "readAt", MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            status = boundedString(item.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+        )
+    }
+
+    private fun parseMobileMessagePreview(item: JSONObject): MobileMessagePreview {
+        return MobileMessagePreview(
+            body = boundedString(item.optString("body", ""), MOBILE_MESSAGE_BODY_MAX_CHARS),
+            direction = boundedString(item.optString("direction", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            messageAt = boundedString(item.optString("messageAt", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+        )
+    }
+
+    private fun parseMobileMessageBuyer(item: JSONObject?): MobileMessageBuyer {
+        val buyer = item ?: JSONObject()
+        return MobileMessageBuyer(
+            name = boundedString(buyer.optString("name", ""), MOBILE_MESSAGE_AUTHOR_MAX_CHARS),
+            login = boundedString(buyer.optString("login", ""), MOBILE_MESSAGE_AUTHOR_MAX_CHARS),
+            email = boundedString(buyer.optString("email", ""), MOBILE_MESSAGE_AUTHOR_MAX_CHARS),
+        )
+    }
+
+    private fun parseMobileMessageOrderLink(item: JSONObject?): MobileMessageOrderLink? {
+        if (item == null) return null
+        val id = boundedString(item.optString("id", ""), MOBILE_MESSAGE_ID_MAX_CHARS)
+        val orderId = boundedString(item.optString("orderId", ""), MOBILE_MESSAGE_ID_MAX_CHARS)
+        return if (id.isBlank() && orderId.isBlank()) null else MobileMessageOrderLink(id, orderId)
+    }
+
+    private fun parseMobileMessage(item: JSONObject): MobileMessage {
+        val attachmentsJson = item.optJSONArray("attachments")
+        val attachments = mutableListOf<MobileMessageAttachment>()
+        if (attachmentsJson != null) {
+            for (index in 0 until attachmentsJson.length()) {
+                val attachment = attachmentsJson.optJSONObject(index) ?: continue
+                attachments += MobileMessageAttachment(
+                    id = boundedString(attachment.optString("id", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+                    filename = boundedString(attachment.optString("filename", ""), MOBILE_MESSAGE_FILENAME_MAX_CHARS),
+                    contentType = boundedString(attachment.optString("contentType", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+                    size = attachment.optLong("size", 0L).coerceAtLeast(0L),
+                    status = boundedString(attachment.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+                    url = safeMobileMessageAttachmentUrl(attachment.optString("url", "")),
+                )
+            }
+        }
+        return MobileMessage(
+            id = boundedString(item.optString("id", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
+            author = boundedString(item.optString("author", ""), MOBILE_MESSAGE_AUTHOR_MAX_CHARS),
+            direction = boundedString(item.optString("direction", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            body = boundedString(item.optString("body", ""), MOBILE_MESSAGE_BODY_MAX_CHARS),
+            messageAt = boundedString(item.optString("messageAt", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            status = boundedString(item.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            attachments = attachments,
+        )
+    }
+
+    private fun parseMobileMessageCustomerContext(item: JSONObject?): MobileMessageCustomerContext? {
+        if (item == null) return null
+        return MobileMessageCustomerContext(
+            activeConversationCount = item.optNullableInt("activeConversationCount") ?: 0,
+            customerSince = nullableBoundedString(item, "customerSince", MOBILE_MESSAGE_TEXT_MAX_CHARS).orEmpty(),
+            currency = nullableBoundedString(item, "currency", MOBILE_MESSAGE_TEXT_MAX_CHARS).orEmpty(),
+            orderCount = item.optNullableInt("orderCount") ?: 0,
+            totalOrderAmount = item.optNullableDouble("totalOrderAmount") ?: 0.0,
+        )
+    }
+
+    private fun parseMobileMessageOperation(response: JSONObject): MobileMessageOperation {
+        val data = response.optJSONObject("data") ?: JSONObject()
+        return MobileMessageOperation(
+            operationId = boundedString(data.optString("operationId", data.optString("jobId", "")), MOBILE_MESSAGE_ID_MAX_CHARS),
+            messageId = nullableBoundedString(data, "messageId", MOBILE_MESSAGE_ID_MAX_CHARS),
+            queued = data.optBoolean("queued", false),
+            duplicate = data.optBoolean("duplicate", false),
+            status = boundedString(data.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+        )
+    }
+
+    private fun requireMobileMessageId(value: String): String {
+        val normalized = value.trim()
+        require(normalized.isNotBlank() && normalized.length <= MOBILE_MESSAGE_ID_MAX_CHARS) {
+            "Message thread ID must be non-blank and bounded."
+        }
+        return normalized
+    }
+
+    private fun boundedString(value: String, maxChars: Int): String = value.take(maxChars)
+
+    private fun nullableBoundedString(item: JSONObject, key: String, maxChars: Int): String? {
+        return if (item.has(key) && !item.isNull(key)) boundedString(item.optString(key, ""), maxChars) else null
+    }
+
+    private fun safeMobileMessageAttachmentUrl(value: String): String {
+        val normalized = value.trim()
+        return if (normalized.matches(Regex("/api/orders/messages/media/[A-Za-z0-9][A-Za-z0-9._-]*"))) normalized else ""
     }
 
     private fun parseMobileOrderListItem(item: JSONObject): MobileOrderListItem {
