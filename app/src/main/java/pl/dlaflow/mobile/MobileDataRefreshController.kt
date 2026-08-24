@@ -9,6 +9,7 @@ internal class MobileDataRefreshController(
     private val refreshDashboard: () -> Unit,
     private val refreshOrders: () -> Unit,
     private val refreshNotifications: () -> Unit,
+    private val refreshMessages: () -> Unit = {},
     private val selectedTab: () -> MobileAssistantTab,
     private val intervalMs: Long,
 ) {
@@ -36,6 +37,7 @@ internal class MobileDataRefreshController(
         when (tab) {
             MobileAssistantTab.DASHBOARD -> refreshDashboard()
             MobileAssistantTab.ORDERS -> refreshOrders()
+            MobileAssistantTab.MESSAGES -> refreshMessages()
             else -> Unit
         }
     }
@@ -43,8 +45,10 @@ internal class MobileDataRefreshController(
     private fun refreshVisibleData() {
         refreshDashboard()
         refreshNotifications()
-        if (selectedTab() == MobileAssistantTab.ORDERS) {
-            refreshOrders()
+        when (selectedTab()) {
+            MobileAssistantTab.ORDERS -> refreshOrders()
+            MobileAssistantTab.MESSAGES -> refreshMessages()
+            else -> Unit
         }
     }
 

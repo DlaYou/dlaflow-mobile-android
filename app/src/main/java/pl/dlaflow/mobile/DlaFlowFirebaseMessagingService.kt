@@ -20,7 +20,11 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
         } ?: return
 
         if (shouldShowNativePanelNotification(notification, MobileSessionStore(applicationContext).readNotificationPreferences())) {
-            DlaFlowNotifications.showPanelAlertNotification(applicationContext, notification)
+            DlaFlowNotifications.showPanelAlertNotification(
+                applicationContext,
+                notification,
+                messageThreadId = message.data["threadId"],
+            )
         }
     }
 

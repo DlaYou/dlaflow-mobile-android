@@ -19,6 +19,7 @@ object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
     const val extraOpenOrders = "pl.dlaflow.mobile.OPEN_ORDERS"
     const val extraOpenMessages = "pl.dlaflow.mobile.OPEN_MESSAGES"
+    const val extraMessageThreadId = "pl.dlaflow.mobile.MESSAGE_THREAD_ID"
     const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
 
     fun photoTaskIntent(context: Context, taskId: String): Intent {
@@ -33,9 +34,10 @@ object DlaFlowDeepLinks {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 
-    fun messagesIntent(context: Context): Intent {
+    fun messagesIntent(context: Context, threadId: String? = null): Intent {
         return Intent(context, MainActivity::class.java)
             .putExtra(extraOpenMessages, true)
+            .apply { threadId?.trim()?.takeIf { it.isNotBlank() }?.let { putExtra(extraMessageThreadId, it.take(200)) } }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 }
@@ -160,14 +162,18 @@ object DlaFlowNotifications {
         notifyIfAllowed(context, callerIdNotificationId, notification)
     }
 
-    fun showPanelAlertNotification(context: Context, notification: MobileAssistantNotification): Boolean {
+    fun showPanelAlertNotification(
+        context: Context,
+        notification: MobileAssistantNotification,
+        messageThreadId: String? = null,
+    ): Boolean {
         if (!canPostNotifications(context)) {
             return false
         }
 
         val appIntent = when {
             isOrdersNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.ordersIntent(context)
-            isMessagesNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.messagesIntent(context)
+            isMessagesNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.messagesIntent(context, messageThreadId)
             else -> Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }

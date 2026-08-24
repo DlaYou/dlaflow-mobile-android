@@ -96,6 +96,13 @@ import pl.dlaflow.mobile.feature.notifications.NotificationsCoordinator
 import pl.dlaflow.mobile.feature.notifications.NotificationsEffect
 import pl.dlaflow.mobile.feature.notifications.NotificationsStateHolder
 import pl.dlaflow.mobile.feature.notifications.canonicalContentOrNull
+import pl.dlaflow.mobile.feature.messages.MessagesAction
+import pl.dlaflow.mobile.feature.messages.MessagesCoordinator
+import pl.dlaflow.mobile.feature.messages.MessagesOperation
+import pl.dlaflow.mobile.feature.messages.MessagesStateHolder
+import pl.dlaflow.mobile.feature.messages.MobileApiMessagesGateway
+import pl.dlaflow.mobile.feature.messages.listContentOrNull
+import pl.dlaflow.mobile.feature.messages.detailContentOrNull
 import pl.dlaflow.mobile.feature.scanner.MobileApiScannerGateway
 import pl.dlaflow.mobile.feature.scanner.ScannerAction
 import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
@@ -211,6 +218,17 @@ class MainActivity : ComponentActivity() {
             },
         )
     }
+    private val messagesStateHolder = MessagesStateHolder()
+    private val messagesCoordinator by lazy {
+        MessagesCoordinator(
+            stateHolder = messagesStateHolder,
+            gateway = MobileApiMessagesGateway { mobileApiClientForSession(sessionStore) },
+            executor = executor,
+            postToMain = { action -> runOnUiThread(action) },
+            onUnauthorized = ::handleMessagesUnauthorized,
+            onStateChanged = { render() },
+        )
+    }
     private val pairingCoordinator by lazy {
         PairingCoordinator(
             stateHolder = pairingStateHolder,
@@ -240,6 +258,7 @@ class MainActivity : ComponentActivity() {
     private var callerIdTestPhoneValue by mutableStateOf("")
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
+    private var pendingMessageThreadId: String? = null
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -291,6 +310,7 @@ class MainActivity : ComponentActivity() {
             refreshDashboard = ::refreshDashboardIfIdle,
             refreshOrders = ::refreshOrdersIfIdle,
             refreshNotifications = ::refreshNotificationsIfIdle,
+            refreshMessages = ::refreshMessagesIfIdle,
             selectedTab = { selectedTab },
             intervalMs = dataRefreshIntervalMs,
         )
@@ -349,6 +369,7 @@ class MainActivity : ComponentActivity() {
         if (selectedTab == MobileAssistantTab.ORDERS) {
             ensureOrdersLoaded()
         }
+        openPendingMessageThreadIfReady()
     }
 
     override fun onDestroy() {
@@ -357,6 +378,7 @@ class MainActivity : ComponentActivity() {
         photoTasksCoordinator.reset()
         productsCoordinator.reset()
         notificationsCoordinator.reset()
+        messagesCoordinator.reset()
         settingsCoordinator.reset()
         activeCallerIdLookupRequest = null
         activeSettingsUpdateOperation = null
@@ -639,6 +661,7 @@ class MainActivity : ComponentActivity() {
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
+                    messagesState = messagesStateHolder.state,
                     onPairingCodeChange = pairingStateHolder::updateCode,
                     onContinuePairing = { pairingStateHolder.continueToName() },
                     onScanPairingQr = { scanPairingQr() },
@@ -656,6 +679,9 @@ class MainActivity : ComponentActivity() {
                         }
                         if (it == MobileAssistantTab.PRODUCTS) {
                             ensureProductsLoaded()
+                        }
+                        if (it == MobileAssistantTab.MESSAGES) {
+                            ensureMessagesLoaded()
                         }
                     },
                     onOrdersAction = ::handleOrdersAction,
@@ -682,6 +708,7 @@ class MainActivity : ComponentActivity() {
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
                     onNotificationFilterChange = ::selectMobileNotificationFilter,
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
+                    onMessagesAction = ::handleMessagesAction,
                     onInstallAppUpdate = { installAppUpdate() },
                     onDismissAppUpdate = { dismissAppUpdate() },
                 )
@@ -907,6 +934,7 @@ class MainActivity : ComponentActivity() {
                         productsCoordinator.reset()
                         photoTasksCoordinator.reset()
                         notificationsCoordinator.reset()
+                        messagesCoordinator.reset()
                         clearMobileProductsState()
                         clearMobileNotificationsState()
                     }
@@ -927,6 +955,7 @@ class MainActivity : ComponentActivity() {
                         if (selectedTab == MobileAssistantTab.ORDERS) {
                             ensureOrdersLoaded()
                         }
+                        openPendingMessageThreadIfReady()
                     }
                 }
             }.onFailure {
@@ -970,6 +999,7 @@ class MainActivity : ComponentActivity() {
         productsCoordinator.reset()
         photoTasksCoordinator.reset()
         notificationsCoordinator.reset()
+        messagesCoordinator.reset()
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
@@ -989,6 +1019,7 @@ class MainActivity : ComponentActivity() {
             if (selectedTab == MobileAssistantTab.ORDERS) {
                 ensureOrdersLoaded()
             }
+            openPendingMessageThreadIfReady()
         }
     }
 
@@ -1068,6 +1099,9 @@ class MainActivity : ComponentActivity() {
                 if (selectedTab == MobileAssistantTab.ORDERS) {
                     ordersCoordinator.refreshList(currentSession.token, showFeedback = false)
                 }
+                if (selectedTab == MobileAssistantTab.MESSAGES) {
+                    messagesCoordinator.refresh(currentSession.token, allowUnauthorizedRetry = false)
+                }
                 refreshAppUpdate(showStatus = false)
             }
             DashboardAction.ScanPackage -> handleScannerAction(ScannerAction.RequestCapture)
@@ -1115,10 +1149,12 @@ class MainActivity : ComponentActivity() {
                 notificationsCoordinator.refresh(currentSession.token)
             }
             selectedTab == MobileAssistantTab.DASHBOARD ||
-                selectedTab == MobileAssistantTab.MESSAGES ||
                 selectedTab == MobileAssistantTab.MORE -> {
                 dashboardCoordinator.refresh(currentSession.token, showFeedback = true)
                 photoTasksCoordinator.refresh(currentSession.token)
+            }
+            selectedTab == MobileAssistantTab.MESSAGES -> {
+                messagesCoordinator.refresh(currentSession.token)
             }
             selectedTab == MobileAssistantTab.ORDERS -> {
                 ordersCoordinator.refreshList(currentSession.token, showFeedback = true)
@@ -1250,6 +1286,50 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun refreshMessagesIfIdle() {
+        val currentSession = session ?: return
+        if (messagesStateHolder.state.activeListRequestId == null) {
+            messagesCoordinator.refresh(currentSession.token, allowUnauthorizedRetry = false)
+        }
+    }
+
+    private fun ensureMessagesLoaded(refreshExisting: Boolean = true) {
+        val currentSession = session ?: return
+        val state = messagesStateHolder.state
+        if (state.activeListRequestId != null) return
+        if (state.listContentOrNull() == null || !refreshExisting) {
+            messagesCoordinator.open(currentSession.token, state.query)
+        } else {
+            messagesCoordinator.refresh(currentSession.token)
+        }
+    }
+
+    private fun handleMessagesAction(action: MessagesAction) {
+        val currentSession = session ?: return
+        when (action) {
+            is MessagesAction.SearchChanged -> {
+                val query = messagesStateHolder.state.query.copy(search = action.search)
+                messagesCoordinator.open(currentSession.token, query)
+            }
+            is MessagesAction.FilterChanged -> {
+                val query = messagesStateHolder.state.query.copy(filter = action.filter)
+                messagesCoordinator.open(currentSession.token, query)
+            }
+            is MessagesAction.ChannelChanged -> {
+                val query = messagesStateHolder.state.query.copy(channel = action.channel)
+                messagesCoordinator.open(currentSession.token, query)
+            }
+            MessagesAction.Refresh -> messagesCoordinator.refresh(currentSession.token)
+            MessagesAction.LoadMore -> messagesCoordinator.loadMore(currentSession.token)
+            is MessagesAction.OpenThread -> messagesCoordinator.openThread(currentSession.token, action.threadId)
+            MessagesAction.CloseDetail -> messagesCoordinator.closeDetail()
+            MessagesAction.MarkThreadRead -> messagesCoordinator.markThreadRead(currentSession.token)
+            MessagesAction.RefreshThread -> messagesCoordinator.refreshThread(currentSession.token)
+            is MessagesAction.SendReply -> messagesCoordinator.reply(currentSession.token, messagesStateHolder.state.detailContentOrNull()?.id.orEmpty(), action.body, action.requestId)
+            MessagesAction.Retry -> ensureMessagesLoaded(refreshExisting = false)
+        }
+    }
+
     private fun handleOrdersAction(action: OrdersAction) {
         val currentSession = session ?: return
         when (action) {
@@ -1321,7 +1401,11 @@ class MainActivity : ComponentActivity() {
                 selectedTab = MobileAssistantTab.PRODUCTS
                 ensureProductsLoaded()
             }
-            NotificationsEffect.OpenMessages -> setStatus("Wiadomości są dostępne w panelu.")
+            NotificationsEffect.OpenMessages -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.MESSAGES
+                ensureMessagesLoaded()
+            }
             is NotificationsEffect.ShowSafeExplanation -> setStatus("Ta sprawa wymaga działania w panelu.")
         }
         render()
@@ -1336,6 +1420,22 @@ class MainActivity : ComponentActivity() {
         confirmRevokedSession(
             error = error,
             fallbackMessage = "Nie udało się pobrać powiadomień.",
+            showNonAuthStatus = false,
+            onSessionValid = { if (allowRetry) retryConfirmedRequest() },
+            onSessionUnconfirmed = finishUnconfirmedRequest,
+        )
+    }
+
+    private fun handleMessagesUnauthorized(
+        error: Throwable,
+        operation: MessagesOperation,
+        allowRetry: Boolean,
+        retryConfirmedRequest: () -> Unit,
+        finishUnconfirmedRequest: () -> Unit,
+    ) {
+        confirmRevokedSession(
+            error = error,
+            fallbackMessage = "Nie udało się pobrać wiadomości.",
             showNonAuthStatus = false,
             onSessionValid = { if (allowRetry) retryConfirmedRequest() },
             onSessionUnconfirmed = finishUnconfirmedRequest,
@@ -1727,6 +1827,11 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false) == true) {
             selectedTab = MobileAssistantTab.MESSAGES
             statusMessage = "Otwieram wiadomości z powiadomienia."
+            pendingMessageThreadId = intent.getStringExtra(DlaFlowDeepLinks.extraMessageThreadId)
+                ?.trim()
+                ?.take(200)
+                ?.takeIf { it.isNotBlank() }
+            intent.removeExtra(DlaFlowDeepLinks.extraMessageThreadId)
         }
         val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {
@@ -1757,6 +1862,14 @@ class MainActivity : ComponentActivity() {
             pendingSmokePairingCode = smokePairingCode
             pendingSmokePairingDeviceName = smokePairingDeviceName
         }
+    }
+
+    private fun openPendingMessageThreadIfReady() {
+        val threadId = pendingMessageThreadId ?: return
+        val currentSession = session ?: return
+        pendingMessageThreadId = null
+        selectedTab = MobileAssistantTab.MESSAGES
+        messagesCoordinator.openThread(currentSession.token, threadId)
     }
 
     private fun consumeSmokePairingIntent(): Boolean {
@@ -2439,6 +2552,7 @@ class MainActivity : ComponentActivity() {
         productsCoordinator.reset()
         photoTasksCoordinator.reset()
         notificationsCoordinator.reset()
+        messagesCoordinator.reset()
         scannerCoordinator.reset()
         clearAppUpdateState()
         ordersCoordinator.reset()

@@ -182,6 +182,11 @@ import pl.dlaflow.mobile.feature.settings.SettingsContent
 import pl.dlaflow.mobile.feature.settings.SettingsFeatureScreen
 import pl.dlaflow.mobile.feature.settings.SettingsRoute
 import pl.dlaflow.mobile.feature.settings.SettingsUiState
+import pl.dlaflow.mobile.feature.messages.MessagesAction
+import pl.dlaflow.mobile.feature.messages.MessagesFeatureScreen
+import pl.dlaflow.mobile.feature.messages.MessagesRoute
+import pl.dlaflow.mobile.feature.messages.MessagesUiState
+import pl.dlaflow.mobile.feature.messages.listContentOrNull
 
 enum class MobileNotificationFilter(val label: String) {
     ALL("Wszystkie"),
@@ -313,6 +318,7 @@ internal fun MobileAssistantScreen(
     mobileNotifications: List<MobileAssistantNotification> = emptyList(),
     mobileNotificationsLoading: Boolean = false,
     mobileNotificationFilter: MobileNotificationFilter = MobileNotificationFilter.ALL,
+    messagesState: MessagesUiState = MessagesUiState(),
     onPairingCodeChange: (String) -> Unit,
     onContinuePairing: () -> Unit,
     onScanPairingQr: () -> Unit,
@@ -334,6 +340,7 @@ internal fun MobileAssistantScreen(
     onCloseOverlay: () -> Unit = {},
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
     onMarkNotificationsRead: () -> Unit = {},
+    onMessagesAction: (MessagesAction) -> Unit = {},
     onInstallAppUpdate: () -> Unit,
     onDismissAppUpdate: () -> Unit,
 ) {
@@ -349,6 +356,7 @@ internal fun MobileAssistantScreen(
             selectedTab = selectedTab,
             overlayScreen = mobileOverlayScreen,
             orderDetailVisible = ordersState.route is OrdersRoute.Detail,
+            messagesDetailVisible = messagesState.route is MessagesRoute.Detail,
             settingsDetailVisible = settingsState.route is SettingsRoute.Detail,
         )
     }
@@ -361,6 +369,7 @@ internal fun MobileAssistantScreen(
                 MobileAssistantBackAction.CLOSE_PAIRING_NAME,
                 -> onPairingBack()
                 MobileAssistantBackAction.CLOSE_ORDER_DETAIL -> onOrdersAction(OrdersAction.CloseDetail)
+                MobileAssistantBackAction.CLOSE_MESSAGES_DETAIL -> onMessagesAction(MessagesAction.CloseDetail)
                 MobileAssistantBackAction.CLOSE_SETTINGS_DETAIL -> onSettingsAction(SettingsAction.Back)
                 MobileAssistantBackAction.CLOSE_OVERLAY -> onCloseOverlay()
                 MobileAssistantBackAction.NONE -> Unit
@@ -372,7 +381,13 @@ internal fun MobileAssistantScreen(
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 if (session != null) {
-                    BottomNavigation(colors, selectedTab, dashboard, onSelectTab)
+                    BottomNavigation(
+                        colors = colors,
+                        selectedTab = selectedTab,
+                        dashboard = dashboard,
+                        messagesUnreadCount = messagesState.listContentOrNull()?.unreadCount ?: dashboard?.kpis?.messages ?: 0,
+                        onSelectTab = onSelectTab,
+                    )
                 }
             },
         ) { padding ->
@@ -421,6 +436,7 @@ internal fun MobileAssistantScreen(
                     mobileNotifications = mobileNotifications,
                     mobileNotificationsLoading = mobileNotificationsLoading,
                     mobileNotificationFilter = mobileNotificationFilter,
+                    messagesState = messagesState,
                     settingsState = settingsState,
                     settingsContent = settingsContent,
                     ordersState = ordersState,
@@ -437,6 +453,7 @@ internal fun MobileAssistantScreen(
                     onCloseOverlay = onCloseOverlay,
                     onNotificationFilterChange = onNotificationFilterChange,
                     onMarkNotificationsRead = onMarkNotificationsRead,
+                    onMessagesAction = onMessagesAction,
                     )
                 }
             }
@@ -449,6 +466,7 @@ internal fun MobileAssistantScreen(
                         overlayScreen = mobileOverlayScreen,
                         dashboardState = dashboardState,
                         ordersState = ordersState,
+                        messagesState = messagesState,
                         mobileProductsLoading = mobileProductsLoading,
                         mobileNotificationsLoading = mobileNotificationsLoading,
                     ),
@@ -482,13 +500,14 @@ private fun shouldShowRefreshOverlay(
     overlayScreen: MobileAssistantOverlayScreen,
     dashboardState: DashboardUiState,
     ordersState: OrdersUiState,
+    messagesState: MessagesUiState,
     mobileProductsLoading: Boolean,
     mobileNotificationsLoading: Boolean,
 ): Boolean = when (selectedTab) {
     MobileAssistantTab.DASHBOARD,
-    MobileAssistantTab.MESSAGES,
     MobileAssistantTab.MORE,
     -> dashboardState.isRefreshing
+    MobileAssistantTab.MESSAGES -> messagesState.isRefreshing || messagesState.isLoadingMore
     MobileAssistantTab.ORDERS -> ordersState.isRefreshing
     MobileAssistantTab.PRODUCTS -> mobileProductsLoading
 }.let { tabRefreshing ->
@@ -589,6 +608,7 @@ private fun AssistantContent(
     mobileNotifications: List<MobileAssistantNotification>,
     mobileNotificationsLoading: Boolean,
     mobileNotificationFilter: MobileNotificationFilter,
+    messagesState: MessagesUiState,
     settingsState: SettingsUiState,
     settingsContent: SettingsContent,
     ordersState: OrdersUiState,
@@ -605,6 +625,7 @@ private fun AssistantContent(
     onCloseOverlay: () -> Unit,
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
+    onMessagesAction: (MessagesAction) -> Unit,
 ) {
     val context = LocalContext.current
     val mobileMediaClient = remember(apiUrl, session.deviceId) {
@@ -639,7 +660,8 @@ private fun AssistantContent(
 
     val isRefreshing = when {
         mobileOverlayScreen == MobileAssistantOverlayScreen.NOTIFICATIONS -> mobileNotificationsLoading
-        selectedTab == MobileAssistantTab.DASHBOARD || selectedTab == MobileAssistantTab.MESSAGES -> dashboardState.isRefreshing
+        selectedTab == MobileAssistantTab.DASHBOARD -> dashboardState.isRefreshing
+        selectedTab == MobileAssistantTab.MESSAGES -> messagesState.isRefreshing || messagesState.isLoadingMore
         selectedTab == MobileAssistantTab.ORDERS -> ordersState.isRefreshing
         selectedTab == MobileAssistantTab.PRODUCTS -> mobileProductsLoading
         else -> false
@@ -747,11 +769,10 @@ private fun AssistantContent(
                         onPickPhoto = { taskId -> onDashboardAction(DashboardAction.PickPhoto(taskId)) },
                         onCompletePhotoTask = { taskId -> onDashboardAction(DashboardAction.CompletePhotoTask(taskId)) },
                     )
-                    MobileAssistantTab.MESSAGES -> MessagesTab(
+                    MobileAssistantTab.MESSAGES -> MessagesFeatureScreen(
                         colors = colors,
-                        dashboard = dashboard,
-                        loading = dashboardState.isRefreshing,
-                        onOpenNotifications = { onDashboardAction(DashboardAction.OpenNotifications) },
+                        state = messagesState,
+                        onAction = onMessagesAction,
                     )
                     MobileAssistantTab.MORE -> SettingsFeatureScreen(
                         colors = colors,
@@ -2161,6 +2182,7 @@ private fun BottomNavigation(
     colors: DlaFlowComposeColors,
     selectedTab: MobileAssistantTab,
     dashboard: DashboardContent?,
+    messagesUnreadCount: Int,
     onSelectTab: (MobileAssistantTab) -> Unit,
 ) {
     Column(
@@ -2203,7 +2225,7 @@ private fun BottomNavigation(
                             colors = colors,
                             tab = tab,
                             selected = selected,
-                            badge = navBadge(tab, dashboard),
+                            badge = navBadge(tab, dashboard, messagesUnreadCount),
                         )
                     }
                     Text(
@@ -2264,11 +2286,10 @@ private fun tabIcon(tab: MobileAssistantTab): ImageVector {
     }
 }
 
-private fun navBadge(tab: MobileAssistantTab, dashboard: DashboardContent?): Int {
-    val kpis = dashboard?.kpis ?: return 0
+private fun navBadge(tab: MobileAssistantTab, dashboard: DashboardContent?, messagesUnreadCount: Int): Int {
     return when (tab) {
-        MobileAssistantTab.ORDERS -> kpis.newOrders
-        MobileAssistantTab.MESSAGES -> kpis.messages
+        MobileAssistantTab.ORDERS -> dashboard?.kpis?.newOrders ?: 0
+        MobileAssistantTab.MESSAGES -> messagesUnreadCount.coerceAtLeast(0)
         else -> 0
     }
 }

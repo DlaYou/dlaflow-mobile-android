@@ -28,6 +28,7 @@ class MessagesCoordinatorTest {
         harness.runAll()
         assertEquals(listOf("thread-1"), harness.gateway.readThreads)
 
+        harness.gateway.details += detail()
         assertTrue(harness.coordinator.refreshThread("session-a"))
         harness.runAll()
         assertEquals(listOf("thread-1"), harness.gateway.refreshThreads)

@@ -43,7 +43,7 @@ class MobileDataRefreshSourceBoundaryTest {
             .replace("\r\n", "\n")
 
         assertTrue(screen.contains("mobileProductsLoading -> ProductListSkeleton(colors)"))
-        assertTrue(screen.contains("loading = dashboardState.isRefreshing"))
+        assertTrue(screen.contains("messagesState.isRefreshing"))
         assertTrue(screen.contains("if (loading) {\n            NotificationPreviewSkeleton(colors)"))
         assertTrue(screen.contains("NotificationPreviewSkeleton(colors)"))
     }

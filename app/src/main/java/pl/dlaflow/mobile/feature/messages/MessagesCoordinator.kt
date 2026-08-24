@@ -123,7 +123,16 @@ internal class MessagesCoordinator(
                         request.requestIdempotencyKey.orEmpty(),
                     )
                 }
-            }.onSuccess { result -> postToMain { if (stateHolder.acceptMutationSuccess(request, result)) onStateChanged() } }
+            }.onSuccess { result ->
+                postToMain {
+                    if (stateHolder.acceptMutationSuccess(request, result)) {
+                        onStateChanged()
+                        if (request.kind == MessagesMutationKind.REFRESH_THREAD) {
+                            openThread(token, request.threadId, allowUnauthorizedRetry = false)
+                        }
+                    }
+                }
+            }
                 .onFailure { error -> postToMain { handleMutationFailure(token, request, operation, error, allowUnauthorizedRetry) } }
         }
     }

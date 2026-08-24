@@ -50,6 +50,18 @@ class MobileBackNavigationTest {
     }
 
     @Test
+    fun `android back closes message detail and keeps inbox visible`() {
+        val action = mobileAssistantBackAction(
+            MobileRoute.Assistant(
+                selectedTab = MobileAssistantTab.MESSAGES,
+                messagesDetailVisible = true,
+            ),
+        )
+
+        assertEquals(MobileAssistantBackAction.CLOSE_MESSAGES_DETAIL, action)
+    }
+
+    @Test
     fun `android back closes notification overlay before tab detail`() {
         val action = mobileAssistantBackAction(
             MobileRoute.Assistant(

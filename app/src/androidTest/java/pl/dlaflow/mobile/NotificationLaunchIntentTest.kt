@@ -3,6 +3,7 @@ package pl.dlaflow.mobile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -19,8 +20,9 @@ class NotificationLaunchIntentTest {
     @Test
     fun customerMessageNotificationIntentTargetsMessagesTab() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val intent = DlaFlowDeepLinks.messagesIntent(context)
+        val intent = DlaFlowDeepLinks.messagesIntent(context, "thread/42")
 
         assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false))
+        assertEquals("thread/42", intent.getStringExtra(DlaFlowDeepLinks.extraMessageThreadId))
     }
 }
