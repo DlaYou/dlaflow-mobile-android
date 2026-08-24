@@ -65,6 +65,14 @@ internal data class MessageBubble(
     val requestId: String? = null,
 )
 
+internal data class MessageOperation(
+    val operationId: String,
+    val messageId: String?,
+    val queued: Boolean,
+    val duplicate: Boolean,
+    val status: String,
+)
+
 internal data class MessageThreadDetail(
     val id: String,
     val providerId: String,
@@ -117,6 +125,7 @@ internal data class MessagesUiState(
     val isSendingReply: Boolean = false,
     val activeListRequestId: Long? = null,
     val activeDetailRequestId: Long? = null,
+    val activeMutationRequestId: Long? = null,
     val transientMessage: DlaFlowUiMessage? = null,
 )
 
@@ -146,6 +155,10 @@ internal fun MessagesUiState.visibleItems(): List<MessageListItem> =
 
 internal enum class MessagesListLoadMode { RESET, REFRESH, LOAD_MORE }
 
+internal enum class MessagesDetailLoadMode { INITIAL, REFRESH, LOAD_MORE }
+
+internal enum class MessagesMutationKind { MARK_READ, REFRESH_THREAD, REPLY }
+
 internal data class MessagesListRequest(
     val requestId: Long,
     internal val sessionKey: String,
@@ -159,6 +172,7 @@ internal data class MessagesDetailRequest(
     internal val sessionKey: String,
     val threadId: String,
     val cursor: String? = null,
+    val mode: MessagesDetailLoadMode = MessagesDetailLoadMode.INITIAL,
 )
 
 internal data class MessagesMutationRequest(
@@ -166,6 +180,7 @@ internal data class MessagesMutationRequest(
     internal val sessionKey: String,
     val threadId: String,
     val requestIdempotencyKey: String? = null,
+    val kind: MessagesMutationKind = MessagesMutationKind.MARK_READ,
 )
 
 internal sealed interface MessagesAction {
@@ -186,4 +201,12 @@ internal sealed interface MessagesEffect {
     data class OpenOrder(val orderId: String?, val orderNumber: String?) : MessagesEffect
     data object OpenInbox : MessagesEffect
     data class ShowSafeExplanation(val message: DlaFlowUiMessage) : MessagesEffect
+}
+
+internal sealed interface MessagesOperation {
+    data class ListReset(val query: MessagesQuery) : MessagesOperation
+    data object ListRefresh : MessagesOperation
+    data object LoadMore : MessagesOperation
+    data class Detail(val threadId: String, val mode: MessagesDetailLoadMode) : MessagesOperation
+    data class Mutation(val kind: MessagesMutationKind, val threadId: String, val body: String? = null, val requestId: String? = null) : MessagesOperation
 }

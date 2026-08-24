@@ -5,6 +5,7 @@ import pl.dlaflow.mobile.MobileMessage
 import pl.dlaflow.mobile.MobileMessageAttachment
 import pl.dlaflow.mobile.MobileMessageThread
 import pl.dlaflow.mobile.MobileMessageThreadDetail
+import pl.dlaflow.mobile.MobileMessageOperation
 import pl.dlaflow.mobile.MobileMessagesPage
 
 internal fun MobileMessagesPage.toMessagesContent(): MessagesContent = MessagesContent(
@@ -64,6 +65,14 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         },
     )
 }
+
+internal fun MobileMessageOperation.toMessageOperation(): MessageOperation = MessageOperation(
+    operationId = operationId.clean(),
+    messageId = messageId.cleanNullable(),
+    queued = queued,
+    duplicate = duplicate,
+    status = status.clean(),
+)
 
 internal fun MobileMessage.toMessageBubble(): MessageBubble = MessageBubble(
     id = id.clean(),

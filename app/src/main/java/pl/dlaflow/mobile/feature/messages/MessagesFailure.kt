@@ -2,6 +2,7 @@ package pl.dlaflow.mobile.feature.messages
 
 import java.net.ConnectException
 import java.net.UnknownHostException
+import pl.dlaflow.mobile.R
 import pl.dlaflow.mobile.core.network.MobileApiException
 import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.mobileErrorToUiMessage
@@ -21,3 +22,9 @@ internal fun mapMessagesFailure(error: Throwable): MessagesFailure = when {
         MessagesFailure.Offline(mobileErrorToUiMessage(error))
     else -> MessagesFailure.Retryable(mobileErrorToUiMessage(error))
 }
+
+internal fun messagesSessionUnconfirmedMessage() = DlaFlowUiMessage(
+    titleRes = R.string.mobile_error_offline_title,
+    descriptionRes = R.string.mobile_error_offline_description,
+    retryable = true,
+)
