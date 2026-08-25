@@ -244,11 +244,10 @@ private fun MessageThreadRow(
                 .testTag("message_source_slot"),
             contentAlignment = Alignment.Center,
         ) {
-            androidx.compose.material3.Icon(
-                imageVector = Icons.Rounded.ChatBubbleOutline,
-                contentDescription = null,
-                tint = if (item.isUnread) colors.primary else colors.textMuted,
-                modifier = Modifier.size(20.dp),
+            MessageSourceMarkVisual(
+                colors = colors,
+                providerId = item.providerId,
+                fallbackLabel = item.providerLabel,
             )
         }
         Spacer(Modifier.width(10.dp))

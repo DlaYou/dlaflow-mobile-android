@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
@@ -29,7 +30,7 @@ class MessagesFeatureScreenTest {
                             MessagesContent(
                                 items = listOf(
                                     item("new", "new"),
-                                    item("unread", "unread"),
+                                    item("unread", "unread", providerId = "social", providerLabel = "Social"),
                                 ),
                                 total = 23,
                                 nextCursor = null,
@@ -48,13 +49,20 @@ class MessagesFeatureScreenTest {
         composeRule.onNodeWithText("6").assertIsDisplayed()
         composeRule.onNodeWithText("Nowe").assertIsDisplayed()
         composeRule.onAllNodesWithTag("message_source_slot", useUnmergedTree = true).assertCountEquals(2)
+        composeRule.onNodeWithContentDescription("Źródło: Allegro", useUnmergedTree = true).assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Źródło: Social", useUnmergedTree = true).assertIsDisplayed()
     }
 
-    private fun item(id: String, status: String) = MessageListItem(
+    private fun item(
+        id: String,
+        status: String,
+        providerId: String = "allegro",
+        providerLabel: String = "Allegro",
+    ) = MessageListItem(
         id = id,
-        providerId = "allegro",
+        providerId = providerId,
         integrationId = "integration",
-        providerLabel = "Allegro",
+        providerLabel = providerLabel,
         customerName = "Anna Kowalska",
         customerLogin = "anna",
         subject = "Pytanie o wysyłkę",
@@ -65,6 +73,6 @@ class MessagesFeatureScreenTest {
         orderNumber = null,
         readAt = null,
         status = status,
-        channel = MessagesChannel.MARKETPLACE,
+        channel = if (providerId == "social") MessagesChannel.SOCIAL else MessagesChannel.MARKETPLACE,
     )
 }

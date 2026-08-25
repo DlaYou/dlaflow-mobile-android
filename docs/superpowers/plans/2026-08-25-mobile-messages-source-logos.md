@@ -4,7 +4,7 @@
 
 **Goal:** Render canonical panel source logos in the Android messages list while preserving a stable avatar-ready slot.
 
-**Architecture:** Keep `providerId` from the signed mobile DTO as the only input. A small pure resolver maps normalized IDs to local drawable resources and accessible labels; a Compose mark renders the resource for known providers and the existing chat icon for unknown providers. InPost has separate light/dark drawables.
+**Architecture:** Keep `providerId` from the signed mobile DTO as the only input. A small pure resolver maps normalized IDs to local drawable resources and accessible labels; a Compose mark renders Allegro, Gmail/email, or WooCommerce and uses the existing chat icon for `social` and unknown providers.
 
 **Tech Stack:** Kotlin, Jetpack Compose, Android drawable-nodpi resources, JUnit4, Compose Android tests.
 
@@ -27,7 +27,7 @@
 - Create: `app/src/main/res/drawable-nodpi/message_source_*.png`
 
 - [ ] Convert the panel-approved SVG assets to PNG without changing their source artwork; copy existing PNG assets unchanged.
-- [ ] Include light/dark InPost variants and keep dimensions appropriate for a 38 dp slot.
+- [ ] Include only the three message-source assets and keep dimensions appropriate for a 38 dp slot.
 - [ ] Verify every resource name is Android-safe and has no duplicate resource collision.
 
 ### Task 3: Compose rendering

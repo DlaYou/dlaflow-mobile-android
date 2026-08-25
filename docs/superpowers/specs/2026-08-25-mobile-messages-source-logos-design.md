@@ -7,8 +7,8 @@ Lista wiadomości ma pokazywać realny znak źródła, gdy `providerId` wskazuje
 ## Zakres
 
 - Zachować istniejący kontrakt `/api/mobile/messages` i pole `providerId`.
-- Obsłużyć lokalne assety Allegro, Apilo, DPD, Gmail, InPost, ORLEN Paczka i WooCommerce.
-- Dla InPost wybrać wariant jasny/ciemny zgodnie z motywem DlaFlow.
+- Obsłużyć lokalne assety Allegro, Gmail i WooCommerce, czyli źródła obecnie wspierane przez centrum wiadomości panelu.
+- Dla `social` oraz przyszłych nieznanych źródeł zachować neutralny fallback.
 - Dla nieznanego lub pustego `providerId` użyć ikony rozmowy i etykiety „Nieznane źródło”.
 - Zachować stały slot 38 dp, semantykę TalkBack `Źródło: ...` oraz test tag `message_source_slot`.
 - Zostawić slot gotowy do późniejszego zastąpienia awatarem bez zmiany układu wiersza.
