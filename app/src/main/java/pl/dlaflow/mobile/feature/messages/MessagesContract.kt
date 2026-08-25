@@ -1,5 +1,6 @@
 package pl.dlaflow.mobile.feature.messages
 
+import java.util.Locale
 import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
@@ -51,7 +52,10 @@ internal data class MessageListItem(
     val channel: MessagesChannel,
 ) {
     val isUnread: Boolean
-        get() = readAt == null && status.trim().equals("unread", ignoreCase = true)
+        get() = readAt == null && status.trim().lowercase(Locale.ROOT) in setOf("unread", "new")
+
+    val isNew: Boolean
+        get() = isUnread && status.trim().equals("new", ignoreCase = true)
 }
 
 internal data class MessageBubble(
@@ -106,6 +110,11 @@ internal data class MessagesContent(
     val nextCursor: String?,
     val unreadCount: Int,
 )
+
+internal fun MessagesContent.countFor(filter: MessagesFilter): Int = when (filter) {
+    MessagesFilter.ALL -> total.coerceAtLeast(0)
+    MessagesFilter.UNREAD -> unreadCount.coerceAtLeast(0)
+}
 
 internal data class MessagesQuery(
     val search: String = "",

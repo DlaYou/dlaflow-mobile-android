@@ -29,12 +29,38 @@ class MessagesContractTest {
     }
 
     @Test
+    fun `new status is distinct from a regular unread status`() {
+        assertTrue(item("new", unread = true, status = "new").isNew)
+        assertFalse(item("unread", unread = true, status = "unread").isNew)
+        assertFalse(item("read", unread = false, status = "new").isNew)
+    }
+
+    @Test
+    fun `filter counts use server totals and stay bounded`() {
+        val content = MessagesContent(
+            items = emptyList(),
+            total = 23,
+            nextCursor = null,
+            unreadCount = 6,
+        )
+
+        assertEquals(23, content.countFor(MessagesFilter.ALL))
+        assertEquals(6, content.countFor(MessagesFilter.UNREAD))
+        assertEquals(0, MessagesContent(emptyList(), -1, null, -2).countFor(MessagesFilter.ALL))
+    }
+
+    @Test
     fun `detail route retains opaque thread id and defaults to list`() {
         assertEquals(MessagesRoute.List, MessagesUiState().route)
         assertEquals("thread/one", MessagesRoute.Detail("thread/one").threadId)
     }
 
-    private fun item(id: String, unread: Boolean, channel: MessagesChannel = MessagesChannel.ALL) = MessageListItem(
+    private fun item(
+        id: String,
+        unread: Boolean,
+        channel: MessagesChannel = MessagesChannel.ALL,
+        status: String = if (unread) "unread" else "read",
+    ) = MessageListItem(
         id = id,
         providerId = "allegro",
         integrationId = "integration",
@@ -48,7 +74,7 @@ class MessagesContractTest {
         orderId = null,
         orderNumber = null,
         readAt = if (unread) null else "2026-08-24T11:00:00Z",
-        status = if (unread) "unread" else "read",
+        status = status,
         channel = channel,
     )
 }

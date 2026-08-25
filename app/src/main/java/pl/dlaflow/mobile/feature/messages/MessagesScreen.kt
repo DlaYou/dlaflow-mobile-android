@@ -64,6 +64,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowPrimaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowScreenHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
+import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusBadge
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
 import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
@@ -71,6 +72,12 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiState
 internal fun messagesFilterLabel(filter: MessagesFilter): String = when (filter) {
     MessagesFilter.ALL -> "Wszystkie"
     MessagesFilter.UNREAD -> "Nieprzeczytane"
+}
+
+internal fun messageStatusBadgeLabel(isNew: Boolean, isUnread: Boolean): String? = when {
+    isNew && isUnread -> "Nowe"
+    isUnread -> "Nieprzeczytane"
+    else -> null
 }
 
 internal fun messagesChannelLabel(channel: MessagesChannel): String = when (channel) {
@@ -117,7 +124,7 @@ private fun MessagesInboxScreen(
             placeholder = "Szukaj klienta, tematu lub numeru",
             onValueChange = { onAction(MessagesAction.SearchChanged(it)) },
         )
-        MessagesFilterRow(colors, state.query, onAction)
+        MessagesFilterRow(colors, state, state.query, onAction)
         MessagesTransientNotice(colors, state.transientMessage)
 
         when (val listState = state.listState) {
@@ -140,6 +147,7 @@ private fun MessagesInboxScreen(
 @Composable
 private fun MessagesFilterRow(
     colors: DlaFlowComposeColors,
+    state: MessagesUiState,
     query: MessagesQuery,
     onAction: (MessagesAction) -> Unit,
 ) {
@@ -154,6 +162,7 @@ private fun MessagesFilterRow(
                 colors = colors,
                 label = messagesFilterLabel(filter),
                 selected = query.filter == filter,
+                count = state.listContentOrNull()?.countFor(filter) ?: 0,
                 onClick = { onAction(MessagesAction.FilterChanged(filter)) },
             )
         }
@@ -201,6 +210,7 @@ private fun MessageThreadRow(
     item: MessageListItem,
     onAction: (MessagesAction) -> Unit,
 ) {
+    val statusBadge = messageStatusBadgeLabel(item.isNew, item.isUnread)
     val shape = RoundedCornerShape(8.dp)
     Row(
         modifier = Modifier
@@ -209,15 +219,29 @@ private fun MessageThreadRow(
             .background(colors.surface)
             .border(1.dp, if (item.isUnread) colors.primarySoftBorder else colors.border, shape)
             .clickable(role = Role.Button) { onAction(MessagesAction.OpenThread(item.id)) }
-            .semantics { contentDescription = "Rozmowa ${item.customerName}, ${item.subject}" }
+            .semantics {
+                contentDescription = listOfNotNull(
+                    "Rozmowa ${item.customerName}, ${item.subject}",
+                    statusBadge,
+                ).joinToString(", ")
+            }
             .padding(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Box(
             modifier = Modifier
+                .padding(top = 16.dp)
+                .size(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(if (item.isUnread) colors.primary else colors.surface),
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(
+            modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (item.isUnread) colors.primarySoft else colors.surfaceSubtle),
+                .background(if (item.isUnread) colors.primarySoft else colors.surfaceSubtle)
+                .testTag("message_source_slot"),
             contentAlignment = Alignment.Center,
         ) {
             androidx.compose.material3.Icon(
@@ -239,13 +263,6 @@ private fun MessageThreadRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
-                androidx.compose.material3.Text(
-                    text = messageTimestampLabel(item.lastMessageAt),
-                    color = colors.textMuted,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
                 )
             }
             androidx.compose.material3.Text(
@@ -273,14 +290,23 @@ private fun MessageThreadRow(
                 }
             }
         }
-        if (item.isUnread) {
-            Box(
-                modifier = Modifier
-                    .padding(start = 8.dp, top = 5.dp)
-                    .size(8.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(colors.primary),
+        Column(
+            modifier = Modifier
+                .padding(start = 8.dp)
+                .width(78.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            androidx.compose.material3.Text(
+                text = messageTimestampLabel(item.lastMessageAt),
+                color = colors.textMuted,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
             )
+            statusBadge?.let { badge ->
+                DlaFlowStatusBadge(colors, badge, compact = true)
+            }
         }
     }
 }

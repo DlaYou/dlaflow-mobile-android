@@ -286,6 +286,7 @@ internal fun DlaFlowFilterChip(
     selected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    count: Int? = null,
 ) {
     Box(
         modifier = modifier
@@ -307,14 +308,31 @@ internal fun DlaFlowFilterChip(
                 .padding(horizontal = 10.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = label,
-                color = if (selected) colors.primary else colors.textMuted,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = label,
+                    color = if (selected) colors.primary else colors.textMuted,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                count?.let {
+                    Text(
+                        text = it.coerceAtLeast(0).toString(),
+                        color = if (selected) colors.primary else colors.textMuted,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(DlaFlowDimensions.pillRadius))
+                            .background(if (selected) colors.primarySoft else colors.surfaceSubtle)
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
         }
     }
 }
@@ -677,12 +695,12 @@ internal fun DlaFlowIcon(
 }
 
 @Composable
-internal fun DlaFlowStatusBadge(colors: DlaFlowComposeColors, text: String) {
+internal fun DlaFlowStatusBadge(colors: DlaFlowComposeColors, text: String, compact: Boolean = false) {
     val shape = RoundedCornerShape(DlaFlowDimensions.pillRadius)
     Text(
         text = text,
         color = colors.primary,
-        fontSize = 11.sp,
+        fontSize = if (compact) 9.sp else 11.sp,
         fontWeight = FontWeight.Bold,
         modifier = Modifier
             .clip(shape)
@@ -690,7 +708,7 @@ internal fun DlaFlowStatusBadge(colors: DlaFlowComposeColors, text: String) {
             .border(DlaFlowDimensions.borderWidth, colors.primarySoftBorder, shape)
             .padding(
                 horizontal = DlaFlowDimensions.badgeHorizontalPadding,
-                vertical = DlaFlowDimensions.badgeVerticalPadding,
+                vertical = if (compact) 3.dp else DlaFlowDimensions.badgeVerticalPadding,
             ),
     )
 }

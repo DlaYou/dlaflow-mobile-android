@@ -15,6 +15,13 @@ class MessagesUiTextTest {
     }
 
     @Test
+    fun `message status badge text is only exposed for unread states`() {
+        assertEquals("Nowe", messageStatusBadgeLabel(isNew = true, isUnread = true))
+        assertEquals("Nieprzeczytane", messageStatusBadgeLabel(isNew = false, isUnread = true))
+        assertEquals(null, messageStatusBadgeLabel(isNew = false, isUnread = false))
+    }
+
+    @Test
     fun `blank reply cannot be sent and bounded reply can be sent`() {
         assertFalse(canSendMessageReply(" ", sending = false))
         assertFalse(canSendMessageReply("Dziękuję", sending = true))
