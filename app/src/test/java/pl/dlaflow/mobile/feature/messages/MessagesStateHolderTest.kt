@@ -43,6 +43,18 @@ class MessagesStateHolderTest {
     }
 
     @Test
+    fun `list refresh preserves an open conversation`() {
+        val holder = holderWithContent()
+        val detailRequest = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(detailRequest, detail())
+
+        holder.beginListRefresh("session-a")
+
+        assertEquals(MessagesRoute.Detail("thread-1"), holder.state.route)
+        assertEquals("thread-1", holder.state.detailContentOrNull()!!.id)
+    }
+
+    @Test
     fun `list cursor pagination merges by thread id and guards duplicate cursor`() {
         val holder = MessagesStateHolder()
         val initial = holder.beginListReset("session-a", MessagesQuery())

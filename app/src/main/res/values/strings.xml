@@ -152,6 +152,7 @@
     <string name="orders_filter_overdue">Po terminie</string>
     <string name="orders_filter_problems">Problemy</string>
     <string name="orders_filter_messages">Wiadomości</string>
+    <string name="orders_messages_view_conversation">Zobacz całą rozmowę</string>
     <string name="orders_no_access_title">Brak dostępu</string>
     <string name="orders_no_access_description">To konto nie ma dostępu do zamówień w telefonie.</string>
     <string name="orders_empty_title">Brak zamówień</string>

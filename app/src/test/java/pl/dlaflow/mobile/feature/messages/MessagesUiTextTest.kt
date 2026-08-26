@@ -31,7 +31,10 @@ class MessagesUiTextTest {
 
     @Test
     fun `message timestamps use safe fallback`() {
-        assertEquals("24.08, 12:30", messageTimestampLabel("2026-08-24T12:30:00Z", java.time.ZoneOffset.UTC))
+        val now = java.time.Instant.parse("2026-08-26T14:00:00Z")
+        assertEquals("Dzisiaj, 12:30", messageTimestampLabel("2026-08-26T12:30:00Z", java.time.ZoneOffset.UTC, now))
+        assertEquals("Wczoraj, 12:30", messageTimestampLabel("2026-08-25T12:30:00Z", java.time.ZoneOffset.UTC, now))
+        assertEquals("24.08, 12:30", messageTimestampLabel("2026-08-24T12:30:00Z", java.time.ZoneOffset.UTC, now))
         assertEquals("", messageTimestampLabel("not-a-date", java.time.ZoneOffset.UTC))
     }
 }

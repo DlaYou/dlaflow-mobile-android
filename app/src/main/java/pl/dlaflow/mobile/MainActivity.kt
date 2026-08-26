@@ -100,6 +100,7 @@ import pl.dlaflow.mobile.feature.messages.MessagesAction
 import pl.dlaflow.mobile.feature.messages.MessagesCoordinator
 import pl.dlaflow.mobile.feature.messages.MessagesOperation
 import pl.dlaflow.mobile.feature.messages.MessagesStateHolder
+import pl.dlaflow.mobile.feature.messages.MessagesRoute
 import pl.dlaflow.mobile.feature.messages.MobileApiMessagesGateway
 import pl.dlaflow.mobile.feature.messages.listContentOrNull
 import pl.dlaflow.mobile.feature.messages.detailContentOrNull
@@ -950,6 +951,7 @@ class MainActivity : ComponentActivity() {
                         startPhotoTaskDispatchPolling()
                         dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
                         notificationsCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
+                        messagesCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
                         photoTasksCoordinator.refresh(verifiedSession.token)
                         refreshAppUpdate(showStatus = false)
                         if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -1014,6 +1016,7 @@ class MainActivity : ComponentActivity() {
             startPhotoTaskDispatchPolling()
             dashboardCoordinator.refresh(nextSession.token, showFeedback = false)
             notificationsCoordinator.refresh(nextSession.token, allowUnauthorizedRetry = false)
+            messagesCoordinator.refresh(nextSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
             if (selectedTab == MobileAssistantTab.ORDERS) {
@@ -1154,7 +1157,11 @@ class MainActivity : ComponentActivity() {
                 photoTasksCoordinator.refresh(currentSession.token)
             }
             selectedTab == MobileAssistantTab.MESSAGES -> {
-                messagesCoordinator.refresh(currentSession.token)
+                if (messagesStateHolder.state.route is MessagesRoute.Detail) {
+                    messagesCoordinator.refreshThread(currentSession.token)
+                } else {
+                    messagesCoordinator.refresh(currentSession.token)
+                }
             }
             selectedTab == MobileAssistantTab.ORDERS -> {
                 ordersCoordinator.refreshList(currentSession.token, showFeedback = true)
@@ -1288,7 +1295,12 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshMessagesIfIdle() {
         val currentSession = session ?: return
-        if (messagesStateHolder.state.activeListRequestId == null) {
+        val state = messagesStateHolder.state
+        if (state.route is MessagesRoute.Detail) {
+            if (state.activeMutationRequestId == null && state.detailContentOrNull() != null) {
+                messagesCoordinator.refreshThread(currentSession.token, allowUnauthorizedRetry = false)
+            }
+        } else if (state.activeListRequestId == null) {
             messagesCoordinator.refresh(currentSession.token, allowUnauthorizedRetry = false)
         }
     }
@@ -1297,6 +1309,12 @@ class MainActivity : ComponentActivity() {
         val currentSession = session ?: return
         val state = messagesStateHolder.state
         if (state.activeListRequestId != null) return
+        if (state.route is MessagesRoute.Detail) {
+            if (state.activeDetailRequestId == null && state.detailContentOrNull() != null && refreshExisting) {
+                messagesCoordinator.refreshThread(currentSession.token, allowUnauthorizedRetry = false)
+            }
+            return
+        }
         if (state.listContentOrNull() == null || !refreshExisting) {
             messagesCoordinator.open(currentSession.token, state.query)
         } else {
@@ -1326,6 +1344,10 @@ class MainActivity : ComponentActivity() {
             MessagesAction.MarkThreadRead -> messagesCoordinator.markThreadRead(currentSession.token)
             MessagesAction.RefreshThread -> messagesCoordinator.refreshThread(currentSession.token)
             is MessagesAction.SendReply -> messagesCoordinator.reply(currentSession.token, messagesStateHolder.state.detailContentOrNull()?.id.orEmpty(), action.body, action.requestId)
+            is MessagesAction.OpenRelatedOrder -> {
+                selectedTab = MobileAssistantTab.ORDERS
+                ordersCoordinator.loadDetail(currentSession.token, action.orderNumber, showFeedback = false)
+            }
             MessagesAction.Retry -> ensureMessagesLoaded(refreshExisting = false)
         }
     }

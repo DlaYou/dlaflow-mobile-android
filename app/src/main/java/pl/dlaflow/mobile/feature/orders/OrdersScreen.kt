@@ -67,6 +67,7 @@ internal fun OrdersFeatureScreen(
     leadContent: @Composable () -> Unit,
     leadLoadingContent: @Composable () -> Unit = {},
     onAction: (OrdersAction) -> Unit,
+    onOpenMessages: (String) -> Unit = {},
 ) {
     val content = state.listContentOrNull()
     Column(
@@ -75,6 +76,20 @@ internal fun OrdersFeatureScreen(
             .testTag("orders_feature_root"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val detailRoute = state.route as? OrdersRoute.Detail
+        if (detailRoute != null) {
+            OrderDetailPanel(
+                colors = colors,
+                orderNumber = detailRoute.orderNumber,
+                state = state.detailState,
+                thumbnailLoader = thumbnailLoader,
+                onClose = { onAction(OrdersAction.CloseDetail) },
+                onRetry = { onAction(OrdersAction.Retry) },
+                onOpenMessages = onOpenMessages,
+            )
+            return@Column
+        }
+
         DlaFlowScreenHeader(
             colors = colors,
             title = stringResource(R.string.orders_title),
@@ -84,6 +99,7 @@ internal fun OrdersFeatureScreen(
             colors = colors,
             value = state.query.search,
             placeholder = stringResource(R.string.orders_search_placeholder),
+            placeholderFontSize = 11.sp,
             onValueChange = { onAction(OrdersAction.SearchChanged(it)) },
         )
         OrdersFilterChips(
@@ -91,17 +107,6 @@ internal fun OrdersFeatureScreen(
             selected = state.query.filter,
             onFilterChange = { onAction(OrdersAction.FilterChanged(it)) },
         )
-
-        if (state.route is OrdersRoute.Detail) {
-            OrderDetailPanel(
-                colors = colors,
-                state = state.detailState,
-                thumbnailLoader = thumbnailLoader,
-                onClose = { onAction(OrdersAction.CloseDetail) },
-                onRetry = { onAction(OrdersAction.Retry) },
-            )
-            return@Column
-        }
 
         if (state.listState == DlaFlowUiState.NoAccess) {
             DlaFlowStateCard(
@@ -338,7 +343,14 @@ private fun OrdersListCard(
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(formatOrdersMoney(order.amount), color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                        Text(
+                            formatOrdersMoney(order.amount),
+                            color = colors.textStrong,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                     Spacer(Modifier.height(12.dp))
                     OrdersProductStrip(colors, order, thumbnailLoader)

@@ -283,6 +283,7 @@ data class MobileOrderMessage(
     val messageAt: String,
     val source: String,
     val status: String,
+    val threadId: String = "",
 )
 
 data class MobileOrderStatusHistory(
@@ -489,6 +490,10 @@ data class MobileMessagePreview(
 data class MobileMessageOrderLink(
     val id: String,
     val orderId: String,
+    val amount: Double? = null,
+    val currency: String = "",
+    val createdAt: String = "",
+    val status: String = "",
 )
 
 data class MobileMessageThread(
@@ -1245,7 +1250,11 @@ class MobileApiClient(
         if (item == null) return null
         val id = boundedString(item.optString("id", ""), MOBILE_MESSAGE_ID_MAX_CHARS)
         val orderId = boundedString(item.optString("orderId", ""), MOBILE_MESSAGE_ID_MAX_CHARS)
-        return if (id.isBlank() && orderId.isBlank()) null else MobileMessageOrderLink(id, orderId)
+        val amount = item.optDouble("amount", Double.NaN).takeIf(Double::isFinite)
+        val currency = boundedString(item.optString("currency", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS)
+        val createdAt = boundedString(item.optString("createdAt", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS)
+        val status = boundedString(item.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS)
+        return if (id.isBlank() && orderId.isBlank()) null else MobileMessageOrderLink(id, orderId, amount, currency, createdAt, status)
     }
 
     private fun parseMobileMessage(item: JSONObject): MobileMessage {
@@ -1531,6 +1540,7 @@ class MobileApiClient(
                     messageAt = item.optString("messageAt", ""),
                     source = item.optString("source", ""),
                     status = item.optString("status", ""),
+                    threadId = boundedString(item.optString("threadId", ""), MOBILE_MESSAGE_ID_MAX_CHARS),
                 ),
             )
         }
@@ -1801,6 +1811,17 @@ internal fun resolveMobileMediaPath(apiUrl: String, mediaUrl: String): String? {
     }
 
     return pathWithQuery.takeIf(::isCanonicalMobileApiPath)
+}
+
+internal fun normalizeMobileOrderMediaUrl(value: String): String {
+    val trimmed = value.trim()
+    if (trimmed.isBlank()) return ""
+    val uri = runCatching { URI(trimmed) }.getOrNull() ?: return ""
+    val path = uri.rawPath.orEmpty()
+    if (path.startsWith("/api/mobile/orders/media/") || path.startsWith("/api/mobile/products/media/")) return trimmed
+    if (!path.startsWith("/api/products/media/")) return ""
+    val filename = path.removePrefix("/api/products/media/").takeIf(String::isNotBlank) ?: return ""
+    return "/api/mobile/orders/media/$filename?variant=thumb"
 }
 
 private fun containsTraversalSegment(rawPath: String): Boolean {

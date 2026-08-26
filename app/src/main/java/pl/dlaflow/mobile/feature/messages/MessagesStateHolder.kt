@@ -46,16 +46,11 @@ internal class MessagesStateHolder {
         val request = newListRequest(sessionKey, state.query, null, MessagesListLoadMode.REFRESH)
         state = state.copy(
             listState = content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Loading,
-            route = MessagesRoute.List,
-            detailState = null,
             isRefreshing = content != null,
             isLoadingMore = false,
             activeListRequestId = request.requestId,
-            activeDetailRequestId = null,
             transientMessage = null,
         )
-        invalidateDetail()
-        invalidateMutation()
         return request
     }
 

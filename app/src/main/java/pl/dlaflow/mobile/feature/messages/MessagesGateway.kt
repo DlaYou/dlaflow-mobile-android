@@ -23,13 +23,19 @@ internal class MobileApiMessagesGateway(
             limit = MESSAGES_PAGE_LIMIT,
         ).toMessagesContent()
 
-    override fun loadDetail(token: String, threadId: String, cursor: String?): MessageThreadDetail =
-        clientProvider().getMessageThread(
+    override fun loadDetail(token: String, threadId: String, cursor: String?): MessageThreadDetail {
+        val client = clientProvider()
+        val detail = client.getMessageThread(
             token = token,
             threadId = threadId,
             cursor = cursor,
             limit = MESSAGES_DETAIL_PAGE_LIMIT,
         ).toMessageThreadDetail()
+        val relatedOrder = detail.relatedOrder?.let { fallback ->
+            runCatching { client.getOrder(token, fallback.id).toMessageRelatedOrder() }.getOrDefault(fallback)
+        }
+        return detail.copy(relatedOrder = relatedOrder)
+    }
 
     override fun markRead(token: String, threadId: String): MessageOperation =
         clientProvider().markMessageRead(token, threadId).toMessageOperation()

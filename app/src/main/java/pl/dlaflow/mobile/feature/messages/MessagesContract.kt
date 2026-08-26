@@ -94,6 +94,27 @@ internal data class MessageThreadDetail(
     val messages: List<MessageBubble>,
     val nextCursor: String?,
     val customerContext: MessageCustomerContext?,
+    val relatedOrder: MessageRelatedOrder? = null,
+)
+
+internal data class MessageRelatedOrder(
+    val id: String,
+    val orderNumber: String,
+    val amount: Double,
+    val currency: String,
+    val status: String,
+    val statusTone: String,
+    val statusColor: String,
+    val items: List<MessageRelatedOrderItem>,
+)
+
+internal data class MessageRelatedOrderItem(
+    val name: String,
+    val image: String,
+    val sku: String,
+    val quantity: Int,
+    val unitPrice: Double,
+    val lineTotal: Double,
 )
 
 internal data class MessageCustomerContext(
@@ -203,6 +224,7 @@ internal sealed interface MessagesAction {
     data object MarkThreadRead : MessagesAction
     data object RefreshThread : MessagesAction
     data class SendReply(val body: String, val requestId: String) : MessagesAction
+    data class OpenRelatedOrder(val orderNumber: String) : MessagesAction
     data object Retry : MessagesAction
 }
 

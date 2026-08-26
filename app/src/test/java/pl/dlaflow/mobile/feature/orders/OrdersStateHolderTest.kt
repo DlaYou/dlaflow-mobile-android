@@ -219,6 +219,17 @@ class OrdersStateHolderTest {
     }
 
     @Test
+    fun `list refresh preserves an open detail route`() {
+        val holder = holderWithContent()
+        holder.beginDetailLoad("session-a", "ORD-1")
+
+        holder.beginListRefresh("session-a")
+
+        assertEquals(OrdersRoute.Detail("ORD-1"), holder.state.route)
+        assertEquals(DlaFlowUiState.Loading, holder.state.detailState)
+    }
+
+    @Test
     fun `whole feature no access invalidates both chains`() {
         val holder = OrdersStateHolder()
         val listRequest = holder.beginListReset("session-a", OrdersQuery())

@@ -7,6 +7,9 @@ import pl.dlaflow.mobile.MobileMessageThread
 import pl.dlaflow.mobile.MobileMessageThreadDetail
 import pl.dlaflow.mobile.MobileMessageOperation
 import pl.dlaflow.mobile.MobileMessagesPage
+import pl.dlaflow.mobile.MobileMessageOrderLink
+import pl.dlaflow.mobile.normalizeMobileOrderMediaUrl
+import pl.dlaflow.mobile.MobileOrderDetail
 
 internal fun MobileMessagesPage.toMessagesContent(): MessagesContent = MessagesContent(
     items = items.map(MobileMessageThread::toMessageListItem),
@@ -54,6 +57,7 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         orderNumber = orderLink?.id.cleanNullable(),
         messages = messages.map(MobileMessage::toMessageBubble),
         nextCursor = nextCursor.cleanNullable(),
+        relatedOrder = orderLink?.toMessageRelatedOrderFallback(),
         customerContext = customerContext?.let {
             MessageCustomerContext(
                 orderCount = it.orderCount.coerceAtLeast(0),
@@ -65,6 +69,37 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         },
     )
 }
+
+internal fun MobileOrderDetail.toMessageRelatedOrder(): MessageRelatedOrder = MessageRelatedOrder(
+    id = id.clean(),
+    orderNumber = orderNumber.clean(),
+    amount = amount.takeIf(Double::isFinite)?.coerceAtLeast(0.0) ?: 0.0,
+    currency = currency.clean().ifBlank { "PLN" },
+    status = status.clean(),
+    statusTone = statusTone.clean(),
+    statusColor = statusColor.clean(),
+    items = items.map { item ->
+        MessageRelatedOrderItem(
+            name = item.name.clean().ifBlank { "Produkt" },
+            image = normalizeMobileOrderMediaUrl(item.image),
+            sku = item.sku.clean(),
+            quantity = item.quantity.coerceAtLeast(0),
+            unitPrice = item.unitPrice.takeIf(Double::isFinite)?.coerceAtLeast(0.0) ?: 0.0,
+            lineTotal = item.lineTotal.takeIf(Double::isFinite)?.coerceAtLeast(0.0) ?: 0.0,
+        )
+    },
+)
+
+private fun MobileMessageOrderLink.toMessageRelatedOrderFallback(): MessageRelatedOrder = MessageRelatedOrder(
+    id = orderId.clean(),
+    orderNumber = id.clean(),
+    amount = amount?.takeIf(Double::isFinite)?.coerceAtLeast(0.0) ?: 0.0,
+    currency = currency.clean().ifBlank { "PLN" },
+    status = status.clean(),
+    statusTone = "",
+    statusColor = "",
+    items = emptyList(),
+)
 
 internal fun MobileMessageOperation.toMessageOperation(): MessageOperation = MessageOperation(
     operationId = operationId.clean(),

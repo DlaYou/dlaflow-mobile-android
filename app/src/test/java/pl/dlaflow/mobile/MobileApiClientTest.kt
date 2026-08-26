@@ -18,6 +18,23 @@ import java.util.concurrent.atomic.AtomicReference
 
 class MobileApiClientTest {
     @Test
+    fun `order media urls are normalized to tenant scoped mobile endpoint`() {
+        assertEquals(
+            "/api/mobile/orders/media/product.webp?variant=thumb",
+            normalizeMobileOrderMediaUrl("/api/products/media/product.webp"),
+        )
+        assertEquals(
+            "/api/mobile/orders/media/product.webp?variant=thumb",
+            normalizeMobileOrderMediaUrl("https://panel.dlayou.pl/api/products/media/product.webp"),
+        )
+        assertEquals(
+            "/api/mobile/products/media/product.webp",
+            normalizeMobileOrderMediaUrl("/api/mobile/products/media/product.webp"),
+        )
+        assertEquals("", normalizeMobileOrderMediaUrl("/api/auth/me"))
+    }
+
+    @Test
     fun `mobile media path keeps same origin query and rejects bearer exfiltration targets`() {
         val baseUrl = "https://panel.dlayou.pl"
 

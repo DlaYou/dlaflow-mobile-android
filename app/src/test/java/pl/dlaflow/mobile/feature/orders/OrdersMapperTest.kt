@@ -21,6 +21,15 @@ import pl.dlaflow.mobile.MobileOrdersPage
 
 class OrdersMapperTest {
     @Test
+    fun `order message preview keeps the latest three messages`() {
+        val messages = (1..5).map { index ->
+            OrderMessage("message-$index", "Klient", "Treść $index", "2026-08-${20 + index}T10:00:00Z")
+        }
+
+        assertEquals(listOf("message-5", "message-4", "message-3"), orderMessagesPreview(messages).map { it.id })
+    }
+
+    @Test
     fun `list page maps transport rows to an independent presentation snapshot`() {
         val transportRows = mutableListOf(orderListDto())
         val transport = MobileOrdersPage(

@@ -70,7 +70,15 @@ fun classifyMobileNotification(notification: MobileAssistantNotification): Mobil
 
     return when {
         action == "OPEN_PHOTO_TASKS" -> MobileNotificationCategory.PHOTO_TASKS
-        action == "OPEN_MESSAGES" || "wiadomość" in text || "wiadomosc" in text || "klient" in text -> MobileNotificationCategory.CUSTOMER_MESSAGES
+        action == "OPEN_MESSAGES" && (
+            "nowa wiadomość" in text ||
+                "nowa wiadomosc" in text ||
+                "od klienta" in text ||
+                "klient napisał" in text ||
+                "klient napisal" in text ||
+                "klient odpowiedział" in text ||
+                "klient odpowiedzial" in text
+            ) -> MobileNotificationCategory.CUSTOMER_MESSAGES
         "nowe zamówienie" in text || "nowe zamowienie" in text -> MobileNotificationCategory.NEW_ORDERS
         "statusu przesyłki" in text || "statusu przesylki" in text || "w drodze" in text || "w trasie" in text || "śledzenia" in text || "sledzenia" in text -> MobileNotificationCategory.SHIPMENT_STATUS
         "statusu zamówienia" in text || "statusu zamowienia" in text -> MobileNotificationCategory.ORDER_STATUS
@@ -83,7 +91,7 @@ fun shouldShowNativePanelNotification(
     preferences: MobileNotificationPreferences,
 ): Boolean {
     val category = classifyMobileNotification(notification)
-    return preferences.isEnabled(category)
+    return category == MobileNotificationCategory.CUSTOMER_MESSAGES && preferences.isEnabled(category)
 }
 
 fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean =

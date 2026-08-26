@@ -100,13 +100,13 @@ class MobileFeatureIntegrationGuardTest {
                 preferences,
             ),
         )
-        assertTrue(
+        assertFalse(
             shouldShowNativePanelNotification(
                 testNotification("Problem synchronizacji", "warning", "OPEN_LOGS_SUMMARY"),
                 preferences,
             ),
         )
-        assertTrue(
+        assertFalse(
             shouldShowNativePanelNotification(
                 testNotification("Informacja z panelu", "info", "OPEN_LOGS_SUMMARY"),
                 preferences,

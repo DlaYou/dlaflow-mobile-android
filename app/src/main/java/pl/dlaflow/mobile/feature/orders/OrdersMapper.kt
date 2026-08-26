@@ -5,6 +5,7 @@ import pl.dlaflow.mobile.MobileOrderDetail
 import pl.dlaflow.mobile.MobileOrderFilter
 import pl.dlaflow.mobile.MobileOrderListItem
 import pl.dlaflow.mobile.MobileOrdersPage
+import pl.dlaflow.mobile.normalizeMobileOrderMediaUrl
 
 internal fun MobileOrdersPage.toOrdersListContent() = OrdersListContent(
     items = data.map(MobileOrderListItem::toOrdersListItem),
@@ -87,7 +88,7 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
             quantity = item.quantity,
             lineTotal = item.lineTotal,
             unitPrice = item.unitPrice,
-            image = item.image,
+                image = normalizeMobileOrderMediaUrl(item.image),
             variantId = item.variantId,
         )
     },
@@ -109,6 +110,7 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
             author = message.author,
             body = message.body,
             messageAt = message.messageAt,
+            threadId = message.threadId,
         )
     },
     documentsCount = documents.size,

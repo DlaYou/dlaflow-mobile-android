@@ -59,18 +59,44 @@ class MobileNotificationPreferencesTest {
     fun `enabled important panel category accepts every tone`() {
         val preferences = MobileNotificationPreferences.defaults()
 
-        assertTrue(
+        assertFalse(
             shouldShowNativePanelNotification(
                 testNotification("Informacja z panelu", "OPEN_LOGS_SUMMARY", tone = "info"),
                 preferences,
             ),
         )
-        assertTrue(
+        assertFalse(
             shouldShowNativePanelNotification(
                 testNotification("Zakończono synchronizację", "OPEN_LOGS_SUMMARY", tone = "success"),
                 preferences,
             ),
         )
+    }
+
+    @Test
+    fun `technical message synchronization notifications never reach Android`() {
+        val preferences = MobileNotificationPreferences.defaults()
+
+        assertFalse(
+            shouldShowNativePanelNotification(
+                testNotification("Wiadomości Gmail: zakończono", "OPEN_MESSAGES", tone = "success"),
+                preferences,
+            ),
+        )
+        assertFalse(
+            shouldShowNativePanelNotification(
+                testNotification("Wiadomości Gmail: zakończono", "OPEN_MESSAGES", tone = "info"),
+                preferences,
+            ),
+        )
+    }
+
+    @Test
+    fun `real customer message and reply notifications reach Android`() {
+        val preferences = MobileNotificationPreferences.defaults()
+
+        assertTrue(shouldShowNativePanelNotification(testNotification("Nowa wiadomość od klienta", "OPEN_MESSAGES"), preferences))
+        assertTrue(shouldShowNativePanelNotification(testNotification("Klient odpowiedział na wiadomość", "OPEN_MESSAGES"), preferences))
     }
 
     @Test

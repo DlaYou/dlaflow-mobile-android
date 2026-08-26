@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
@@ -180,6 +181,14 @@ class OrdersFeatureScreenTest {
 
         composeRule.onNodeWithContentDescription("Realizacja, Nowe").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Płatność, Opłacone").assertIsDisplayed()
+    }
+
+    @Test
+    fun orderCardKeepsAmountVisibleAtNarrowWidth() {
+        setOrders(contentState(), mutableListOf(), screenWidthDp = 360)
+
+        val amount = formatOrdersMoney(100.0)
+        composeRule.onNodeWithText(amount, useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test
@@ -399,7 +408,7 @@ class OrdersFeatureScreenTest {
             actions = actions,
         )
 
-        composeRule.onNodeWithText("Wróć").assertIsDisplayed().performClick()
+        composeRule.onNodeWithContentDescription("Wróć").assertIsDisplayed().performClick()
 
         composeRule.runOnIdle {
             assertEquals(listOf(OrdersAction.CloseDetail), actions)
@@ -448,6 +457,28 @@ class OrdersFeatureScreenTest {
         composeRule.onNodeWithText("Paczkomat", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Numer przesyłki", substring = true).performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText(trackingNumber, substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun detailShowsEveryOrderedProductInApiOrder() {
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(
+                    orderDetail(status = "Nowe").copy(
+                        items = listOf(
+                            OrderItem("item-1", "Produkt pierwszy", "SKU-1", 1, 10.0, 10.0),
+                            OrderItem("item-2", "Produkt drugi", "SKU-2", 2, 20.0, 10.0),
+                        ),
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onAllNodesWithText("Produkt pierwszy", substring = true).assertCountEquals(1)
+        composeRule.onAllNodesWithText("Produkt drugi", substring = true).assertCountEquals(1)
+        composeRule.onNodeWithText("Produkt drugi", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test

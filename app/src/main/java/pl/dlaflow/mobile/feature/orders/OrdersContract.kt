@@ -128,6 +128,7 @@ internal data class OrderMessage(
     val author: String,
     val body: String,
     val messageAt: String,
+    val threadId: String = "",
 )
 
 internal data class OrderDetailContent(

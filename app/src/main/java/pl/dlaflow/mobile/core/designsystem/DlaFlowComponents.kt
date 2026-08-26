@@ -2,6 +2,7 @@ package pl.dlaflow.mobile.core.designsystem
 
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -61,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -78,6 +80,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import androidx.compose.ui.unit.TextUnit
 import java.util.Locale
 
 @Composable
@@ -85,6 +89,7 @@ internal fun DlaFlowScreenHeader(
     colors: DlaFlowComposeColors,
     title: String,
     subtitle: String,
+    subtitleColor: Color = colors.textMuted,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
@@ -102,7 +107,7 @@ internal fun DlaFlowScreenHeader(
             Spacer(Modifier.height(DlaFlowDimensions.headerGap))
             Text(
                 text = subtitle,
-                color = colors.textMuted,
+                color = subtitleColor,
                 fontSize = 10.5.sp,
                 fontFamily = DlaFlowInter,
                 fontWeight = FontWeight.Medium,
@@ -123,6 +128,8 @@ internal fun DlaFlowBackHeader(
     backContentDescription: String,
     modifier: Modifier = Modifier,
     backButtonModifier: Modifier = Modifier,
+    backButtonVisualSize: Dp = DlaFlowDimensions.minimumTouchTarget,
+    subtitleColor: Color = colors.textMuted,
     onBack: () -> Unit,
 ) {
     Row(
@@ -132,27 +139,33 @@ internal fun DlaFlowBackHeader(
         Box(
             modifier = backButtonModifier
                 .size(DlaFlowDimensions.minimumTouchTarget)
-                .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
-                .background(colors.surfaceSubtle)
-                .border(
-                    DlaFlowDimensions.borderWidth,
-                    colors.border,
-                    RoundedCornerShape(DlaFlowDimensions.controlRadius),
-                )
                 .clickable(role = Role.Button, onClick = onBack)
                 .clearAndSetSemantics { contentDescription = backContentDescription },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                contentDescription = null,
-                tint = colors.text,
-                modifier = Modifier.size(20.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(backButtonVisualSize)
+                    .clip(RoundedCornerShape(DlaFlowDimensions.controlRadius))
+                    .background(colors.surfaceSubtle)
+                    .border(
+                        DlaFlowDimensions.borderWidth,
+                        colors.border,
+                        RoundedCornerShape(DlaFlowDimensions.controlRadius),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    contentDescription = null,
+                    tint = colors.text,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
         Spacer(Modifier.width(DlaFlowDimensions.inlineGap))
         Column(modifier = Modifier.weight(1f)) {
-            DlaFlowScreenHeader(colors, title, subtitle)
+            DlaFlowScreenHeader(colors, title, subtitle, subtitleColor)
         }
     }
 }
@@ -247,12 +260,18 @@ internal fun DlaFlowSearchField(
     value: String,
     placeholder: String,
     modifier: Modifier = Modifier,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = 1,
+    placeholderFontSize: TextUnit = 12.sp,
     onValueChange: (String) -> Unit,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        singleLine = true,
+        singleLine = singleLine,
+        minLines = minLines,
+        maxLines = maxLines,
         leadingIcon = {
             Icon(
                 imageVector = Icons.Rounded.Search,
@@ -262,7 +281,7 @@ internal fun DlaFlowSearchField(
             )
         },
         placeholder = {
-            Text(placeholder, color = colors.textMuted, fontSize = 12.sp)
+            Text(placeholder, color = colors.textMuted, fontSize = placeholderFontSize, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         shape = RoundedCornerShape(DlaFlowDimensions.controlRadius),
         colors = OutlinedTextFieldDefaults.colors(
@@ -285,19 +304,20 @@ internal fun DlaFlowFilterChip(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     onClick: () -> Unit,
     count: Int? = null,
 ) {
     Box(
         modifier = modifier
-            .heightIn(min = DlaFlowDimensions.minimumTouchTarget)
+            .heightIn(min = if (compact) 36.dp else DlaFlowDimensions.minimumTouchTarget)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
+                .height(if (compact) 34.dp else 38.dp)
                 .clip(RoundedCornerShape(DlaFlowDimensions.pillRadius))
                 .background(if (selected) colors.primarySoft else colors.surface)
                 .border(
@@ -305,7 +325,7 @@ internal fun DlaFlowFilterChip(
                     if (selected) colors.primarySoftBorder else colors.border,
                     RoundedCornerShape(DlaFlowDimensions.pillRadius),
                 )
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = if (compact) 9.dp else 10.dp),
             contentAlignment = Alignment.Center,
         ) {
             Row(
@@ -315,7 +335,7 @@ internal fun DlaFlowFilterChip(
                 Text(
                     text = label,
                     color = if (selected) colors.primary else colors.textMuted,
-                    fontSize = 11.sp,
+                    fontSize = if (compact) 10.sp else 11.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -476,10 +496,21 @@ internal fun DlaFlowThumbnail(
 ) {
     var bitmap by remember(loader, url) { mutableStateOf<ImageBitmap?>(null) }
     var targetMaxDimension by remember(loader, url) { mutableStateOf(0) }
+    val imageAlpha by animateFloatAsState(
+        targetValue = if (bitmap != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "thumbnail-fade-in",
+    )
     LaunchedEffect(loader, url, targetMaxDimension) {
-        bitmap = null
         if (url.isNotBlank() && targetMaxDimension > 0) {
-            bitmap = runCatching { loader.load(url, targetMaxDimension) }.getOrNull()
+            var loaded: ImageBitmap? = null
+            repeat(3) { attempt ->
+                if (loaded == null) {
+                    loaded = runCatching { loader.load(url, targetMaxDimension) }.getOrNull()
+                    if (loaded == null && attempt < 2) delay(160L)
+                }
+            }
+            bitmap = loaded
         }
     }
     Box(
@@ -495,14 +526,18 @@ internal fun DlaFlowThumbnail(
                 bitmap = image,
                 contentDescription = contentDescription,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().alpha(imageAlpha),
             )
-        } ?: Icon(
-            imageVector = placeholderIcon,
-            contentDescription = contentDescription,
-            tint = colors.primary,
-            modifier = Modifier.size(21.dp),
-        )
+        } ?: if (url.isBlank()) {
+            Icon(
+                imageVector = placeholderIcon,
+                contentDescription = contentDescription,
+                tint = colors.primary,
+                modifier = Modifier.size(21.dp),
+            )
+        } else {
+            DlaFlowSkeletonBlock(colors, Modifier.fillMaxSize(), DlaFlowDimensions.controlRadius)
+        }
     }
 }
 

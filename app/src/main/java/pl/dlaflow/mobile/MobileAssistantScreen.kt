@@ -46,6 +46,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.automirrored.rounded.ReceiptLong
 import androidx.compose.material.icons.automirrored.rounded.ShowChart
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddBox
 import androidx.compose.material.icons.rounded.AccountCircle
@@ -59,12 +60,12 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.NotificationsNone
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.QuestionMark
-import androidx.compose.material.icons.rounded.QrCodeScanner
+import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Security
@@ -72,6 +73,10 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.ShoppingCart
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -183,6 +188,8 @@ import pl.dlaflow.mobile.feature.settings.SettingsFeatureScreen
 import pl.dlaflow.mobile.feature.settings.SettingsRoute
 import pl.dlaflow.mobile.feature.settings.SettingsUiState
 import pl.dlaflow.mobile.feature.messages.MessagesAction
+import pl.dlaflow.mobile.feature.messages.MessageReplyComposer
+import pl.dlaflow.mobile.feature.messages.detailContentOrNull
 import pl.dlaflow.mobile.feature.messages.MessagesFeatureScreen
 import pl.dlaflow.mobile.feature.messages.MessagesRoute
 import pl.dlaflow.mobile.feature.messages.MessagesUiState
@@ -381,6 +388,10 @@ internal fun MobileAssistantScreen(
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 if (session != null) {
+                    Column(modifier = Modifier.fillMaxWidth().background(colors.appBg)) {
+                        if (selectedTab == MobileAssistantTab.MESSAGES && messagesState.detailContentOrNull() != null && !messagesState.isRefreshingThread) {
+                            MessageReplyComposer(colors, messagesState, onMessagesAction, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+                        }
                     BottomNavigation(
                         colors = colors,
                         selectedTab = selectedTab,
@@ -388,6 +399,7 @@ internal fun MobileAssistantScreen(
                         messagesUnreadCount = messagesState.listContentOrNull()?.unreadCount ?: dashboard?.kpis?.messages ?: 0,
                         onSelectTab = onSelectTab,
                     )
+                    }
                 }
             },
         ) { padding ->
@@ -454,6 +466,7 @@ internal fun MobileAssistantScreen(
                     onNotificationFilterChange = onNotificationFilterChange,
                     onMarkNotificationsRead = onMarkNotificationsRead,
                     onMessagesAction = onMessagesAction,
+                    onSelectTab = onSelectTab,
                     )
                 }
             }
@@ -626,6 +639,7 @@ private fun AssistantContent(
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
     onMessagesAction: (MessagesAction) -> Unit,
+    onSelectTab: (MobileAssistantTab) -> Unit,
 ) {
     val context = LocalContext.current
     val mobileMediaClient = remember(apiUrl, session.deviceId) {
@@ -742,6 +756,10 @@ private fun AssistantContent(
                         },
                         leadLoadingContent = { OrdersKpiSkeleton(colors) },
                         onAction = onOrdersAction,
+                        onOpenMessages = { threadId ->
+                            onSelectTab(MobileAssistantTab.MESSAGES)
+                            onMessagesAction(MessagesAction.OpenThread(threadId))
+                        },
                     )
                     MobileAssistantTab.PRODUCTS -> ProductsTab(
                         colors = colors,
@@ -772,6 +790,7 @@ private fun AssistantContent(
                     MobileAssistantTab.MESSAGES -> MessagesFeatureScreen(
                         colors = colors,
                         state = messagesState,
+                        thumbnailLoader = thumbnailLoader,
                         onAction = onMessagesAction,
                     )
                     MobileAssistantTab.MORE -> SettingsFeatureScreen(
@@ -797,7 +816,13 @@ private fun shouldShowAssistantStatus(message: String): Boolean {
     return normalized !in setOf(
         "Brak aktywnych zadań.",
         "Telefon działa normalnie.",
+        "Telefon jest połączony.",
+        "Telefon połączony z panelem.",
         "Połączono",
+        "Produkty gotowe.",
+        "Warianty gotowe.",
+        "Zamówienia gotowe.",
+        "Zamówienie gotowe.",
     )
 }
 
@@ -958,7 +983,13 @@ private fun ProductFilterChip(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    DlaFlowFilterChip(colors, label, selected, modifier, onClick)
+    DlaFlowFilterChip(
+        colors = colors,
+        label = label,
+        selected = selected,
+        modifier = modifier,
+        onClick = onClick,
+    )
 }
 
 @Composable
@@ -1934,7 +1965,7 @@ private fun AppHeader(
             onScanPackage?.let { scan ->
                 DlaFlowHeaderIconButton(
                     colors = colors,
-                    icon = Icons.Rounded.QrCodeScanner,
+                    icon = Icons.Outlined.QrCodeScanner,
                     contentDescription = stringResource(R.string.orders_scan_package),
                     onClick = scan,
                 )
@@ -1963,12 +1994,11 @@ private fun NotificationBell(
     Box(
         modifier = Modifier
             .size(46.dp)
-            .clip(CircleShape)
             .clickable { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = Icons.Rounded.NotificationsNone,
+            imageVector = Icons.Outlined.NotificationsNone,
             contentDescription = "Powiadomienia",
             tint = colors.text,
             modifier = Modifier.size(25.dp),
@@ -1977,8 +2007,8 @@ private fun NotificationBell(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .offset(x = (-1).dp, y = 1.dp)
-                    .size(16.dp)
+                    .offset(x = (-2).dp, y = 2.dp)
+                    .size(18.dp)
                     .clip(CircleShape)
                     .background(badgeColor),
                 contentAlignment = Alignment.Center,
@@ -2251,7 +2281,7 @@ private fun NavIcon(colors: DlaFlowComposeColors, tab: MobileAssistantTab, selec
             imageVector = tabIcon(tab),
             contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(if (selected) 27.dp else 24.dp),
+            modifier = Modifier.size(if (tab == MobileAssistantTab.DASHBOARD) 26.dp else 24.dp),
         )
         if (badge > 0) {
             Box(
@@ -2278,11 +2308,11 @@ private fun NavIcon(colors: DlaFlowComposeColors, tab: MobileAssistantTab, selec
 
 private fun tabIcon(tab: MobileAssistantTab): ImageVector {
     return when (tab) {
-        MobileAssistantTab.DASHBOARD -> Icons.Rounded.House
-        MobileAssistantTab.ORDERS -> Icons.AutoMirrored.Rounded.ReceiptLong
-        MobileAssistantTab.PRODUCTS -> Icons.Rounded.Inventory2
-        MobileAssistantTab.MESSAGES -> Icons.Rounded.ChatBubbleOutline
-        MobileAssistantTab.MORE -> Icons.Rounded.MoreHoriz
+        MobileAssistantTab.DASHBOARD -> Icons.Outlined.Home
+        MobileAssistantTab.ORDERS -> Icons.AutoMirrored.Outlined.ReceiptLong
+        MobileAssistantTab.PRODUCTS -> Icons.Outlined.Inventory2
+        MobileAssistantTab.MESSAGES -> Icons.Outlined.ChatBubbleOutline
+        MobileAssistantTab.MORE -> Icons.Outlined.MoreHoriz
     }
 }
 

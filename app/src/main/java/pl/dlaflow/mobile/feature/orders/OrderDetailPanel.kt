@@ -14,13 +14,14 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.LocalShipping
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import java.time.OffsetDateTime
 import pl.dlaflow.mobile.R
 import pl.dlaflow.mobile.core.designsystem.DlaFlowCard
 import pl.dlaflow.mobile.core.designsystem.DlaFlowComposeColors
+import pl.dlaflow.mobile.core.designsystem.DlaFlowBackHeader
 import pl.dlaflow.mobile.core.designsystem.DlaFlowKeyValue
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
@@ -49,31 +51,33 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
 import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
+internal fun orderMessagesPreview(messages: List<OrderMessage>): List<OrderMessage> =
+    messages.sortedByDescending { it.messageAt }.take(3)
+
 @Composable
 internal fun OrderDetailPanel(
     colors: DlaFlowComposeColors,
+    orderNumber: String,
     state: DlaFlowUiState<OrderDetailContent>?,
     thumbnailLoader: DlaFlowThumbnailLoader,
     onClose: () -> Unit,
     onRetry: () -> Unit,
+    onOpenMessages: (String) -> Unit = {},
 ) {
     DlaFlowCard(colors, accent = true) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.orders_detail_title),
-                color = colors.textStrong,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.ExtraBold,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onClose) {
-                Text(stringResource(R.string.orders_detail_back), color = colors.primary, fontWeight = FontWeight.ExtraBold)
-            }
-        }
+        DlaFlowBackHeader(
+            colors = colors,
+            title = stringResource(R.string.orders_detail_title),
+            subtitle = orderNumber.takeIf { it.isNotBlank() }?.let { "#$it" }.orEmpty(),
+            subtitleColor = colors.primary,
+            backButtonVisualSize = 34.dp,
+            backContentDescription = stringResource(R.string.orders_detail_back),
+            onBack = onClose,
+        )
         when (state) {
             null, DlaFlowUiState.Loading -> OrderDetailSkeleton(colors)
-            is DlaFlowUiState.Content -> OrderDetailContentBody(colors, state.data, thumbnailLoader)
-            is DlaFlowUiState.Offline -> state.lastContent?.let { OrderDetailContentBody(colors, it, thumbnailLoader) }
+            is DlaFlowUiState.Content -> OrderDetailContentBody(colors, state.data, thumbnailLoader, onOpenMessages)
+            is DlaFlowUiState.Offline -> state.lastContent?.let { OrderDetailContentBody(colors, it, thumbnailLoader, onOpenMessages) }
                 ?: OrderDetailFailure(colors, state = state, onRetry = onRetry)
             is DlaFlowUiState.Error -> OrderDetailFailure(colors, state = state, onRetry = onRetry)
             DlaFlowUiState.Empty -> Text(stringResource(R.string.orders_detail_load_failed), color = colors.textMuted, fontSize = 12.sp)
@@ -121,10 +125,10 @@ private fun OrderDetailContentBody(
     colors: DlaFlowComposeColors,
     order: OrderDetailContent,
     thumbnailLoader: DlaFlowThumbnailLoader,
+    onOpenMessages: (String) -> Unit,
 ) {
     Spacer(Modifier.height(6.dp))
-    Text(stringResource(R.string.orders_number, order.orderNumber), color = colors.primary, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
-    OrderDetailProductCard(colors, order, thumbnailLoader)
+    OrderDetailProductCards(colors, order, thumbnailLoader)
     OrderDetailSection(colors, stringResource(R.string.orders_section_timing)) {
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_ordered_at), ordersDisplayTimestamp(order.createdAt).ifBlank { stringResource(R.string.orders_value_missing) })
         OrderDetailColoredValue(
@@ -167,25 +171,6 @@ private fun OrderDetailContentBody(
     OrderDetailSection(colors, stringResource(R.string.orders_section_delivery)) {
         OrderDetailDeliveryCard(colors, order)
     }
-    OrderDetailSection(colors, stringResource(R.string.orders_section_products)) {
-        val items = order.items.ifEmpty {
-            listOf(OrderItem("", order.productSummary.ifBlank { stringResource(R.string.orders_value_product) }, "", order.itemCount, order.amount, order.amount))
-        }
-        items.forEach { item ->
-            OrderDetailListRow(
-                colors,
-                item.name,
-                listOfNotNull(
-                    item.sku.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_sku, it) },
-                    item.variantId.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_variant, it) },
-                    stringResource(R.string.orders_value_quantity, item.quantity),
-                ).joinToString(" · "),
-                formatOrdersMoney(item.lineTotal.takeIf { it > 0.0 } ?: item.unitPrice * item.quantity.coerceAtLeast(1)),
-                imageUrl = item.image,
-                thumbnailLoader = thumbnailLoader,
-            )
-        }
-    }
     if (order.shipments.isNotEmpty()) {
         OrderDetailSection(colors, stringResource(R.string.orders_section_shipments)) {
             order.shipments.forEach { shipment ->
@@ -212,7 +197,7 @@ private fun OrderDetailContentBody(
     }
     if (order.messages.isNotEmpty()) {
         OrderDetailSection(colors, stringResource(R.string.orders_section_messages)) {
-            order.messages.take(3).forEach { message ->
+            orderMessagesPreview(order.messages).forEach { message ->
                 OrderDetailListRow(
                     colors,
                     message.author.ifBlank { stringResource(R.string.orders_value_customer) },
@@ -220,6 +205,60 @@ private fun OrderDetailContentBody(
                     orderRelativeTime(message.messageAt),
                 )
             }
+            val threadId = orderMessagesPreview(order.messages).firstNotNullOfOrNull { it.threadId.takeIf(String::isNotBlank) }
+            if (threadId != null) Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable { onOpenMessages(threadId) }
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Text(
+                    text = stringResource(R.string.orders_messages_view_conversation),
+                    color = colors.primary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                androidx.compose.material3.Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = colors.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrderDetailProductCards(
+    colors: DlaFlowComposeColors,
+    order: OrderDetailContent,
+    thumbnailLoader: DlaFlowThumbnailLoader,
+) {
+    val items = order.items.ifEmpty {
+        listOf(
+            OrderItem(
+                id = "",
+                name = order.productSummary.ifBlank { stringResource(R.string.orders_value_product) },
+                sku = "",
+                quantity = order.itemCount,
+                lineTotal = order.amount,
+                unitPrice = order.amount,
+            ),
+        )
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("orders_detail_product_card")
+            .semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items.forEach { item ->
+            OrderDetailProductCard(colors, item, thumbnailLoader)
         }
     }
 }
@@ -227,68 +266,53 @@ private fun OrderDetailContentBody(
 @Composable
 private fun OrderDetailProductCard(
     colors: DlaFlowComposeColors,
-    order: OrderDetailContent,
+    item: OrderItem,
     thumbnailLoader: DlaFlowThumbnailLoader,
 ) {
-    val item = order.items.firstOrNull() ?: OrderItem(
-        id = "",
-        name = order.productSummary.ifBlank { stringResource(R.string.orders_value_product) },
-        sku = "",
-        quantity = order.itemCount,
-        lineTotal = order.amount,
-        unitPrice = order.amount,
-    )
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("orders_detail_product_card")
-            .semantics(mergeDescendants = true) {},
-    ) {
-        DlaFlowCard(colors, accent = true) {
-            Row(verticalAlignment = Alignment.Top) {
-                DlaFlowThumbnail(
-                    colors = colors,
-                    url = item.image,
-                    loader = thumbnailLoader,
-                    modifier = Modifier.size(96.dp),
-                    contentDescription = stringResource(R.string.orders_label_product_image, item.name),
+    DlaFlowCard(colors, accent = true) {
+        Row(verticalAlignment = Alignment.Top) {
+            DlaFlowThumbnail(
+                colors = colors,
+                url = item.image,
+                loader = thumbnailLoader,
+                modifier = Modifier.size(96.dp),
+                contentDescription = stringResource(R.string.orders_label_product_image, item.name),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    item.name,
+                    color = colors.textStrong,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    lineHeight = 19.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        item.name,
-                        color = colors.textStrong,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        lineHeight = 19.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        formatOrdersMoney(item.lineTotal.takeIf { it > 0.0 } ?: item.unitPrice * item.quantity.coerceAtLeast(1)),
-                        color = colors.textStrong,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    val metadata = listOfNotNull(
-                        item.sku.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_sku, it) },
-                        item.variantId.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_variant, it) },
-                        stringResource(R.string.orders_value_quantity, item.quantity),
-                    ).joinToString(" · ")
-                    Text(
-                        metadata,
-                        color = colors.textMuted,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 14.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    formatOrdersMoney(item.lineTotal.takeIf { it > 0.0 } ?: item.unitPrice * item.quantity.coerceAtLeast(1)),
+                    color = colors.textStrong,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(5.dp))
+                val metadata = listOfNotNull(
+                    item.sku.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_sku, it) },
+                    item.variantId.takeIf { it.isNotBlank() }?.let { stringResource(R.string.orders_value_variant, it) },
+                    stringResource(R.string.orders_value_quantity, item.quantity),
+                ).joinToString(" · ")
+                Text(
+                    metadata,
+                    color = colors.textMuted,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 14.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

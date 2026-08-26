@@ -33,15 +33,11 @@ internal class OrdersStateHolder {
         val request = newListRequest(sessionKey, state.query, offset = 0, OrdersListLoadMode.REFRESH)
         state = state.copy(
             listState = content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Loading,
-            route = OrdersRoute.List,
-            detailState = null,
             isRefreshing = content != null,
             isLoadingMore = false,
             activeListRequestId = request.requestId,
-            activeDetailRequestId = null,
             transientMessage = null,
         )
-        invalidateDetail()
         return request
     }
 

@@ -1,8 +1,9 @@
 package pl.dlaflow.mobile.feature.messages
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
 import androidx.compose.material3.Icon
@@ -65,9 +66,11 @@ internal fun MessageSourceMarkVisual(
             painter = painterResource(asset.drawableRes()),
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp),
+            modifier = when (asset) {
+                MessageSourceAsset.ALLEGRO -> Modifier.width(24.dp).height(12.dp)
+                MessageSourceAsset.GMAIL -> Modifier.size(20.dp)
+                MessageSourceAsset.WOOCOMMERCE -> Modifier.size(22.dp)
+            },
         )
     }
 }
