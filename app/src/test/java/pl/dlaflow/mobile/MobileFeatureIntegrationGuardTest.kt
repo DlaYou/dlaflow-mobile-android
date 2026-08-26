@@ -76,6 +76,19 @@ class MobileFeatureIntegrationGuardTest {
     }
 
     @Test
+    fun `firebase registration uses messaging token instead of installation id`() {
+        val source = File(
+            "src/main/java/pl/dlaflow/mobile/DlaFlowFirebaseMessagingService.kt",
+        ).readText()
+
+        assertTrue(source.contains("FirebaseMessaging.getInstance().token"))
+        assertTrue(source.contains("onNewToken(token: String)"))
+        assertFalse(source.contains("FirebaseInstallations"))
+        assertFalse(source.contains("firebase_installation_id"))
+        assertFalse(File("src/main/AndroidManifest.xml").readText().contains("firebase_messaging_installation_id_enabled"))
+    }
+
+    @Test
     fun `notification preferences remain the final native notification filter`() {
         val defaults = MobileNotificationPreferences.defaults()
         assertTrue(MobileNotificationCategory.entries.all(defaults::isEnabled))

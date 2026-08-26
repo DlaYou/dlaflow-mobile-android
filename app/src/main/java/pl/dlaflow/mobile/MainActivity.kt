@@ -972,13 +972,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun syncPushInstallation(activeSession: MobileSession) {
-        DlaFlowPushInstallation.refreshAndReceive(this) { installationId ->
+        DlaFlowPushInstallation.refreshAndReceive(this) { registrationToken ->
             executor.execute {
                 runCatching {
                     mobileApiClientForSession(sessionStore).updatePushInstallation(
                         token = activeSession.token,
                         deviceId = activeSession.deviceId,
-                        installationId = installationId,
+                        installationId = registrationToken,
                     )
                 }
             }

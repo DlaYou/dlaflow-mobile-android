@@ -1,7 +1,7 @@
 package pl.dlaflow.mobile
 
 import android.content.Context
-import com.google.firebase.installations.FirebaseInstallations
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import java.time.Instant
@@ -80,36 +80,38 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
-        DlaFlowPushInstallation.refresh(applicationContext)
+        DlaFlowPushInstallation.save(applicationContext, token)
     }
 }
 
-/** Keeps the Firebase Installation ID locally until the paired Mobile API session registers it. */
+/** Keeps the Firebase registration token locally until the paired Mobile API session registers it. */
 object DlaFlowPushInstallation {
     private const val preferencesName = "dlaflow_push"
-    private const val installationIdKey = "firebase_installation_id"
+    private const val registrationTokenKey = "firebase_registration_token"
 
     fun refresh(context: Context) {
-        FirebaseInstallations.getInstance().id.addOnSuccessListener { installationId ->
-            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-                .edit()
-                .putString(installationIdKey, installationId)
-                .apply()
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+            save(context, token)
         }
     }
 
     fun refreshAndReceive(context: Context, onReady: (String) -> Unit) {
-        FirebaseInstallations.getInstance().id.addOnSuccessListener { installationId ->
-            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-                .edit()
-                .putString(installationIdKey, installationId)
-                .apply()
-            onReady(installationId)
+        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+            save(context, token)
+            onReady(token)
         }
     }
 
-    fun pendingInstallationId(context: Context): String =
+    fun save(context: Context, token: String) {
+        if (token.isBlank()) return
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
-            .getString(installationIdKey, "")
+            .edit()
+            .putString(registrationTokenKey, token)
+            .apply()
+    }
+
+    fun pendingRegistrationToken(context: Context): String =
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getString(registrationTokenKey, "")
             .orEmpty()
 }
