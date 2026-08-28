@@ -24,6 +24,13 @@ class MessagesCoordinatorTest {
         harness.runAll()
         assertEquals(1, harness.gateway.detailCalls)
 
+        harness.gateway.details += detail(messages = listOf(bubble("older")), nextCursor = null)
+        assertTrue(harness.coordinator.loadMoreDetail("session-a"))
+        harness.runAll()
+        assertEquals(2, harness.gateway.detailCalls)
+        assertEquals("thread-1", harness.gateway.detailThreadIds.last())
+        assertEquals("older-cursor", harness.gateway.detailCursors.last())
+
         assertTrue(harness.coordinator.markThreadRead("session-a"))
         harness.runAll()
         assertEquals(listOf("thread-1"), harness.gateway.readThreads)
@@ -32,7 +39,7 @@ class MessagesCoordinatorTest {
         assertTrue(harness.coordinator.refreshThread("session-a"))
         harness.runAll()
         assertEquals(listOf("thread-1"), harness.gateway.refreshThreads)
-        assertEquals(2, harness.gateway.detailCalls)
+        assertEquals(3, harness.gateway.detailCalls)
 
         assertTrue(harness.coordinator.reply("session-a", "thread-1", "Dziękuję", "reply-1"))
         harness.runAll()
@@ -127,6 +134,30 @@ class MessagesCoordinatorTest {
         assertFalse(harness.holder.state.isMarkingRead)
     }
 
+    @Test
+    fun `retrying failed detail pagination requests the same older cursor`() {
+        val harness = Harness()
+        harness.gateway.details += detail(messages = listOf(bubble("newest")), nextCursor = "older-cursor")
+        assertTrue(harness.coordinator.openThread("session-a", "thread-1"))
+        harness.runAll()
+
+        harness.gateway.detailFailures += IllegalStateException("temporary")
+        assertTrue(harness.coordinator.loadMoreDetail("session-a"))
+        harness.runAll()
+
+        harness.gateway.details += detail(messages = listOf(bubble("oldest")), nextCursor = null)
+        assertTrue(
+            harness.coordinator.retry(
+                "session-a",
+                MessagesOperation.Detail("thread-1", MessagesDetailLoadMode.LOAD_MORE),
+            ),
+        )
+        harness.runAll()
+
+        assertEquals(listOf(null, "older-cursor", "older-cursor"), harness.gateway.detailCursors)
+        assertEquals(listOf("oldest", "newest"), harness.holder.state.detailContentOrNull()!!.messages.map(MessageBubble::id))
+    }
+
     private class Harness(private val sessionValid: Boolean = true) {
         val holder = MessagesStateHolder()
         val gateway = FakeGateway()
@@ -161,6 +192,8 @@ class MessagesCoordinatorTest {
         val readThreads = mutableListOf<String>()
         val refreshThreads = mutableListOf<String>()
         val replyRequestIds = mutableListOf<String>()
+        val detailThreadIds = mutableListOf<String>()
+        val detailCursors = mutableListOf<String?>()
         var listCalls = 0
         var detailCalls = 0
 
@@ -172,6 +205,8 @@ class MessagesCoordinatorTest {
 
         override fun loadDetail(token: String, threadId: String, cursor: String?): MessageThreadDetail {
             detailCalls += 1
+            detailThreadIds += threadId
+            detailCursors += cursor
             if (detailFailures.isNotEmpty()) throw detailFailures.removeFirst()
             return details.removeFirst()
         }
@@ -203,10 +238,12 @@ class MessagesCoordinatorTest {
         messageCount = 1, orderId = null, orderNumber = null, readAt = null, status = "unread", channel = MessagesChannel.ALL,
     )
 
-    private fun detail() = MessageThreadDetail(
+    private fun detail(messages: List<MessageBubble> = emptyList(), nextCursor: String? = "older-cursor") = MessageThreadDetail(
         id = "thread-1", providerId = "allegro", integrationId = "integration", providerLabel = "Allegro",
         customerName = "Anna", customerLogin = "anna", customerEmail = null, subject = "Temat", lastMessageAt = "",
-        readAt = null, status = "unread", orderId = null, orderNumber = null, messages = emptyList(), nextCursor = null,
+        readAt = null, status = "unread", orderId = null, orderNumber = null, messages = messages, nextCursor = nextCursor,
         customerContext = null,
     )
+
+    private fun bubble(id: String) = MessageBubble(id, "Anna", MessageDirection.INBOUND, id, "", "received", emptyList())
 }

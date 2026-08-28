@@ -100,6 +100,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -659,6 +661,41 @@ private fun AssistantContent(
             imageLoader.load(url, targetMaxDimension)?.asImageBitmap()
         }
     }
+    val contentScrollState = rememberScrollState()
+    val latestMessagesState = rememberUpdatedState(messagesState)
+    val latestMessagesAction = rememberUpdatedState(onMessagesAction)
+    LaunchedEffect(selectedTab, messagesState.route) {
+        var scrolledAwayFromTop = false
+        var scrollWasInProgress = false
+        snapshotFlow { contentScrollState.value to contentScrollState.isScrollInProgress }.collect { (offset, isScrolling) ->
+            if (isScrolling) {
+                scrollWasInProgress = true
+                if (offset > 0) {
+                    scrolledAwayFromTop = true
+                }
+            } else if (offset > 0) {
+                scrollWasInProgress = false
+            }
+            val currentMessagesState = latestMessagesState.value
+            if (
+                offset == 0 &&
+                scrolledAwayFromTop &&
+                scrollWasInProgress &&
+                !isScrolling &&
+                selectedTab == MobileAssistantTab.MESSAGES &&
+                currentMessagesState.route is MessagesRoute.Detail &&
+                !currentMessagesState.isLoadingMore &&
+                currentMessagesState.detailContentOrNull()?.nextCursor != null
+            ) {
+                scrolledAwayFromTop = false
+                scrollWasInProgress = false
+                latestMessagesAction.value(MessagesAction.LoadMoreDetail)
+            } else if (offset == 0 && !isScrolling) {
+                scrolledAwayFromTop = false
+                scrollWasInProgress = false
+            }
+        }
+    }
     LaunchedEffect(selectedTab, ordersState.listContentOrNull(), mobileProducts) {
         val urls = when (selectedTab) {
             MobileAssistantTab.ORDERS -> ordersState.listContentOrNull()?.items.orEmpty().flatMap { order ->
@@ -689,7 +726,7 @@ private fun AssistantContent(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(contentScrollState)
                 .padding(start = 20.dp, top = 0.dp, end = 20.dp, bottom = 10.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

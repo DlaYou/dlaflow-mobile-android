@@ -82,20 +82,113 @@ class MessagesStateHolderTest {
     }
 
     @Test
+    fun `closing detail cancels older message loading state`() {
+        val holder = MessagesStateHolder()
+        val initial = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("newest")), nextCursor = "next"))
+        assertTrue(holder.beginDetailLoadMore("session-a") != null)
+
+        holder.closeDetail()
+
+        assertFalse(holder.state.isLoadingMore)
+        assertNull(holder.state.detailState)
+    }
+
+    @Test
     fun `detail cursor pagination merges messages`() {
         val holder = MessagesStateHolder()
         val initial = holder.beginDetailLoad("session-a", "thread-1")
-        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("one")), nextCursor = "next"))
+        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("middle"), bubble("newest")), nextCursor = "next"))
 
         val more = holder.beginDetailLoadMore("session-a")
         assertTrue(more != null)
-        assertTrue(holder.acceptDetailSuccess(more!!, detail(messages = listOf(bubble("two")))))
-        assertEquals(listOf("one", "two"), holder.state.detailContentOrNull()!!.messages.map(MessageBubble::id))
+        assertTrue(holder.acceptDetailSuccess(more!!, detail(messages = listOf(bubble("oldest")), nextCursor = null)))
+        assertEquals(listOf("oldest", "middle", "newest"), holder.state.detailContentOrNull()!!.messages.map(MessageBubble::id))
+        assertNull(holder.state.detailContentOrNull()!!.nextCursor)
+    }
+
+    @Test
+    fun `detail cursor pagination preserves current thread metadata`() {
+        val holder = MessagesStateHolder()
+        val relatedOrder = relatedOrder()
+        val initial = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(
+            initial,
+            detail(
+                status = "read",
+                readAt = "2026-08-27T09:00:00Z",
+                messages = listOf(bubble("newest")),
+                nextCursor = "next",
+                relatedOrder = relatedOrder,
+            ),
+        )
+
+        val more = holder.beginDetailLoadMore("session-a")
+        assertTrue(more != null)
+        holder.acceptDetailSuccess(
+            more!!,
+            detail(status = "unread", messages = listOf(bubble("oldest")), nextCursor = null),
+        )
+
+        val result = holder.state.detailContentOrNull()!!
+        assertEquals("read", result.status)
+        assertEquals("2026-08-27T09:00:00Z", result.readAt)
+        assertEquals(relatedOrder, result.relatedOrder)
+    }
+
+    @Test
+    fun `detail failure exposes the failed operation for retry`() {
+        val holder = MessagesStateHolder()
+        val initial = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("newest")), nextCursor = "next"))
+        val more = holder.beginDetailLoadMore("session-a")
+
+        assertTrue(more != null)
+        assertTrue(holder.acceptDetailFailure(more!!, message))
+
+        assertEquals(
+            MessagesOperation.Detail("thread-1", MessagesDetailLoadMode.LOAD_MORE),
+            holder.state.retryOperation,
+        )
+    }
+
+    @Test
+    fun `detail refresh allows loading the same cursor again`() {
+        val holder = MessagesStateHolder()
+        val initial = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("newest")), nextCursor = "next"))
+        val firstMore = holder.beginDetailLoadMore("session-a")
+        assertTrue(firstMore != null)
+        holder.acceptDetailSuccess(firstMore!!, detail(messages = listOf(bubble("oldest")), nextCursor = null))
+
+        val refresh = holder.beginDetailRefresh("session-a")
+        assertTrue(refresh != null)
+        holder.acceptDetailSuccess(refresh!!, detail(messages = listOf(bubble("newest")), nextCursor = "next"))
+
+        assertTrue(holder.beginDetailLoadMore("session-a") != null)
+    }
+
+    @Test
+    fun `terminal unauthorized detail pagination clears loading state`() {
+        val holder = MessagesStateHolder()
+        val initial = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(initial, detail(messages = listOf(bubble("newest")), nextCursor = "next"))
+        val more = holder.beginDetailLoadMore("session-a")
+
+        assertTrue(more != null)
+        assertTrue(holder.state.isLoadingMore)
+        assertTrue(holder.acceptDetailUnauthorized(more!!, message))
+
+        assertFalse(holder.state.isLoadingMore)
+        assertEquals(listOf("newest"), holder.state.detailContentOrNull()!!.messages.map(MessageBubble::id))
+        assertEquals(message, holder.state.transientMessage)
     }
 
     @Test
     fun `read mutation marks current thread read without losing content`() {
         val holder = MessagesStateHolder()
+        val listRequest = holder.beginListReset("session-a", MessagesQuery())
+        holder.acceptListSuccess(listRequest, content(item("thread-1")))
         val detailRequest = holder.beginDetailLoad("session-a", "thread-1")
         holder.acceptDetailSuccess(detailRequest, detail(status = "unread"))
         val read = holder.beginMarkThreadRead("session-a")
@@ -103,6 +196,11 @@ class MessagesStateHolderTest {
         assertTrue(read != null)
         assertTrue(holder.acceptMutationSuccess(read!!, operation()))
         assertEquals("read", holder.state.detailContentOrNull()!!.status)
+        assertTrue(holder.state.detailContentOrNull()!!.readAt != null)
+        assertEquals(0, holder.state.listContentOrNull()!!.unreadCount)
+        assertEquals("read", holder.state.listContentOrNull()!!.items.single().status)
+        assertTrue(holder.state.listContentOrNull()!!.items.single().readAt != null)
+        assertNull(holder.beginMarkThreadRead("session-a"))
         assertFalse(holder.state.isMarkingRead)
     }
 
@@ -176,16 +274,23 @@ class MessagesStateHolderTest {
 
     private fun detail(
         status: String = "unread",
+        readAt: String? = null,
         messages: List<MessageBubble> = emptyList(),
         nextCursor: String? = null,
+        relatedOrder: MessageRelatedOrder? = null,
     ) = MessageThreadDetail(
         id = "thread-1", providerId = "allegro", integrationId = "integration", providerLabel = "Allegro",
         customerName = "Anna", customerLogin = "anna", customerEmail = null, subject = "Temat", lastMessageAt = "",
-        readAt = null, status = status, orderId = null, orderNumber = null, messages = messages, nextCursor = nextCursor,
-        customerContext = null,
+        readAt = readAt, status = status, orderId = null, orderNumber = null, messages = messages, nextCursor = nextCursor,
+        customerContext = null, relatedOrder = relatedOrder,
     )
 
     private fun bubble(id: String) = MessageBubble(id, "Anna", MessageDirection.INBOUND, id, "", "received", emptyList())
+
+    private fun relatedOrder() = MessageRelatedOrder(
+        id = "order-1", orderNumber = "ORD-1", amount = 20.0, currency = "PLN", status = "Dostarczone",
+        statusTone = "success", statusColor = "#00AA00", items = emptyList(),
+    )
 
     private fun operation(messageId: String? = null, queued: Boolean = false) = MessageOperation(
         operationId = "operation", messageId = messageId, queued = queued, duplicate = false, status = "accepted",

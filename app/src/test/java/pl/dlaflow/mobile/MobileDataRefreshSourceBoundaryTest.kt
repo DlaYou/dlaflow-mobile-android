@@ -31,7 +31,12 @@ class MobileDataRefreshSourceBoundaryTest {
 
         assertTrue(screen.contains("PullToRefreshBox("))
         assertTrue(screen.contains("onRefresh = onRefreshCurrentTab"))
-        assertTrue(screen.contains(".verticalScroll(rememberScrollState())"))
+        assertTrue(screen.contains("val contentScrollState = rememberScrollState()"))
+        assertTrue(screen.contains(".verticalScroll(contentScrollState)"))
+        assertTrue(screen.contains("snapshotFlow { contentScrollState.value to contentScrollState.isScrollInProgress }"))
+        assertTrue(screen.contains("val latestMessagesState = rememberUpdatedState(messagesState)"))
+        assertTrue(screen.contains("latestMessagesState.value"))
+        assertTrue(screen.contains("contentScrollState.isScrollInProgress"))
         assertTrue(activity.contains("onRefreshCurrentTab = ::refreshCurrentTab"))
         assertTrue(activity.contains("private fun refreshCurrentTab()"))
     }

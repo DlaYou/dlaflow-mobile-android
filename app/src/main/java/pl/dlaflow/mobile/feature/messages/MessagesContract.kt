@@ -5,7 +5,7 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
 internal const val MESSAGES_PAGE_LIMIT = 20
-internal const val MESSAGES_DETAIL_PAGE_LIMIT = 100
+internal const val MESSAGES_DETAIL_PAGE_LIMIT = 10
 
 internal enum class MessagesFilter { ALL, UNREAD }
 
@@ -157,6 +157,7 @@ internal data class MessagesUiState(
     val activeDetailRequestId: Long? = null,
     val activeMutationRequestId: Long? = null,
     val transientMessage: DlaFlowUiMessage? = null,
+    val retryOperation: MessagesOperation? = null,
 )
 
 internal sealed interface MessagesRoute {
@@ -219,6 +220,7 @@ internal sealed interface MessagesAction {
     data class ChannelChanged(val channel: MessagesChannel) : MessagesAction
     data object Refresh : MessagesAction
     data object LoadMore : MessagesAction
+    data object LoadMoreDetail : MessagesAction
     data class OpenThread(val threadId: String) : MessagesAction
     data object CloseDetail : MessagesAction
     data object MarkThreadRead : MessagesAction

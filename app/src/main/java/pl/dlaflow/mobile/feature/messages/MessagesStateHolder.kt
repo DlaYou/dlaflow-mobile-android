@@ -1,5 +1,6 @@
 package pl.dlaflow.mobile.feature.messages
 
+import java.time.Instant
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -50,6 +51,7 @@ internal class MessagesStateHolder {
             isLoadingMore = false,
             activeListRequestId = request.requestId,
             transientMessage = null,
+            retryOperation = null,
         )
         return request
     }
@@ -67,6 +69,7 @@ internal class MessagesStateHolder {
             isRefreshing = false,
             activeListRequestId = request.requestId,
             transientMessage = null,
+            retryOperation = null,
         )
         return request
     }
@@ -89,7 +92,11 @@ internal class MessagesStateHolder {
     fun acceptListOffline(request: MessagesListRequest, message: DlaFlowUiMessage): Boolean {
         if (!matches(request)) return false
         releaseListCursor(request)
-        finishList(DlaFlowUiState.Offline(state.listContentOrNull()), message)
+        finishList(
+            listState = DlaFlowUiState.Offline(state.listContentOrNull()),
+            transientMessage = message,
+            retryOperation = request.toRetryOperation(),
+        )
         return true
     }
 
@@ -98,8 +105,9 @@ internal class MessagesStateHolder {
         releaseListCursor(request)
         val content = state.listContentOrNull()
         finishList(
-            content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Error(message),
-            message.takeIf { content != null },
+            listState = content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Error(message),
+            transientMessage = message.takeIf { content != null },
+            retryOperation = request.toRetryOperation(),
         )
         return true
     }
@@ -127,6 +135,7 @@ internal class MessagesStateHolder {
             isLoadingMore = false,
             activeListRequestId = null,
             transientMessage = terminalMessage.takeIf { content != null },
+            retryOperation = null,
         )
         return true
     }
@@ -141,6 +150,7 @@ internal class MessagesStateHolder {
             isRefreshing = request.mode == MessagesListLoadMode.REFRESH && state.listContentOrNull() != null,
             isLoadingMore = request.mode == MessagesListLoadMode.LOAD_MORE,
             transientMessage = null,
+            retryOperation = null,
         )
         return retry
     }
@@ -156,6 +166,7 @@ internal class MessagesStateHolder {
             isLoadingMore = false,
             activeListRequestId = null,
             transientMessage = message.takeIf { content != null },
+            retryOperation = null,
         )
         return true
     }
@@ -197,7 +208,11 @@ internal class MessagesStateHolder {
     fun acceptDetailOffline(request: MessagesDetailRequest, message: DlaFlowUiMessage): Boolean {
         if (!matches(request)) return false
         releaseDetailCursor(request)
-        finishDetail(DlaFlowUiState.Offline(state.detailContentOrNull()), message)
+        finishDetail(
+            detailState = DlaFlowUiState.Offline(state.detailContentOrNull()),
+            transientMessage = message,
+            retryOperation = request.toRetryOperation(),
+        )
         return true
     }
 
@@ -205,7 +220,11 @@ internal class MessagesStateHolder {
         if (!matches(request)) return false
         releaseDetailCursor(request)
         val content = state.detailContentOrNull()
-        finishDetail(content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Error(message), message.takeIf { content != null })
+        finishDetail(
+            detailState = content?.let { DlaFlowUiState.Content(it) } ?: DlaFlowUiState.Error(message),
+            transientMessage = message.takeIf { content != null },
+            retryOperation = request.toRetryOperation(),
+        )
         return true
     }
 
@@ -230,7 +249,9 @@ internal class MessagesStateHolder {
             },
             activeDetailRequestId = null,
             isRefreshingThread = false,
+            isLoadingMore = false,
             transientMessage = terminalMessage.takeIf { content != null },
+            retryOperation = null,
         )
         return true
     }
@@ -253,7 +274,9 @@ internal class MessagesStateHolder {
     }
 
     fun beginMarkThreadRead(sessionKey: String): MessagesMutationRequest? {
-        val threadId = state.detailContentOrNull()?.id ?: return null
+        val detail = state.detailContentOrNull() ?: return null
+        if (detail.readAt != null) return null
+        val threadId = detail.id
         return beginMutation(sessionKey, threadId, MessagesMutationKind.MARK_READ, null)
     }
 
@@ -380,6 +403,7 @@ internal class MessagesStateHolder {
             isSendingReply = false,
             activeMutationRequestId = null,
             transientMessage = message,
+            retryOperation = null,
         )
         return true
     }
@@ -387,7 +411,14 @@ internal class MessagesStateHolder {
     fun closeDetail() {
         invalidateDetail()
         invalidateMutation()
-        state = state.copy(route = MessagesRoute.List, detailState = null, activeDetailRequestId = null, transientMessage = null)
+        state = state.copy(
+            route = MessagesRoute.List,
+            detailState = null,
+            activeDetailRequestId = null,
+            isLoadingMore = false,
+            transientMessage = null,
+            retryOperation = null,
+        )
     }
 
     fun reset() {
@@ -427,12 +458,17 @@ internal class MessagesStateHolder {
             isSendingReply = kind == MessagesMutationKind.REPLY,
             activeMutationRequestId = request.requestId,
             transientMessage = null,
+            retryOperation = null,
         )
         return request
     }
 
     private fun startDetail(sessionKey: String, threadId: String, cursor: String?, mode: MessagesDetailLoadMode): MessagesDetailRequest {
         require(threadId.isNotBlank()) { "Thread id must be non-blank." }
+        if (mode != MessagesDetailLoadMode.LOAD_MORE) {
+            inFlightDetailCursors.clear()
+            consumedDetailCursors.clear()
+        }
         invalidateMutation()
         val request = MessagesDetailRequest(++nextDetailRequestId, sessionKey, threadId, cursor, mode)
         activeDetailSessionKey = sessionKey
@@ -450,6 +486,7 @@ internal class MessagesStateHolder {
             isLoadingMore = mode == MessagesDetailLoadMode.LOAD_MORE,
             activeDetailRequestId = request.requestId,
             transientMessage = null,
+            retryOperation = null,
         )
         return request
     }
@@ -470,7 +507,11 @@ internal class MessagesStateHolder {
     private fun matches(request: MessagesMutationRequest): Boolean =
         state.activeMutationRequestId == request.requestId && activeMutationSessionKey == request.sessionKey
 
-    private fun finishList(listState: DlaFlowUiState<MessagesContent>, transientMessage: DlaFlowUiMessage? = null) {
+    private fun finishList(
+        listState: DlaFlowUiState<MessagesContent>,
+        transientMessage: DlaFlowUiMessage? = null,
+        retryOperation: MessagesOperation? = null,
+    ) {
         activeListSessionKey = null
         pendingListUnauthorizedRequestId = null
         state = state.copy(
@@ -479,10 +520,15 @@ internal class MessagesStateHolder {
             isLoadingMore = false,
             activeListRequestId = null,
             transientMessage = transientMessage,
+            retryOperation = retryOperation,
         )
     }
 
-    private fun finishDetail(detailState: DlaFlowUiState<MessageThreadDetail>, transientMessage: DlaFlowUiMessage? = null) {
+    private fun finishDetail(
+        detailState: DlaFlowUiState<MessageThreadDetail>,
+        transientMessage: DlaFlowUiMessage? = null,
+        retryOperation: MessagesOperation? = null,
+    ) {
         activeDetailSessionKey = null
         pendingDetailUnauthorizedRequestId = null
         state = state.copy(
@@ -491,6 +537,7 @@ internal class MessagesStateHolder {
             isLoadingMore = false,
             activeDetailRequestId = null,
             transientMessage = transientMessage,
+            retryOperation = retryOperation,
         )
     }
 
@@ -508,7 +555,12 @@ internal class MessagesStateHolder {
     private fun invalidateDetail() {
         activeDetailSessionKey = null
         pendingDetailUnauthorizedRequestId = null
-        state = state.copy(detailState = null, activeDetailRequestId = null)
+        state = state.copy(
+            detailState = null,
+            activeDetailRequestId = null,
+            isLoadingMore = false,
+            retryOperation = null,
+        )
     }
 
     private fun invalidateMutation() {
@@ -525,6 +577,15 @@ internal class MessagesStateHolder {
     private fun releaseListCursor(request: MessagesListRequest) { request.cursor?.let(inFlightListCursors::remove) }
     private fun releaseDetailCursor(request: MessagesDetailRequest) { request.cursor?.let(inFlightDetailCursors::remove) }
 
+    private fun MessagesListRequest.toRetryOperation(): MessagesOperation = when (mode) {
+        MessagesListLoadMode.RESET -> MessagesOperation.ListReset(query)
+        MessagesListLoadMode.REFRESH -> MessagesOperation.ListRefresh
+        MessagesListLoadMode.LOAD_MORE -> MessagesOperation.LoadMore
+    }
+
+    private fun MessagesDetailRequest.toRetryOperation(): MessagesOperation =
+        MessagesOperation.Detail(threadId, mode)
+
     private fun mergeListPages(current: MessagesContent?, incoming: MessagesContent): MessagesContent {
         val merged = current?.items.orEmpty().toMutableList()
         incoming.items.forEach { item ->
@@ -536,21 +597,26 @@ internal class MessagesStateHolder {
 
     private fun mergeDetailPages(current: MessageThreadDetail?, incoming: MessageThreadDetail): MessageThreadDetail {
         if (current == null) return incoming
-        val merged = current.messages.toMutableList()
-        incoming.messages.forEach { bubble ->
-            val index = merged.indexOfFirst { it.id == bubble.id }
-            if (index >= 0) merged[index] = bubble else merged += bubble
-        }
-        return incoming.copy(messages = merged)
+        return current.copy(
+            messages = (incoming.messages + current.messages).distinctBy(MessageBubble::id),
+            nextCursor = incoming.nextCursor,
+        )
     }
 
     private fun updateReadState(threadId: String) {
+        val readAt = Instant.now().toString()
         val detail = state.detailContentOrNull()
-        val updatedDetail = detail?.takeIf { it.id == threadId }?.copy(status = "read")
+        val updatedDetail = detail?.takeIf { it.id == threadId }?.let { current ->
+            current.copy(readAt = current.readAt ?: readAt, status = "read")
+        }
         val listContent = state.listContentOrNull()
-        val updatedList = listContent?.copy(items = listContent.items.map { item ->
-            if (item.id == threadId) item.copy(status = "read") else item
-        })
+        val wasUnread = listContent?.items?.firstOrNull { it.id == threadId }?.isUnread == true
+        val updatedList = listContent?.copy(
+            items = listContent.items.map { item ->
+                if (item.id == threadId) item.copy(readAt = item.readAt ?: readAt, status = "read") else item
+            },
+            unreadCount = (listContent.unreadCount - if (wasUnread) 1 else 0).coerceAtLeast(0),
+        )
         state = state.copy(
             detailState = updatedDetail?.let { DlaFlowUiState.Content(it) } ?: state.detailState,
             listState = updatedList?.let { DlaFlowUiState.Content(it) } ?: state.listState,
@@ -577,6 +643,7 @@ internal class MessagesStateHolder {
             activeDetailRequestId = null,
             activeMutationRequestId = null,
             transientMessage = null,
+            retryOperation = null,
         )
     }
 }

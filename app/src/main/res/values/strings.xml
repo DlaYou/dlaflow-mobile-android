@@ -160,6 +160,7 @@
     <string name="orders_refreshing_title">Odświeżam zamówienia</string>
     <string name="orders_refreshing_description">Możesz dalej przeglądać widoczną listę.</string>
     <string name="orders_retry">Spróbuj ponownie</string>
+    <string name="messages_retry">Spróbuj ponownie</string>
     <string name="orders_load_more">Pokaż więcej</string>
     <string name="orders_loading_more">Pobieram...</string>
     <string name="orders_detail_title">Szczegóły zamówienia</string>

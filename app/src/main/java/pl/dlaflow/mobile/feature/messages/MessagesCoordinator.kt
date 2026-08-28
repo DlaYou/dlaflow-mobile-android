@@ -77,7 +77,12 @@ internal class MessagesCoordinator(
         is MessagesOperation.ListReset -> open(token, operation.query, allowUnauthorizedRetry = false)
         MessagesOperation.ListRefresh -> refresh(token, allowUnauthorizedRetry = false)
         MessagesOperation.LoadMore -> loadMore(token, allowUnauthorizedRetry = false)
-        is MessagesOperation.Detail -> openThread(token, operation.threadId, allowUnauthorizedRetry = false)
+        is MessagesOperation.Detail -> when (operation.mode) {
+            MessagesDetailLoadMode.INITIAL,
+            MessagesDetailLoadMode.REFRESH,
+            -> openThread(token, operation.threadId, allowUnauthorizedRetry = false)
+            MessagesDetailLoadMode.LOAD_MORE -> loadMoreDetail(token, allowUnauthorizedRetry = false)
+        }
         is MessagesOperation.Mutation -> when (operation.kind) {
             MessagesMutationKind.MARK_READ -> markThreadRead(token, allowUnauthorizedRetry = false)
             MessagesMutationKind.REFRESH_THREAD -> refreshThread(token, allowUnauthorizedRetry = false)

@@ -90,6 +90,7 @@ import pl.dlaflow.mobile.core.designsystem.DlaFlowSearchField
 import pl.dlaflow.mobile.core.designsystem.DlaFlowSkeletonBlock
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStatusBadge
 import pl.dlaflow.mobile.core.designsystem.DlaFlowStateCard
+import pl.dlaflow.mobile.core.designsystem.DlaFlowSecondaryButton
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnail
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
 import pl.dlaflow.mobile.core.designsystem.dlaFlowHexColor
@@ -197,15 +198,37 @@ private fun MessagesInboxScreen(
             DlaFlowUiState.Loading -> MessagesListSkeleton(colors)
             DlaFlowUiState.Empty -> MessagesStateCard(colors, MessagesStateKind.EMPTY)
             DlaFlowUiState.NoAccess -> MessagesStateCard(colors, MessagesStateKind.NO_ACCESS)
-            is DlaFlowUiState.Error -> MessagesStateCard(colors, MessagesStateKind.ERROR)
+            is DlaFlowUiState.Error -> MessagesStateCard(
+                colors = colors,
+                kind = MessagesStateKind.ERROR,
+                message = listState.message,
+                onRetry = state.retryOperation?.let { { onAction(MessagesAction.Retry) } },
+            )
             is DlaFlowUiState.Offline -> {
                 if (listState.lastContent == null) {
-                    MessagesStateCard(colors, MessagesStateKind.OFFLINE)
+                    MessagesStateCard(
+                        colors = colors,
+                        kind = MessagesStateKind.OFFLINE,
+                        message = state.transientMessage,
+                        onRetry = state.retryOperation?.let { { onAction(MessagesAction.Retry) } },
+                    )
                 } else {
+                    MessagesTransientNotice(
+                        colors = colors,
+                        message = state.transientMessage,
+                        onRetry = state.retryOperation?.let { { onAction(MessagesAction.Retry) } },
+                    )
                     MessagesListContent(colors, state, onAction)
                 }
             }
-            is DlaFlowUiState.Content -> MessagesListContent(colors, state, onAction)
+            is DlaFlowUiState.Content -> {
+                MessagesTransientNotice(
+                    colors = colors,
+                    message = state.transientMessage,
+                    onRetry = state.retryOperation?.let { { onAction(MessagesAction.Retry) } },
+                )
+                MessagesListContent(colors, state, onAction)
+            }
         }
     }
 }
@@ -447,19 +470,30 @@ private enum class MessagesStateKind { EMPTY, EMPTY_FILTER, NO_ACCESS, OFFLINE, 
 private fun MessagesTransientNotice(
     colors: DlaFlowComposeColors,
     message: DlaFlowUiMessage?,
+    onRetry: (() -> Unit)? = null,
 ) {
     message ?: return
-    DlaFlowStateCard(
-        colors = colors,
-        icon = Icons.Rounded.WarningAmber,
-        iconColor = colors.warning,
-        title = stringResource(message.titleRes),
-        description = stringResource(message.descriptionRes),
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        DlaFlowStateCard(
+            colors = colors,
+            icon = Icons.Rounded.WarningAmber,
+            iconColor = colors.warning,
+            title = stringResource(message.titleRes),
+            description = stringResource(message.descriptionRes),
+        )
+        if (message.retryable && onRetry != null) {
+            MessagesRetryButton(colors, onRetry)
+        }
+    }
 }
 
 @Composable
-private fun MessagesStateCard(colors: DlaFlowComposeColors, kind: MessagesStateKind) {
+private fun MessagesStateCard(
+    colors: DlaFlowComposeColors,
+    kind: MessagesStateKind,
+    message: DlaFlowUiMessage? = null,
+    onRetry: (() -> Unit)? = null,
+) {
     val values = when (kind) {
         MessagesStateKind.EMPTY -> Triple(Icons.Rounded.ChatBubbleOutline, "Brak wiadomości", "Gdy klient napisze, rozmowa pojawi się tutaj.")
         MessagesStateKind.EMPTY_FILTER -> Triple(Icons.Rounded.Search, "Brak wyników", "Zmień filtr lub wyszukiwanie.")
@@ -467,7 +501,27 @@ private fun MessagesStateCard(colors: DlaFlowComposeColors, kind: MessagesStateK
         MessagesStateKind.OFFLINE -> Triple(Icons.Rounded.ErrorOutline, "Brak połączenia", "Sprawdź internet i spróbuj ponownie.")
         MessagesStateKind.ERROR -> Triple(Icons.Rounded.ErrorOutline, "Nie udało się pobrać wiadomości", "Spróbuj ponownie za chwilę.")
     }
-    DlaFlowStateCard(colors, values.first, if (kind == MessagesStateKind.NO_ACCESS) colors.warning else colors.primary, values.second, values.third)
+    DlaFlowStateCard(
+        colors = colors,
+        icon = values.first,
+        iconColor = if (kind == MessagesStateKind.NO_ACCESS) colors.warning else colors.primary,
+        title = message?.let { stringResource(it.titleRes) } ?: values.second,
+        description = message?.let { stringResource(it.descriptionRes) } ?: values.third,
+    )
+    if (message?.retryable == true && onRetry != null) {
+        MessagesRetryButton(colors, onRetry)
+    }
+}
+
+@Composable
+private fun MessagesRetryButton(colors: DlaFlowComposeColors, onRetry: () -> Unit) {
+    DlaFlowSecondaryButton(
+        colors = colors,
+        icon = Icons.Rounded.Refresh,
+        text = stringResource(R.string.messages_retry),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onRetry,
+    )
 }
 
 @Composable
@@ -514,7 +568,13 @@ private fun MessageThreadDetailScreen(
                 when (detailState) {
                     DlaFlowUiState.Empty -> MessagesStateCard(colors, MessagesStateKind.EMPTY)
                     DlaFlowUiState.NoAccess -> MessagesStateCard(colors, MessagesStateKind.NO_ACCESS)
-                    else -> MessagesStateCard(colors, MessagesStateKind.ERROR)
+                    is DlaFlowUiState.Error -> MessagesStateCard(
+                        colors = colors,
+                        kind = MessagesStateKind.ERROR,
+                        message = detailState.message,
+                        onRetry = state.retryOperation?.let { { onAction(MessagesAction.Retry) } },
+                    )
+                    else -> Unit
                 }
             }
         }
@@ -546,12 +606,22 @@ private fun MessageDetailContent(
     onAction: (MessagesAction) -> Unit,
     offline: Boolean,
 ) {
+    val retryAction: (() -> Unit)? = state.retryOperation?.let { { onAction(MessagesAction.Retry) } }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         MessageDetailHero(colors, detail, onBack = { onAction(MessagesAction.CloseDetail) })
         MessageDetailMeta(colors, detail)
         if (offline && detail == null) {
-            MessagesStateCard(colors, MessagesStateKind.OFFLINE)
+            MessagesStateCard(
+                colors = colors,
+                kind = MessagesStateKind.OFFLINE,
+                message = state.transientMessage,
+                onRetry = retryAction,
+            )
         } else {
+            MessagesTransientNotice(colors, state.transientMessage, retryAction)
+            if (state.isLoadingMore) {
+                MessageDetailLoadMoreSkeleton(colors)
+            }
             MessageBubbles(colors, detail?.messages.orEmpty())
             detail?.relatedOrder?.let { relatedOrder ->
                 MessageRelatedOrderCard(colors, relatedOrder, thumbnailLoader) {
@@ -957,5 +1027,17 @@ private fun MessageDetailLoadingSkeleton(colors: DlaFlowComposeColors) {
         DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth().height(72.dp), radius = 8.dp)
         MessageDetailSkeleton(colors)
         DlaFlowSkeletonBlock(colors, Modifier.fillMaxWidth().height(56.dp), radius = 8.dp)
+    }
+}
+
+@Composable
+private fun MessageDetailLoadMoreSkeleton(colors: DlaFlowComposeColors) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("message_detail_load_more_skeleton"),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        DlaFlowSkeletonBlock(colors, Modifier.width(180.dp).height(12.dp), radius = 4.dp)
     }
 }

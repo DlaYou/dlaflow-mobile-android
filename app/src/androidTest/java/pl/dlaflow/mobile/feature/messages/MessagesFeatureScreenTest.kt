@@ -8,12 +8,16 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import pl.dlaflow.mobile.R
 import pl.dlaflow.mobile.core.designsystem.DlaFlowTheme
 import pl.dlaflow.mobile.core.designsystem.DlaFlowThumbnailLoader
+import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
 @RunWith(AndroidJUnit4::class)
@@ -97,6 +101,34 @@ class MessagesFeatureScreenTest {
 
         composeRule.onNodeWithTag("message_detail_loading_skeleton", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onAllNodesWithText("Stara wiadomość", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun detailPaginationFailureOffersRetryAction() {
+        val actions = mutableListOf<MessagesAction>()
+        composeRule.setContent {
+            DlaFlowTheme(dark = false) { colors ->
+                MessagesFeatureScreen(
+                    colors = colors,
+                    state = MessagesUiState(
+                        route = MessagesRoute.Detail("thread-1"),
+                        detailState = DlaFlowUiState.Content(detail()),
+                        transientMessage = DlaFlowUiMessage(
+                            titleRes = R.string.mobile_error_server_title,
+                            descriptionRes = R.string.mobile_error_server_description,
+                            retryable = true,
+                        ),
+                        retryOperation = MessagesOperation.Detail("thread-1", MessagesDetailLoadMode.LOAD_MORE),
+                    ),
+                    thumbnailLoader = DlaFlowThumbnailLoader { _, _ -> null },
+                    onAction = actions::add,
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Spróbuj ponownie", useUnmergedTree = true).performClick()
+
+        assertEquals(listOf(MessagesAction.Retry), actions)
     }
 
     private fun item(

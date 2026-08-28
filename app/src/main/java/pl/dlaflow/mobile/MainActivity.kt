@@ -1339,6 +1339,7 @@ class MainActivity : ComponentActivity() {
             }
             MessagesAction.Refresh -> messagesCoordinator.refresh(currentSession.token)
             MessagesAction.LoadMore -> messagesCoordinator.loadMore(currentSession.token)
+            MessagesAction.LoadMoreDetail -> messagesCoordinator.loadMoreDetail(currentSession.token)
             is MessagesAction.OpenThread -> messagesCoordinator.openThread(currentSession.token, action.threadId)
             MessagesAction.CloseDetail -> messagesCoordinator.closeDetail()
             MessagesAction.MarkThreadRead -> messagesCoordinator.markThreadRead(currentSession.token)
@@ -1348,7 +1349,11 @@ class MainActivity : ComponentActivity() {
                 selectedTab = MobileAssistantTab.ORDERS
                 ordersCoordinator.loadDetail(currentSession.token, action.orderNumber, showFeedback = false)
             }
-            MessagesAction.Retry -> ensureMessagesLoaded(refreshExisting = false)
+            MessagesAction.Retry -> {
+                messagesStateHolder.state.retryOperation?.let { operation ->
+                    messagesCoordinator.retry(currentSession.token, operation)
+                } ?: ensureMessagesLoaded(refreshExisting = false)
+            }
         }
     }
 
