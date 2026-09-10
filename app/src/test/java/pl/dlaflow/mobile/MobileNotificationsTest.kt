@@ -9,6 +9,7 @@ import java.io.InputStreamReader
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class MobileNotificationsTest {
     @Test
@@ -52,6 +53,90 @@ class MobileNotificationsTest {
         assertTrue(hasShownNotificationId(ids, "n3"))
         assertFalse(hasShownNotificationId(ids, "n2"))
         assertFalse(hasShownNotificationId(ids, "n4"))
+    }
+
+    @Test
+    fun `FCM and polling claim the same panel event only once`() {
+        val memory = FakePanelNotificationMemory()
+        val notification = testNotification("message:neuIC0O99vRloK-xMK7XGzHP", "info", null, "OPEN_MESSAGES")
+        val attempts = AtomicInteger()
+
+        assertTrue(
+            deliverPanelNotificationOnce(memory, notification) {
+                attempts.incrementAndGet()
+                true
+            },
+        )
+        assertFalse(
+            deliverPanelNotificationOnce(memory, notification.copy(id = "message:neuIC0O99vRloK-xMK7XGzHP")) {
+                attempts.incrementAndGet()
+                true
+            },
+        )
+
+        assertEquals(1, attempts.get())
+        assertEquals("message:neuIC0O99vRloK-xMK7XGzHP", memory.shownIds)
+    }
+
+    @Test
+    fun `failed panel delivery releases the claim for a later retry`() {
+        val memory = FakePanelNotificationMemory()
+        val notification = testNotification("order:order-1", "info", null, "OPEN_ORDERS")
+        val attempts = AtomicInteger()
+
+        assertFalse(
+            deliverPanelNotificationOnce(memory, notification) {
+                attempts.incrementAndGet()
+                false
+            },
+        )
+        assertTrue(
+            deliverPanelNotificationOnce(memory, notification) {
+                attempts.incrementAndGet()
+                true
+            },
+        )
+
+        assertEquals(2, attempts.get())
+        assertEquals("order:order-1", memory.shownIds)
+    }
+
+    @Test
+    fun `push delivery keys match panel notification ids and reject missing event ids`() {
+        assertEquals("order:order-1", pushNotificationDeliveryId("order.created", "order-1"))
+        assertEquals("message:neuIC0O99vRloK-xMK7XGzHP", pushNotificationDeliveryId("message.created", "message-1"))
+        assertEquals(null, pushNotificationDeliveryId("order.created", " "))
+        assertEquals(null, pushNotificationDeliveryId("message.created", ""))
+        assertEquals(null, pushNotificationDeliveryId("product.created", "product-1"))
+    }
+
+    @Test
+    fun `canonical panel notification id overrides the legacy push fallback`() {
+        assertEquals(
+            "message:panel-canonical-123",
+            pushNotificationDeliveryId(
+                event = "message.created",
+                eventId = "message-1",
+                canonicalNotificationId = "message:panel-canonical-123",
+            ),
+        )
+        assertEquals(
+            "order:panel-canonical-456",
+            pushNotificationDeliveryId(
+                event = "order.created",
+                eventId = "order-1",
+                canonicalNotificationId = "order:panel-canonical-456",
+            ),
+        )
+    }
+
+    @Test
+    fun `targeted push is accepted only by the matching paired device`() {
+        assertTrue(pushTargetMatchesDevice(targetDeviceId = null, currentDeviceId = "device-a"))
+        assertTrue(pushTargetMatchesDevice(targetDeviceId = " ", currentDeviceId = "device-a"))
+        assertTrue(pushTargetMatchesDevice(targetDeviceId = "device-a", currentDeviceId = "device-a"))
+        assertFalse(pushTargetMatchesDevice(targetDeviceId = "device-old", currentDeviceId = "device-a"))
+        assertFalse(pushTargetMatchesDevice(targetDeviceId = "device-a", currentDeviceId = ""))
     }
 
     @Test
@@ -194,4 +279,14 @@ class MobileNotificationsTest {
         readAt = readAt,
         mobileAction = MobileNotificationAction(type = action, label = "Otwórz"),
     )
+
+    private class FakePanelNotificationMemory : PanelNotificationDeliveryMemory {
+        var shownIds: String = ""
+
+        override fun readShownPanelAlertIds(): String = shownIds
+
+        override fun saveShownPanelAlertIds(ids: String) {
+            shownIds = ids
+        }
+    }
 }

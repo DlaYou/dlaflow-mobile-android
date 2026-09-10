@@ -49,16 +49,40 @@ class MobileNotificationPreferencesTest {
             .withEnabled(MobileNotificationCategory.IMPORTANT_PANEL, false)
         assertFalse(
             shouldShowNativePanelNotification(
-                testNotification("Informacja z panelu", "OPEN_LOGS_SUMMARY", tone = "info"),
+                testNotification("Problem integracji", "OPEN_LOGS_SUMMARY", tone = "error"),
                 importantDisabled,
             ),
         )
     }
 
     @Test
-    fun `enabled important panel category accepts every tone`() {
+    fun `only new orders customer messages and red panel alerts reach Android`() {
         val preferences = MobileNotificationPreferences.defaults()
 
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Nowe zamówienie", "OPEN_ORDERS"),
+                preferences,
+            ),
+        )
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Nowa wiadomość od klienta", "OPEN_MESSAGES"),
+                preferences,
+            ),
+        )
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Problem integracji", "OPEN_LOGS_SUMMARY", tone = "error"),
+                preferences,
+            ),
+        )
+        assertFalse(
+            shouldShowNativePanelNotification(
+                testNotification("Wymaga decyzji", "OPEN_LOGS_SUMMARY", tone = "warning"),
+                preferences,
+            ),
+        )
         assertFalse(
             shouldShowNativePanelNotification(
                 testNotification("Informacja z panelu", "OPEN_LOGS_SUMMARY", tone = "info"),
@@ -69,6 +93,31 @@ class MobileNotificationPreferencesTest {
             shouldShowNativePanelNotification(
                 testNotification("Zakończono synchronizację", "OPEN_LOGS_SUMMARY", tone = "success"),
                 preferences,
+            ),
+        )
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Zmiana statusu zamówienia", "OPEN_ORDERS", tone = "error"),
+                preferences,
+            ),
+        )
+        assertTrue(
+            shouldShowNativePanelNotification(
+                testNotification("Zmiana statusu przesyłki", "OPEN_ORDERS", tone = "error"),
+                preferences,
+            ),
+        )
+    }
+
+    @Test
+    fun `critical red panel alert uses important panel preference before text category`() {
+        val disabled = MobileNotificationPreferences.defaults()
+            .withEnabled(MobileNotificationCategory.IMPORTANT_PANEL, false)
+
+        assertFalse(
+            shouldShowNativePanelNotification(
+                testNotification("Zmiana statusu zamówienia", "OPEN_ORDERS", tone = "error"),
+                disabled,
             ),
         )
     }
@@ -105,7 +154,7 @@ class MobileNotificationPreferencesTest {
             .withEnabled(MobileNotificationCategory.PHOTO_TASKS, false)
 
         assertFalse(shouldShowNativePhotoTaskNotification(preferences))
-        assertTrue(shouldShowNativePhotoTaskNotification(MobileNotificationPreferences.defaults()))
+        assertFalse(shouldShowNativePhotoTaskNotification(MobileNotificationPreferences.defaults()))
     }
 
     @Test

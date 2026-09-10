@@ -90,9 +90,24 @@ fun shouldShowNativePanelNotification(
     notification: MobileAssistantNotification,
     preferences: MobileNotificationPreferences,
 ): Boolean {
+    if (notification.tone.trim().lowercase(Locale.ROOT) == "error") {
+        return preferences.isEnabled(MobileNotificationCategory.IMPORTANT_PANEL)
+    }
+
     val category = classifyMobileNotification(notification)
-    return category == MobileNotificationCategory.CUSTOMER_MESSAGES && preferences.isEnabled(category)
+    if (!preferences.isEnabled(category)) return false
+
+    return when (category) {
+        MobileNotificationCategory.NEW_ORDERS,
+        MobileNotificationCategory.CUSTOMER_MESSAGES,
+        -> true
+        MobileNotificationCategory.IMPORTANT_PANEL ->
+            notification.tone.trim().lowercase(Locale.ROOT) == "error"
+        MobileNotificationCategory.ORDER_STATUS,
+        MobileNotificationCategory.SHIPMENT_STATUS,
+        MobileNotificationCategory.PHOTO_TASKS,
+        -> false
+    }
 }
 
-fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean =
-    preferences.isEnabled(MobileNotificationCategory.PHOTO_TASKS)
+fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean = false

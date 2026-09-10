@@ -89,6 +89,32 @@ class MobileFeatureIntegrationGuardTest {
     }
 
     @Test
+    fun `FCM delivery and session transitions share the notification lock`() {
+        val fcmSource = File(
+            "src/main/java/pl/dlaflow/mobile/DlaFlowFirebaseMessagingService.kt",
+        ).readText()
+        val fcmLockStart = fcmSource.indexOf("AppNotificationSessionSynchronization.instance.withLock")
+        assertTrue(fcmLockStart >= 0)
+        assertTrue(fcmSource.indexOf("sessionStore.readToken()", fcmLockStart) >= 0)
+
+        val sessionStoreSource = File(
+            "src/main/java/pl/dlaflow/mobile/session_store.kt",
+        ).readText()
+        assertTrue(sessionStoreSource.contains("AppNotificationSessionSynchronization.instance.withLock"))
+    }
+
+    @Test
+    fun `saving a changed session clears delivery memory`() {
+        val source = File(
+            "src/main/java/pl/dlaflow/mobile/session_store.kt",
+        ).readText()
+
+        assertTrue(source.contains("notificationSessionChanged"))
+        assertTrue(source.contains("remove(shownPanelNotificationIdsKey)"))
+        assertTrue(source.contains("remove(lastBackgroundPhotoTaskIdKey)"))
+    }
+
+    @Test
     fun `notification preferences remain the final native notification filter`() {
         val defaults = MobileNotificationPreferences.defaults()
         assertTrue(MobileNotificationCategory.entries.all(defaults::isEnabled))
@@ -113,9 +139,9 @@ class MobileFeatureIntegrationGuardTest {
                 preferences,
             ),
         )
-        assertFalse(
+        assertTrue(
             shouldShowNativePanelNotification(
-                testNotification("Problem synchronizacji", "warning", "OPEN_LOGS_SUMMARY"),
+                testNotification("Problem synchronizacji", "error", "OPEN_LOGS_SUMMARY"),
                 preferences,
             ),
         )

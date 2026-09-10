@@ -9,6 +9,9 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import pl.dlaflow.mobile.core.session.AppNotificationSessionSynchronization
+import pl.dlaflow.mobile.core.session.NotificationSessionKey
+import pl.dlaflow.mobile.core.session.notificationSessionChanged
 
 class MobileSessionStore(context: Context) {
     private val keyAlias = "dlaflow_mobile_session_token"
@@ -60,17 +63,36 @@ class MobileSessionStore(context: Context) {
     }
 
     fun saveSession(baseUrl: String, session: MobileSession) {
-        val encryptedToken = encryptToken(session.token)
-        preferences.edit()
-            .putString("base_url", baseUrl.trim())
-            .putString("device_id", session.deviceId)
-            .putString("device_name", session.deviceName)
-            .putString("tenant_name", session.tenantName)
-            .putString("token_cipher", encryptedToken.cipherText)
-            .putString("token_iv", encryptedToken.iv)
-            .remove("token")
-            .putString("user_email", session.userEmail)
-            .apply()
+        AppNotificationSessionSynchronization.instance.withLock {
+            val previousSessionKey = NotificationSessionKey.create(
+                baseUrl = readBaseUrl(),
+                deviceId = readDeviceId(),
+                token = readToken(),
+            )
+            val nextSessionKey = NotificationSessionKey.create(
+                baseUrl = baseUrl,
+                deviceId = session.deviceId,
+                token = session.token,
+            )
+            val sessionChanged = notificationSessionChanged(previousSessionKey, nextSessionKey)
+            val encryptedToken = encryptToken(session.token)
+            val editor = preferences.edit()
+            if (sessionChanged) {
+                editor
+                    .remove(shownPanelNotificationIdsKey)
+                    .remove(lastBackgroundPhotoTaskIdKey)
+            }
+            editor
+                .putString("base_url", baseUrl.trim())
+                .putString("device_id", session.deviceId)
+                .putString("device_name", session.deviceName)
+                .putString("tenant_name", session.tenantName)
+                .putString("token_cipher", encryptedToken.cipherText)
+                .putString("token_iv", encryptedToken.iv)
+                .remove("token")
+                .putString("user_email", session.userEmail)
+                .apply()
+        }
     }
 
     fun readUpdateDismissalState(): MobileAppUpdateDismissalState {
@@ -88,19 +110,19 @@ class MobileSessionStore(context: Context) {
     }
 
     fun readLastBackgroundPhotoTaskId(): String {
-        return preferences.getString("last_background_photo_task_id", "") ?: ""
+        return preferences.getString(lastBackgroundPhotoTaskIdKey, "") ?: ""
     }
 
     fun saveLastBackgroundPhotoTaskId(taskId: String) {
-        preferences.edit().putString("last_background_photo_task_id", taskId).apply()
+        preferences.edit().putString(lastBackgroundPhotoTaskIdKey, taskId).apply()
     }
 
     fun readShownPanelNotificationIds(): String {
-        return preferences.getString("shown_panel_notification_ids", "") ?: ""
+        return preferences.getString(shownPanelNotificationIdsKey, "") ?: ""
     }
 
     fun saveShownPanelNotificationIds(value: String) {
-        preferences.edit().putString("shown_panel_notification_ids", value).apply()
+        preferences.edit().putString(shownPanelNotificationIdsKey, value).apply()
     }
 
     fun readNotificationPreferences(): MobileNotificationPreferences {
@@ -116,14 +138,18 @@ class MobileSessionStore(context: Context) {
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        AppNotificationSessionSynchronization.instance.withLock {
+            preferences.edit().clear().apply()
+        }
     }
 
     fun clearSession() {
-        val baseUrl = readBaseUrl()
-        val updateDismissalState = readUpdateDismissalState()
-        preferences.edit().clear().putString("base_url", baseUrl).apply()
-        preserveUpdateDismissalState(updateDismissalState)
+        AppNotificationSessionSynchronization.instance.withLock {
+            val baseUrl = readBaseUrl()
+            val updateDismissalState = readUpdateDismissalState()
+            preferences.edit().clear().putString("base_url", baseUrl).apply()
+            preserveUpdateDismissalState(updateDismissalState)
+        }
     }
 
     private fun preserveUpdateDismissalState(updateDismissalState: MobileAppUpdateDismissalState) {
@@ -180,6 +206,8 @@ class MobileSessionStore(context: Context) {
 }
 
 private const val defaultBaseUrl = "https://panel.dlayou.pl"
+private const val lastBackgroundPhotoTaskIdKey = "last_background_photo_task_id"
+private const val shownPanelNotificationIdsKey = "shown_panel_notification_ids"
 
 private data class EncryptedToken(
     val cipherText: String,

@@ -2,18 +2,15 @@ package pl.dlaflow.mobile.feature.notifications
 
 import pl.dlaflow.mobile.MobileAssistantNotification
 import pl.dlaflow.mobile.MobilePhotoTask
+import pl.dlaflow.mobile.PanelNotificationDeliveryMemory
 import pl.dlaflow.mobile.core.session.AppNotificationSessionSynchronization
 import pl.dlaflow.mobile.core.session.NotificationSessionKey
 import pl.dlaflow.mobile.core.session.NotificationSessionSynchronization
-import pl.dlaflow.mobile.forgetShownNotificationId
-import pl.dlaflow.mobile.hasShownNotificationId
-import pl.dlaflow.mobile.rememberShownNotificationId
+import pl.dlaflow.mobile.deliverPanelNotificationOnce
 
-internal interface NotificationsBackgroundDeliveryMemory {
+internal interface NotificationsBackgroundDeliveryMemory : PanelNotificationDeliveryMemory {
     fun readLastPhotoTaskId(): String
     fun saveLastPhotoTaskId(taskId: String)
-    fun readShownPanelAlertIds(): String
-    fun saveShownPanelAlertIds(ids: String)
 }
 
 internal enum class NotificationsBackgroundPollOutcome {
@@ -123,18 +120,7 @@ internal class NotificationsBackgroundCoordinator(
             if (currentSessionKey() != capturedSessionKey) {
                 return@withLock
             }
-            val shownIds = memory.readShownPanelAlertIds()
-            if (hasShownNotificationId(shownIds, notification.id)) {
-                return@withLock
-            }
-
-            memory.saveShownPanelAlertIds(rememberShownNotificationId(shownIds, notification.id))
-            val delivered = runCatching { effect(notification) }.getOrDefault(false)
-            if (!delivered) {
-                memory.saveShownPanelAlertIds(
-                    forgetShownNotificationId(memory.readShownPanelAlertIds(), notification.id),
-                )
-            }
+            deliverPanelNotificationOnce(memory, notification) { effect(notification) }
         }
     }
 
