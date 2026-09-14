@@ -25,6 +25,17 @@ The existing DlaFlow More -> Powiadomienia detail screen gains a compact list of
 
 If Android notification permission is denied, preferences still save and are applied when permission is restored. A single failed poll does not change preferences or clear the session. Session disconnect clears device-scoped notification preferences back to defaults, avoiding leakage between paired tenants.
 
+## Native delivery policy
+
+The same local preference decision is applied at every native-delivery boundary:
+
+- an explicit FCM event is eligible only for its mapped category (`order.created` → new orders, `message.created` → customer messages; future event types must provide an explicit mapping),
+- the notification-center response is a history snapshot and never replays ordinary messages, orders, statuses or successful operations; a red critical entry is the only exception and is controlled by the important-panel switch,
+- a photo-task dispatch is controlled by the photo-tasks switch,
+- order-status and shipment-status switches are reserved for explicit push events; polling history does not synthesize those events.
+
+When a category is disabled, a concrete explicit event is consumed once without showing a system alert, so turning the switch on later cannot replay an old event. History rows that are not eligible for native delivery are ignored and remain available in the in-app center.
+
 ## Verification
 
 Unit tests cover defaults, persistence encoding, every category classification, disabled-category filtering, Firebase order gating, and the settings model. Android unit tests, lint, debug build and emulator smoke must pass. No new API endpoint, database field, secret or version bump is introduced.

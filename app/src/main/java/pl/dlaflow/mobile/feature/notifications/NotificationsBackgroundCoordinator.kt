@@ -3,6 +3,7 @@ package pl.dlaflow.mobile.feature.notifications
 import pl.dlaflow.mobile.MobileAssistantNotification
 import pl.dlaflow.mobile.MobilePhotoTask
 import pl.dlaflow.mobile.PanelNotificationDeliveryMemory
+import pl.dlaflow.mobile.PanelNotificationDeliveryDecision
 import pl.dlaflow.mobile.core.session.AppNotificationSessionSynchronization
 import pl.dlaflow.mobile.core.session.NotificationSessionKey
 import pl.dlaflow.mobile.core.session.NotificationSessionSynchronization
@@ -32,6 +33,10 @@ internal class NotificationsBackgroundCoordinator(
         loadPanelNotifications: () -> List<MobileAssistantNotification>,
         showPhotoTask: (MobilePhotoTask) -> Boolean,
         showPanelAlert: (MobileAssistantNotification) -> Boolean,
+        photoTaskDeliveryAllowed: (MobilePhotoTask) -> Boolean = { true },
+        panelDeliveryDecision: (MobileAssistantNotification) -> PanelNotificationDeliveryDecision = {
+            PanelNotificationDeliveryDecision.SHOW
+        },
     ): NotificationsBackgroundPollOutcome {
         val rejectedOutcome = synchronization.withLock {
             when {
@@ -56,6 +61,7 @@ internal class NotificationsBackgroundCoordinator(
                     memory = memory,
                     task = photoTask,
                     effect = showPhotoTask,
+                    shouldDeliver = photoTaskDeliveryAllowed,
                 )
             }
             if (!isCurrent(capturedSessionKey, currentSessionKey)) {
@@ -73,6 +79,7 @@ internal class NotificationsBackgroundCoordinator(
                             memory = memory,
                             notification = notification,
                             effect = showPanelAlert,
+                            decision = panelDeliveryDecision,
                         )
                     }
 
@@ -95,6 +102,7 @@ internal class NotificationsBackgroundCoordinator(
         memory: NotificationsBackgroundDeliveryMemory,
         task: MobilePhotoTask,
         effect: (MobilePhotoTask) -> Boolean,
+        shouldDeliver: (MobilePhotoTask) -> Boolean,
     ) {
         synchronization.withLock {
             if (currentSessionKey() != capturedSessionKey || memory.readLastPhotoTaskId() == task.id) {
@@ -102,6 +110,12 @@ internal class NotificationsBackgroundCoordinator(
             }
 
             memory.saveLastPhotoTaskId(task.id)
+            if (!runCatching { shouldDeliver(task) }.getOrDefault(false)) {
+                // A disabled preference consumes this concrete task once. It
+                // must not be retried on every background poll or replayed if
+                // the switch is enabled later.
+                return@withLock
+            }
             val delivered = runCatching { effect(task) }.getOrDefault(false)
             if (!delivered && memory.readLastPhotoTaskId() == task.id) {
                 memory.saveLastPhotoTaskId("")
@@ -115,12 +129,18 @@ internal class NotificationsBackgroundCoordinator(
         memory: NotificationsBackgroundDeliveryMemory,
         notification: MobileAssistantNotification,
         effect: (MobileAssistantNotification) -> Boolean,
+        decision: (MobileAssistantNotification) -> PanelNotificationDeliveryDecision,
     ) {
         synchronization.withLock {
             if (currentSessionKey() != capturedSessionKey) {
                 return@withLock
             }
-            deliverPanelNotificationOnce(memory, notification) { effect(notification) }
+            deliverPanelNotificationOnce(
+                memory = memory,
+                notification = notification,
+                effect = { effect(notification) },
+                decision = { decision(notification) },
+            )
         }
     }
 

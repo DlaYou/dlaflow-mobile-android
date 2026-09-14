@@ -94,15 +94,21 @@ class DlaFlowBackgroundSyncService : Service() {
                         }.notifications
                     },
                     showPhotoTask = { task ->
-                        if (!shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences())) false
-                        else {
-                            DlaFlowNotifications.showPhotoTaskNotification(this, task)
-                            true
-                        }
+                        DlaFlowNotifications.showPhotoTaskNotification(this, task)
+                        true
                     },
                     showPanelAlert = { notification ->
-                        if (!shouldShowNativePanelNotification(notification, sessionStore.readNotificationPreferences())) false
-                        else DlaFlowNotifications.showPanelAlertNotification(this, notification)
+                        DlaFlowNotifications.showPanelAlertNotification(this, notification)
+                    },
+                    photoTaskDeliveryAllowed = {
+                        shouldShowNativePhotoTaskNotification(sessionStore.readNotificationPreferences())
+                    },
+                    panelDeliveryDecision = { notification ->
+                        mobileNotificationDeliveryDecision(
+                            notification,
+                            sessionStore.readNotificationPreferences(),
+                            MobileNotificationDeliveryOrigin.PANEL_HISTORY,
+                        )
                     },
                 )
             }.onFailure { error -> handleBackgroundSyncFailure(error, token) }

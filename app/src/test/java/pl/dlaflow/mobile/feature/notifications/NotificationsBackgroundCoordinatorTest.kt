@@ -12,6 +12,7 @@ import org.junit.Test
 import pl.dlaflow.mobile.MobileAssistantNotification
 import pl.dlaflow.mobile.MobileNotificationAction
 import pl.dlaflow.mobile.MobilePhotoTask
+import pl.dlaflow.mobile.PanelNotificationDeliveryDecision
 import pl.dlaflow.mobile.core.session.NotificationSessionKey
 import pl.dlaflow.mobile.core.session.NotificationSessionSynchronization
 
@@ -217,6 +218,86 @@ class NotificationsBackgroundCoordinatorTest {
         assertTrue(memory.panelAlertIds.contains("panel-a"))
         assertFalse(memory.panelAlertIds.contains("read-panel"))
         assertTrue(memory.panelAlertIds.contains("quiet-panel"))
+    }
+
+    @Test
+    fun `ignored history is not claimed but a disabled eligible alert is consumed once`() {
+        val coordinator = coordinator()
+        val session = key("device-a", "token-a")
+        val memory = FakeMemory()
+        val attempts = AtomicInteger()
+        val notification = panelAlert("panel-a")
+
+        coordinator.poll(
+            capturedSessionKey = session,
+            currentSessionKey = { session },
+            memory = memory,
+            loadPhotoTask = { null },
+            loadPanelNotifications = { listOf(notification) },
+            panelDeliveryDecision = { PanelNotificationDeliveryDecision.IGNORE },
+            showPhotoTask = { true },
+            showPanelAlert = { attempts.incrementAndGet(); true },
+        )
+        assertEquals(0, attempts.get())
+        assertEquals("", memory.panelAlertIds)
+
+        coordinator.poll(
+            capturedSessionKey = session,
+            currentSessionKey = { session },
+            memory = memory,
+            loadPhotoTask = { null },
+            loadPanelNotifications = { listOf(notification) },
+            panelDeliveryDecision = { PanelNotificationDeliveryDecision.SUPPRESS },
+            showPhotoTask = { true },
+            showPanelAlert = { attempts.incrementAndGet(); true },
+        )
+        assertEquals(0, attempts.get())
+        assertTrue(memory.panelAlertIds.contains("panel-a"))
+
+        coordinator.poll(
+            capturedSessionKey = session,
+            currentSessionKey = { session },
+            memory = memory,
+            loadPhotoTask = { null },
+            loadPanelNotifications = { listOf(notification) },
+            panelDeliveryDecision = { PanelNotificationDeliveryDecision.SHOW },
+            showPhotoTask = { true },
+            showPanelAlert = { attempts.incrementAndGet(); true },
+        )
+        assertEquals(0, attempts.get())
+    }
+
+    @Test
+    fun `disabled photo task is consumed and does not replay after enabling`() {
+        val coordinator = coordinator()
+        val session = key("device-a", "token-a")
+        val memory = FakeMemory()
+        val attempts = AtomicInteger()
+
+        coordinator.poll(
+            capturedSessionKey = session,
+            currentSessionKey = { session },
+            memory = memory,
+            loadPhotoTask = { photoTask("photo-a") },
+            loadPanelNotifications = { emptyList() },
+            photoTaskDeliveryAllowed = { false },
+            showPhotoTask = { attempts.incrementAndGet(); true },
+            showPanelAlert = { true },
+        )
+        assertEquals(0, attempts.get())
+        assertEquals("photo-a", memory.photoTaskId)
+
+        coordinator.poll(
+            capturedSessionKey = session,
+            currentSessionKey = { session },
+            memory = memory,
+            loadPhotoTask = { photoTask("photo-a") },
+            loadPanelNotifications = { emptyList() },
+            photoTaskDeliveryAllowed = { true },
+            showPhotoTask = { attempts.incrementAndGet(); true },
+            showPanelAlert = { true },
+        )
+        assertEquals(0, attempts.get())
     }
 
     @Test

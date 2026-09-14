@@ -928,6 +928,7 @@ class MainActivity : ComponentActivity() {
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
                     if (session?.token != verifiedSession.token) {
+                        notificationPreferences = sessionStore.readNotificationPreferences()
                         replaceSettingsSession()
                         dashboardCoordinator.reset()
                         ordersCoordinator.reset()
@@ -993,6 +994,7 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePairingSuccess(baseUrl: String, nextSession: MobileSession) {
         sessionStore.saveSession(baseUrl, nextSession)
+        notificationPreferences = sessionStore.readNotificationPreferences()
         replaceSettingsSession()
         updateSessionTransition(activeStepIndex = 1, progress = 46)
         dashboardCoordinator.reset()
@@ -2571,6 +2573,7 @@ class MainActivity : ComponentActivity() {
         stopPhotoTaskDispatchPolling()
         clearPendingCameraPhoto()
         session = null
+        notificationPreferences = MobileNotificationPreferences.defaults()
         dashboardCoordinator.reset()
         photoTasks = emptyList()
         callerIdPreview = null

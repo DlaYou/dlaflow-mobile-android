@@ -112,6 +112,19 @@ class MobileFeatureIntegrationGuardTest {
         assertTrue(source.contains("notificationSessionChanged"))
         assertTrue(source.contains("remove(shownPanelNotificationIdsKey)"))
         assertTrue(source.contains("remove(lastBackgroundPhotoTaskIdKey)"))
+        assertTrue(source.contains("remove(notificationPreferencesKey)"))
+    }
+
+    @Test
+    fun `pairing reloads the session scoped notification preferences`() {
+        val source = File(
+            "src/main/java/pl/dlaflow/mobile/MainActivity.kt",
+        ).readText()
+        val pairingSuccess = source
+            .substringAfter("private fun handlePairingSuccess")
+            .substringBefore("private fun")
+
+        assertTrue(pairingSuccess.contains("sessionStore.readNotificationPreferences()"))
     }
 
     @Test
@@ -135,7 +148,7 @@ class MobileFeatureIntegrationGuardTest {
         )
         assertTrue(
             shouldShowNativePanelNotification(
-                testNotification("Wiadomość od klienta", "info", "OPEN_MESSAGES"),
+                testNotification("Wiadomość od klienta", "info", "OPEN_MESSAGES", source = "push"),
                 preferences,
             ),
         )
@@ -152,6 +165,30 @@ class MobileFeatureIntegrationGuardTest {
             ),
         )
         assertFalse(shouldShowNativePhotoTaskNotification(preferences))
+    }
+
+    @Test
+    fun `FCM polling and photo delivery share the central preference policy`() {
+        val fcmSource = File(
+            "src/main/java/pl/dlaflow/mobile/DlaFlowFirebaseMessagingService.kt",
+        ).readText()
+        val backgroundSource = File(
+            "src/main/java/pl/dlaflow/mobile/DlaFlowBackgroundSyncService.kt",
+        ).readText()
+        val jobSource = File(
+            "src/main/java/pl/dlaflow/mobile/DlaFlowDispatchJobService.kt",
+        ).readText()
+        val preferencesSource = File(
+            "src/main/java/pl/dlaflow/mobile/MobileNotificationPreferences.kt",
+        ).readText()
+
+        assertTrue(fcmSource.contains("mobileNotificationDeliveryDecision"))
+        assertTrue(fcmSource.contains("MobileNotificationDeliveryOrigin.FCM"))
+        assertTrue(backgroundSource.contains("MobileNotificationDeliveryOrigin.PANEL_HISTORY"))
+        assertTrue(jobSource.contains("MobileNotificationDeliveryOrigin.PANEL_HISTORY"))
+        assertTrue(backgroundSource.contains("photoTaskDeliveryAllowed"))
+        assertTrue(jobSource.contains("photoTaskDeliveryAllowed"))
+        assertTrue(preferencesSource.contains("MobileNotificationDeliveryOrigin.PHOTO_TASK"))
     }
 
     @Test
@@ -185,12 +222,13 @@ class MobileFeatureIntegrationGuardTest {
         title: String,
         tone: String,
         actionType: String,
+        source: String = "DlaFlow",
     ) = MobileAssistantNotification(
         id = title,
         title = title,
         description = "Opis",
         tone = tone,
-        source = "DlaFlow",
+        source = source,
         account = "Panel",
         occurredAt = "2026-08-19T08:00:00Z",
         readAt = null,

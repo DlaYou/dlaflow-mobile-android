@@ -8,6 +8,12 @@
 
 **Tech Stack:** Kotlin, Android SDK, existing JVM tests, Gradle lint/debug build.
 
+> Policy amendment (2026-09-14): the center remains the source for the in-app
+> list, but its historical rows are not automatically emitted as native alerts.
+> Native delivery uses the preference/origin policy documented in the
+> notification-preferences spec; explicit FCM events and photo-task dispatches
+> are the only ordinary native event paths.
+
 ---
 
 ### Task 1: Foreground notification refresh

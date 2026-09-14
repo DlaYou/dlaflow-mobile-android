@@ -86,28 +86,110 @@ fun classifyMobileNotification(notification: MobileAssistantNotification): Mobil
     }
 }
 
+/** Keeps the FCM contract independent from localized notification copy. */
+internal fun mobileNotificationCategoryForPushEvent(event: String): MobileNotificationCategory? = when (event.trim()) {
+    "order.created" -> MobileNotificationCategory.NEW_ORDERS
+    "message.created" -> MobileNotificationCategory.CUSTOMER_MESSAGES
+    else -> null
+}
+
+/** Identifies the transport that is allowed to create a native alert. */
+internal enum class MobileNotificationDeliveryOrigin {
+    FCM,
+    PANEL_HISTORY,
+    PHOTO_TASK,
+}
+
 fun shouldShowNativePanelNotification(
     notification: MobileAssistantNotification,
     preferences: MobileNotificationPreferences,
 ): Boolean {
-    if (notification.tone.trim().lowercase(Locale.ROOT) == "error") {
-        return preferences.isEnabled(MobileNotificationCategory.IMPORTANT_PANEL)
+    val origin = if (notification.source.trim().equals("push", ignoreCase = true)) {
+        MobileNotificationDeliveryOrigin.FCM
+    } else {
+        MobileNotificationDeliveryOrigin.PANEL_HISTORY
+    }
+    return shouldShowNativePanelNotification(notification, preferences, origin)
+}
+
+internal fun shouldShowNativePanelNotification(
+    notification: MobileAssistantNotification,
+    preferences: MobileNotificationPreferences,
+    origin: MobileNotificationDeliveryOrigin,
+): Boolean {
+    return mobileNotificationDeliveryDecision(notification, preferences, origin) ==
+        PanelNotificationDeliveryDecision.SHOW
+}
+
+internal fun mobileNotificationDeliveryDecision(
+    notification: MobileAssistantNotification,
+    preferences: MobileNotificationPreferences,
+    origin: MobileNotificationDeliveryOrigin,
+): PanelNotificationDeliveryDecision {
+    return mobileNotificationDeliveryDecision(
+        category = classifyMobileNotification(notification),
+        tone = notification.tone.trim().lowercase(Locale.ROOT),
+        preferences = preferences,
+        origin = origin,
+    )
+}
+
+internal fun mobileNotificationDeliveryDecision(
+    category: MobileNotificationCategory,
+    tone: String,
+    preferences: MobileNotificationPreferences,
+    origin: MobileNotificationDeliveryOrigin,
+): PanelNotificationDeliveryDecision {
+    val normalizedTone = tone.trim().lowercase(Locale.ROOT)
+    // A red alert is the one allowed exception for a historical panel row.
+    // It is always governed by the dedicated important-panel switch, even if
+    // its action text happens to look like an order or shipment update.
+    if (normalizedTone == "error") {
+        return when (origin) {
+            MobileNotificationDeliveryOrigin.PHOTO_TASK -> PanelNotificationDeliveryDecision.IGNORE
+            MobileNotificationDeliveryOrigin.FCM,
+            MobileNotificationDeliveryOrigin.PANEL_HISTORY,
+            -> if (preferences.isEnabled(MobileNotificationCategory.IMPORTANT_PANEL)) {
+                PanelNotificationDeliveryDecision.SHOW
+            } else {
+                PanelNotificationDeliveryDecision.SUPPRESS
+            }
+        }
     }
 
-    val category = classifyMobileNotification(notification)
-    if (!preferences.isEnabled(category)) return false
+    if (!preferences.isEnabled(category)) {
+        return when (origin) {
+            // Explicit events are consumed while disabled so enabling a switch
+            // later cannot replay an old FCM event.
+            MobileNotificationDeliveryOrigin.FCM,
+            MobileNotificationDeliveryOrigin.PHOTO_TASK,
+            -> PanelNotificationDeliveryDecision.SUPPRESS
+            // Ordinary history is not eligible for a native alert at all, so
+            // it should not consume the bounded delivery memory.
+            MobileNotificationDeliveryOrigin.PANEL_HISTORY -> PanelNotificationDeliveryDecision.IGNORE
+        }
+    }
 
-    return when (category) {
-        MobileNotificationCategory.NEW_ORDERS,
-        MobileNotificationCategory.CUSTOMER_MESSAGES,
-        -> true
-        MobileNotificationCategory.IMPORTANT_PANEL ->
-            notification.tone.trim().lowercase(Locale.ROOT) == "error"
-        MobileNotificationCategory.ORDER_STATUS,
-        MobileNotificationCategory.SHIPMENT_STATUS,
-        MobileNotificationCategory.PHOTO_TASKS,
-        -> false
+    return when (origin) {
+        // FCM is an explicit event contract. Every category is eligible here;
+        // the category switch remains the final gate for future event types.
+        MobileNotificationDeliveryOrigin.FCM -> PanelNotificationDeliveryDecision.SHOW
+        // The notifications endpoint is a history snapshot. It must never
+        // replay ordinary messages, orders, statuses or successes as a native
+        // alert. Critical errors are handled by the branch above.
+        MobileNotificationDeliveryOrigin.PANEL_HISTORY -> PanelNotificationDeliveryDecision.IGNORE
+        MobileNotificationDeliveryOrigin.PHOTO_TASK -> if (category == MobileNotificationCategory.PHOTO_TASKS) {
+            PanelNotificationDeliveryDecision.SHOW
+        } else {
+            PanelNotificationDeliveryDecision.IGNORE
+        }
     }
 }
 
-fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean = false
+fun shouldShowNativePhotoTaskNotification(preferences: MobileNotificationPreferences): Boolean =
+    mobileNotificationDeliveryDecision(
+        category = MobileNotificationCategory.PHOTO_TASKS,
+        tone = "",
+        preferences = preferences,
+        origin = MobileNotificationDeliveryOrigin.PHOTO_TASK,
+    ) == PanelNotificationDeliveryDecision.SHOW

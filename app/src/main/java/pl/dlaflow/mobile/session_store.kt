@@ -81,6 +81,7 @@ class MobileSessionStore(context: Context) {
                 editor
                     .remove(shownPanelNotificationIdsKey)
                     .remove(lastBackgroundPhotoTaskIdKey)
+                    .remove(notificationPreferencesKey)
             }
             editor
                 .putString("base_url", baseUrl.trim())
@@ -126,15 +127,19 @@ class MobileSessionStore(context: Context) {
     }
 
     fun readNotificationPreferences(): MobileNotificationPreferences {
-        return parseMobileNotificationPreferences(
-            preferences.getString("notification_preferences", "").orEmpty(),
-        )
+        return AppNotificationSessionSynchronization.instance.withLock {
+            parseMobileNotificationPreferences(
+                preferences.getString(notificationPreferencesKey, "").orEmpty(),
+            )
+        }
     }
 
     fun saveNotificationPreferences(value: MobileNotificationPreferences) {
-        preferences.edit()
-            .putString("notification_preferences", serializeMobileNotificationPreferences(value))
-            .apply()
+        AppNotificationSessionSynchronization.instance.withLock {
+            preferences.edit()
+                .putString(notificationPreferencesKey, serializeMobileNotificationPreferences(value))
+                .apply()
+        }
     }
 
     fun clear() {
@@ -208,6 +213,7 @@ class MobileSessionStore(context: Context) {
 private const val defaultBaseUrl = "https://panel.dlayou.pl"
 private const val lastBackgroundPhotoTaskIdKey = "last_background_photo_task_id"
 private const val shownPanelNotificationIdsKey = "shown_panel_notification_ids"
+private const val notificationPreferencesKey = "notification_preferences"
 
 private data class EncryptedToken(
     val cipherText: String,

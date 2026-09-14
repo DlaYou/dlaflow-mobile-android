@@ -20,6 +20,7 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
         val sessionStore = MobileSessionStore(applicationContext)
         AppNotificationSessionSynchronization.instance.withLock {
             if (sessionStore.readToken().isBlank()) return@withLock
+            val category = mobileNotificationCategoryForPushEvent(event) ?: return@withLock
             // Newer panel payloads are bound to the device that was selected for
             // delivery. Missing targetDeviceId remains backwards compatible with
             // older panel workers during the contract rollout.
@@ -30,19 +31,29 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
                 "message.created" -> newCustomerMessageNotification(message)
                 else -> null
             } ?: return@withLock
-            if (!shouldShowNativePanelNotification(notification, sessionStore.readNotificationPreferences())) return@withLock
-
             val memory = object : PanelNotificationDeliveryMemory {
                 override fun readShownPanelAlertIds(): String = sessionStore.readShownPanelNotificationIds()
                 override fun saveShownPanelAlertIds(ids: String) = sessionStore.saveShownPanelNotificationIds(ids)
             }
-            deliverPanelNotificationOnce(memory, notification) {
-                DlaFlowNotifications.showPanelAlertNotification(
-                    applicationContext,
-                    notification,
-                    messageThreadId = message.data["threadId"],
-                )
-            }
+            deliverPanelNotificationOnce(
+                memory = memory,
+                notification = notification,
+                effect = {
+                    DlaFlowNotifications.showPanelAlertNotification(
+                        applicationContext,
+                        notification,
+                        messageThreadId = message.data["threadId"],
+                    )
+                },
+                decision = {
+                    mobileNotificationDeliveryDecision(
+                        category = category,
+                        tone = notification.tone,
+                        preferences = sessionStore.readNotificationPreferences(),
+                        origin = MobileNotificationDeliveryOrigin.FCM,
+                    )
+                },
+            )
         }
     }
 
