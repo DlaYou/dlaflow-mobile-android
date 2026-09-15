@@ -77,6 +77,52 @@ class MessagesMapperTest {
         assertEquals(0, page.items.single().messageCount)
     }
 
+    @Test
+    fun `message text keeps Polish characters and removes provider html from body preview and subject`() {
+        val mojibake = "Dzie\u00C5\u201E dobry za\u00C5\u00BC\u00C3\u00B3\u00C5\u201A\u00C4\u2021"
+        val rawBody = "<p>$mojibake&nbsp;</p><br><strong>Odbiór</strong> &amp; płatność"
+        val thread = fixtureThread(
+            subject = "&lt;strong&gt;Pytanie o wysyłkę&lt;/strong&gt;",
+        ).copy(lastMessage = MobileMessagePreview(rawBody, "inbound", "2026-08-24T10:00:00Z"))
+
+        val listItem = thread.toMessageListItem()
+        assertEquals("Pytanie o wysyłkę", listItem.subject)
+        assertEquals("Dzień dobry zażółć Odbiór & płatność", listItem.preview?.body)
+
+        val detail = fixtureDetail().copy(
+            subject = "<div>Temat zażółć</div>",
+            messages = listOf(
+                MobileMessage(
+                    id = "inbound-1",
+                    author = "Klient",
+                    direction = "inbound",
+                    body = rawBody,
+                    messageAt = "2026-08-24T10:00:00Z",
+                    status = "received",
+                    attachments = emptyList(),
+                ),
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Temat zażółć", detail.subject)
+        assertEquals("Dzień dobry zażółć\nOdbiór & płatność", detail.messages.single().body)
+    }
+
+    @Test
+    fun `message html active content is not shown as visible text`() {
+        val bubble = MobileMessage(
+            id = "message-unsafe",
+            author = "Klient",
+            direction = "inbound",
+            body = "<script>alert('x')</script><style>.hidden{display:none}</style><div>Bezpieczna treść</div>",
+            messageAt = "2026-08-24T10:00:00Z",
+            status = "received",
+            attachments = emptyList(),
+        ).toMessageBubble()
+
+        assertEquals("Bezpieczna treść", bubble.body)
+    }
+
     private fun fixtureThread(
         id: String = "thread-1",
         providerId: String = "allegro",

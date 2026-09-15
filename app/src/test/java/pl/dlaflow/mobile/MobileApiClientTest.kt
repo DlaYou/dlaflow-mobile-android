@@ -738,6 +738,38 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `message transport preserves utf8 Polish characters for the presentation mapper`() {
+        withSingleJsonResponse(
+            """{
+                "data": {
+                    "items": [{
+                        "id": "thread-utf8",
+                        "providerId": "allegro",
+                        "integrationId": "connection-1",
+                        "buyer": {"name": "Żółć", "login": "klient"},
+                        "subject": "Pytanie o wysyłkę",
+                        "lastMessage": {"body": "Dziękuję za pomoc", "direction": "inbound", "messageAt": "2026-08-24T10:00:00Z"},
+                        "lastMessageAt": "2026-08-24T10:00:00Z",
+                        "messageCount": 1,
+                        "orderLink": null,
+                        "readAt": null,
+                        "status": "unread"
+                    }],
+                    "total": 1,
+                    "nextCursor": null,
+                    "unreadCount": 1
+                }
+            }""".trimIndent(),
+        ) { client, _ ->
+            val page = client.listMessages("token", "", "all", false, null, 20)
+
+            assertEquals("Żółć", page.items.single().buyer.name)
+            assertEquals("Pytanie o wysyłkę", page.items.single().subject)
+            assertEquals("Dziękuję za pomoc", page.items.single().lastMessage?.body)
+        }
+    }
+
+    @Test
     fun `message detail parses bounded messages attachments and cursor`() {
         withSingleJsonResponse(
             """{
