@@ -110,6 +110,7 @@ internal fun MobileMessageOperation.toMessageOperation(): MessageOperation = Mes
     queued = queued,
     duplicate = duplicate,
     status = status.clean(),
+    readAt = readAt.cleanNullable(),
 )
 
 internal fun MobileMessage.toMessageBubble(): MessageBubble = MessageBubble(

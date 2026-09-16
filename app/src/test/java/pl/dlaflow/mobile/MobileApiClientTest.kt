@@ -854,7 +854,7 @@ class MobileApiClientTest {
     fun `message mutations use encoded thread paths and expose operation data`() {
         val responses = ArrayDeque(
             listOf(
-                """{"data":{"operationId":"read-op","status":"read"}}""",
+                """{"data":{"operationId":"read-op","readAt":"2026-09-17T10:15:00Z","status":"read"}}""",
                 """{"data":{"operationId":"refresh-op","queued":true,"status":"queued"}}""",
                 """{"data":{"operationId":"reply-op","messageId":"message-1","queued":true,"duplicate":false,"status":"queued"}}""",
             ),
@@ -876,7 +876,9 @@ class MobileApiClientTest {
         }
         try {
             val client = MobileApiClient("http://127.0.0.1:${server.localPort}")
-            assertEquals("read-op", client.markMessageRead("token", "thread/one").operationId)
+            val read = client.markMessageRead("token", "thread/one")
+            assertEquals("read-op", read.operationId)
+            assertEquals("2026-09-17T10:15:00Z", read.readAt)
             assertEquals("refresh-op", client.refreshMessageThread("token", "thread/one").operationId)
             assertEquals("reply-op", client.replyToMessageThread("token", "thread/one", " Odpowiedź ", "request-1").operationId)
             future.get(2, TimeUnit.SECONDS)

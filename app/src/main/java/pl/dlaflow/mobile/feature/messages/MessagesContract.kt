@@ -75,6 +75,7 @@ internal data class MessageOperation(
     val queued: Boolean,
     val duplicate: Boolean,
     val status: String,
+    val readAt: String? = null,
 )
 
 internal data class MessageThreadDetail(

@@ -567,6 +567,7 @@ data class MobileMessageOperation(
     val queued: Boolean,
     val duplicate: Boolean,
     val status: String,
+    val readAt: String? = null,
 )
 
 class MobileApiClient(
@@ -1304,6 +1305,7 @@ class MobileApiClient(
             queued = data.optBoolean("queued", false),
             duplicate = data.optBoolean("duplicate", false),
             status = boundedString(data.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            readAt = nullableBoundedString(data, "readAt", MOBILE_MESSAGE_TEXT_MAX_CHARS),
         )
     }
 

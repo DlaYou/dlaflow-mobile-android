@@ -319,7 +319,7 @@ internal class MessagesStateHolder {
         val detail = state.detailContentOrNull()
         when (request.kind) {
             MessagesMutationKind.MARK_READ -> {
-                updateReadState(request.threadId)
+                updateReadState(request.threadId, operation.readAt)
             }
             MessagesMutationKind.REFRESH_THREAD -> Unit
             MessagesMutationKind.REPLY -> if (detail != null && request.requestIdempotencyKey != null) {
@@ -362,6 +362,7 @@ internal class MessagesStateHolder {
                 detailState = DlaFlowUiState.Offline(state.detailContentOrNull()).takeIf { offline }
                     ?: state.detailContentOrNull()?.let { DlaFlowUiState.Content(it) },
                 transientMessage = message,
+                retryOperation = MessagesOperation.Mutation(request.kind, request.threadId),
             )
         }
         finishMutation()
@@ -603,8 +604,8 @@ internal class MessagesStateHolder {
         )
     }
 
-    private fun updateReadState(threadId: String) {
-        val readAt = Instant.now().toString()
+    private fun updateReadState(threadId: String, canonicalReadAt: String?) {
+        val readAt = canonicalReadAt?.trim()?.takeIf(String::isNotBlank) ?: Instant.now().toString()
         val detail = state.detailContentOrNull()
         val updatedDetail = detail?.takeIf { it.id == threadId }?.let { current ->
             current.copy(readAt = current.readAt ?: readAt, status = "read")

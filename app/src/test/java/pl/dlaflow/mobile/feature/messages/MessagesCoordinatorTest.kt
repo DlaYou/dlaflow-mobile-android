@@ -214,7 +214,7 @@ class MessagesCoordinatorTest {
         override fun markRead(token: String, threadId: String): MessageOperation {
             if (mutationFailures.isNotEmpty()) throw mutationFailures.removeFirst()
             readThreads += threadId
-            return MessageOperation("op-read", null, queued = false, duplicate = false, status = "accepted")
+            return MessageOperation("op-read", null, queued = false, duplicate = false, status = "accepted", readAt = "2026-09-17T10:15:00Z")
         }
 
         override fun refreshThread(token: String, threadId: String): MessageOperation {
