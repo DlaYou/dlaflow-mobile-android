@@ -72,4 +72,42 @@ class MessageTextNormalizerTest {
         assertTrue(normalized.contains("2 < 3"))
         assertTrue(normalized.contains("4 > 1"))
     }
+
+    @Test
+    fun `keeps all semantic sections from a full Allegro notification email`() {
+        val html = """
+            <!doctype html>
+            <html><head><meta charset="utf-8"><style>.hidden{display:none}</style></head>
+            <body>
+              <table><tr><td><strong>Allegro</strong></td></tr></table>
+              <table><tr><td>Dzień dobry DlaYou,</td></tr><tr><td>masz nową ocenę od kupującego</td></tr></table>
+              <table><tr><td><h3>Gratulacje, Kamilla_85 poleca zakupy u Ciebie.</h3></td></tr></table>
+              <table><tr><td>16 września 2026</td></tr></table>
+              <table><tr><td><strong>Komentarz</strong></td></tr><tr><td>Kupujący nie dodał komentarza.</td></tr></table>
+              <table><tr><td><strong>Przedmioty z zamówienia</strong></td></tr><tr><td><a href="https://allegro.example/product">Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm</a></td></tr></table>
+              <table><tr><td>Pozdrawiamy<br>Allegro</td></tr></table>
+              <script>nie pokazuj</script>
+            </body></html>
+        """.trimIndent()
+
+        val normalized = normalizeMessageBodyText(html)
+
+        assertTrue(normalized.contains("Dzień dobry DlaYou,"))
+        assertTrue(normalized.contains("Gratulacje, Kamilla_85 poleca zakupy u Ciebie."))
+        assertTrue(normalized.contains("Kupujący nie dodał komentarza."))
+        assertTrue(normalized.contains("Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm"))
+        assertTrue(normalized.contains("Pozdrawiamy\nAllegro"))
+        assertFalse(normalized.contains("<table>"))
+        assertFalse(normalized.contains("nie pokazuj"))
+    }
+
+    @Test
+    fun `body normalization keeps meaningful text beyond generic metadata limit`() {
+        val tail = "Końcowa sekcja wiadomości z pełną informacją o zamówieniu."
+        val normalized = normalizeMessageBodyText("Początek ${"x".repeat(2_100)} $tail")
+
+        assertTrue(normalized.length > 2_000)
+        assertTrue(normalized.endsWith(tail))
+    }
+
 }

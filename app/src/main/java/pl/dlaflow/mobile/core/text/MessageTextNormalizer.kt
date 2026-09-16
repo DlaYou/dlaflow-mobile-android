@@ -226,6 +226,9 @@ private val mojibakeWeights = mapOf(
     '™' to 1,
 )
 
+private const val NORMALIZED_MESSAGE_TEXT_MAX_CHARS = 2_000
+private const val NORMALIZED_MESSAGE_BODY_MAX_CHARS = 20_000
+
 /**
  * Normalizes provider message text for a plain Compose Text surface.
  *
@@ -234,7 +237,11 @@ private val mojibakeWeights = mapOf(
  * removes markup without rendering tags, decodes entities, and preserves
  * readable line breaks.
  */
-internal fun normalizeMessageText(value: String, compact: Boolean = false): String {
+internal fun normalizeMessageText(
+    value: String,
+    compact: Boolean = false,
+    maxChars: Int = NORMALIZED_MESSAGE_TEXT_MAX_CHARS,
+): String {
     var normalized = value
         .replace("\uFEFF", "")
         .trim()
@@ -263,13 +270,13 @@ internal fun normalizeMessageText(value: String, compact: Boolean = false): Stri
         .trim()
 
     return if (compact) {
-        normalized.replace(Regex("\\s+"), " ").trim().take(2000)
+        normalized.replace(Regex("\\s+"), " ").trim().take(NORMALIZED_MESSAGE_TEXT_MAX_CHARS)
     } else {
-        normalized.take(2000)
+        normalized.take(maxChars.coerceAtLeast(0))
     }
 }
 
-internal fun normalizeMessageBodyText(value: String): String = normalizeMessageText(value)
+internal fun normalizeMessageBodyText(value: String): String = normalizeMessageText(value, maxChars = NORMALIZED_MESSAGE_BODY_MAX_CHARS)
 
 internal fun normalizeMessagePreviewText(value: String): String = normalizeMessageText(value, compact = true)
 

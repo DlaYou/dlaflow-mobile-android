@@ -16,7 +16,8 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
-private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 2_000
+private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 20_000
+private const val MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS = 2_000
 private const val MOBILE_MESSAGE_SEARCH_MAX_CHARS = 120
 private const val MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS = 120
 private const val MOBILE_MESSAGE_CURSOR_MAX_CHARS = 512
@@ -811,8 +812,8 @@ class MobileApiClient(
 
     fun replyToMessageThread(token: String, threadId: String, body: String, requestId: String): MobileMessageOperation {
         val safeBody = body.trim()
-        require(safeBody.length in 1..MOBILE_MESSAGE_BODY_MAX_CHARS) {
-            "Message reply must contain between 1 and $MOBILE_MESSAGE_BODY_MAX_CHARS characters."
+        require(safeBody.length in 1..MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS) {
+            "Message reply must contain between 1 and $MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS characters."
         }
         val safeRequestId = requestId.trim()
         require(safeRequestId.isNotBlank() && safeRequestId.length <= MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS) {

@@ -1,6 +1,7 @@
 package pl.dlaflow.mobile
 
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -806,6 +807,46 @@ class MobileApiClientTest {
             assertEquals("invoice.pdf", detail.messages.single().attachments.single().filename)
             assertEquals("/api/orders/messages/media/invoice.pdf", detail.messages.single().attachments.single().url)
             assertEquals(2, detail.customerContext?.orderCount)
+        }
+    }
+
+    @Test
+    fun `message detail keeps semantic tail when provider html exceeds reply limit`() {
+        val providerBody = "<table data-style=\"${"x".repeat(2_200)}\"><tr><td>Wstęp</td></tr></table>" +
+            "<p>Gratulacje, Kamilla_85 poleca zakupy u Ciebie.</p>" +
+            "<p>Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm</p>"
+        val response = JSONObject()
+            .put(
+                "data",
+                JSONObject()
+                    .put("id", "thread-full-html")
+                    .put("providerId", "gmail")
+                    .put("integrationId", "connection-1")
+                    .put("buyer", JSONObject().put("name", "Allegro").put("login", "powiadomienia@allegro.pl"))
+                    .put("subject", "Ocena")
+                    .put("lastMessageAt", "2026-09-16T18:33:47Z")
+                    .put("readAt", JSONObject.NULL)
+                    .put("status", "unread")
+                    .put("orderLink", JSONObject.NULL)
+                    .put("messages", JSONArray().put(
+                        JSONObject()
+                            .put("id", "message-full-html")
+                            .put("author", "Allegro")
+                            .put("direction", "inbound")
+                            .put("body", providerBody)
+                            .put("messageAt", "2026-09-16T18:33:47Z")
+                            .put("status", "received")
+                            .put("attachments", JSONArray()),
+                    )),
+            )
+            .put("meta", JSONObject().put("total", 1).put("nextCursor", JSONObject.NULL))
+            .toString()
+
+        withSingleJsonResponse(response) { client, _ ->
+            val detail = client.getMessageThread("token", "thread-full-html", null, 100)
+
+            assertTrue(detail.messages.single().body.length > 2_000)
+            assertTrue(detail.messages.single().body.contains("Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm"))
         }
     }
 
