@@ -110,7 +110,16 @@ internal class MessagesCoordinator(
     private fun executeDetail(token: String, request: MessagesDetailRequest, operation: MessagesOperation, allowUnauthorizedRetry: Boolean) {
         executor.execute {
             runCatching { gateway.loadDetail(token, request.threadId, request.cursor) }
-                .onSuccess { content -> postToMain { if (stateHolder.acceptDetailSuccess(request, content)) onStateChanged() } }
+                .onSuccess { content ->
+                    postToMain {
+                        if (stateHolder.acceptDetailSuccess(request, content)) {
+                            if (content.readAt == null) {
+                                markThreadRead(token, allowUnauthorizedRetry = allowUnauthorizedRetry)
+                            }
+                            onStateChanged()
+                        }
+                    }
+                }
                 .onFailure { error -> postToMain { handleDetailFailure(token, request, operation, error, allowUnauthorizedRetry) } }
         }
     }

@@ -12,6 +12,19 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
 class MessagesCoordinatorTest {
     @Test
+    fun `opening an unread thread marks it read after detail has loaded`() {
+        val harness = Harness()
+        harness.gateway.details += detail()
+
+        assertTrue(harness.coordinator.openThread("session-a", "thread-1"))
+        harness.runAll()
+
+        assertEquals(listOf("thread-1"), harness.gateway.readThreads)
+        assertEquals("read", harness.holder.state.detailContentOrNull()!!.status)
+        assertTrue(harness.holder.state.detailContentOrNull()!!.readAt != null)
+    }
+
+    @Test
     fun `list, open detail, read, refresh and reply call gateway`() {
         val harness = Harness()
         harness.gateway.pages += page(item("thread-1"))
@@ -31,7 +44,7 @@ class MessagesCoordinatorTest {
         assertEquals("thread-1", harness.gateway.detailThreadIds.last())
         assertEquals("older-cursor", harness.gateway.detailCursors.last())
 
-        assertTrue(harness.coordinator.markThreadRead("session-a"))
+        assertFalse(harness.coordinator.markThreadRead("session-a"))
         harness.runAll()
         assertEquals(listOf("thread-1"), harness.gateway.readThreads)
 
@@ -122,11 +135,8 @@ class MessagesCoordinatorTest {
     fun `offline read failure preserves detail content and releases mutation`() {
         val harness = Harness()
         harness.gateway.details += detail()
-        assertTrue(harness.coordinator.openThread("session-a", "thread-1"))
-        harness.runAll()
         harness.gateway.mutationFailures += UnknownHostException()
-
-        assertTrue(harness.coordinator.markThreadRead("session-a"))
+        assertTrue(harness.coordinator.openThread("session-a", "thread-1"))
         harness.runAll()
 
         assertTrue(harness.holder.state.detailState is DlaFlowUiState.Offline<*>)

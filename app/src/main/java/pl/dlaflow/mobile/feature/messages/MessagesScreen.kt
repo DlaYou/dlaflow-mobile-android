@@ -48,7 +48,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -552,9 +551,6 @@ private fun MessageThreadDetailScreen(
     onAction: (MessagesAction) -> Unit,
 ) {
     val detail = state.detailContentOrNull()
-    LaunchedEffect(threadId, detail?.readAt) {
-        if (detail != null && detail.readAt == null) onAction(MessagesAction.MarkThreadRead)
-    }
     if (state.isRefreshingThread) {
         MessageDetailLoadingSkeleton(colors)
         return
