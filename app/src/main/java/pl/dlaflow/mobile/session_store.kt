@@ -58,6 +58,22 @@ class MobileSessionStore(context: Context) {
         return preferences.getString("device_id", "") ?: ""
     }
 
+    fun readSavedSessionOrNull(): MobileSession? {
+        val token = readToken().trim()
+        val deviceId = readDeviceId().trim()
+        if (token.isBlank() || deviceId.isBlank()) {
+            return null
+        }
+
+        return MobileSession(
+            deviceId = deviceId,
+            deviceName = preferences.getString("device_name", "Telefon").orEmpty().ifBlank { "Telefon" },
+            tenantName = preferences.getString("tenant_name", "").orEmpty(),
+            token = token,
+            userEmail = preferences.getString("user_email", "").orEmpty(),
+        )
+    }
+
     fun saveBaseUrl(baseUrl: String) {
         preferences.edit().putString("base_url", baseUrl.trim()).apply()
     }
