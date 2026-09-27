@@ -1,6 +1,7 @@
 package pl.dlaflow.mobile
 
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -738,6 +739,38 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `message transport preserves utf8 Polish characters for the presentation mapper`() {
+        withSingleJsonResponse(
+            """{
+                "data": {
+                    "items": [{
+                        "id": "thread-utf8",
+                        "providerId": "allegro",
+                        "integrationId": "connection-1",
+                        "buyer": {"name": "Żółć", "login": "klient"},
+                        "subject": "Pytanie o wysyłkę",
+                        "lastMessage": {"body": "Dziękuję za pomoc", "direction": "inbound", "messageAt": "2026-08-24T10:00:00Z"},
+                        "lastMessageAt": "2026-08-24T10:00:00Z",
+                        "messageCount": 1,
+                        "orderLink": null,
+                        "readAt": null,
+                        "status": "unread"
+                    }],
+                    "total": 1,
+                    "nextCursor": null,
+                    "unreadCount": 1
+                }
+            }""".trimIndent(),
+        ) { client, _ ->
+            val page = client.listMessages("token", "", "all", false, null, 20)
+
+            assertEquals("Żółć", page.items.single().buyer.name)
+            assertEquals("Pytanie o wysyłkę", page.items.single().subject)
+            assertEquals("Dziękuję za pomoc", page.items.single().lastMessage?.body)
+        }
+    }
+
+    @Test
     fun `message detail parses bounded messages attachments and cursor`() {
         withSingleJsonResponse(
             """{
@@ -751,6 +784,12 @@ class MobileApiClientTest {
                     "readAt": null,
                     "status": "unread",
                     "orderLink": null,
+                    "relatedOffer": {
+                        "offerId": "1234567890",
+                        "title": "Bluza Classic",
+                        "sku": "BLUZA-01",
+                        "image": "/api/mobile/products/media/0123456789abcdef0123456789abcdef.webp?variant=thumb"
+                    },
                     "customerContext": {"orderCount": 2, "totalOrderAmount": 99.5, "currency": "PLN", "customerSince": "2025-01-01", "activeConversationCount": 1},
                     "messages": [{
                         "id": "message-1",
@@ -774,6 +813,68 @@ class MobileApiClientTest {
             assertEquals("invoice.pdf", detail.messages.single().attachments.single().filename)
             assertEquals("/api/orders/messages/media/invoice.pdf", detail.messages.single().attachments.single().url)
             assertEquals(2, detail.customerContext?.orderCount)
+            assertEquals("1234567890", detail.relatedOffer?.offerId)
+            assertEquals("Bluza Classic", detail.relatedOffer?.title)
+            assertEquals("BLUZA-01", detail.relatedOffer?.sku)
+            assertEquals("/api/mobile/products/media/0123456789abcdef0123456789abcdef.webp?variant=thumb", detail.relatedOffer?.image)
+        }
+    }
+
+    @Test
+    fun `message detail bounds offer ids and rejects external related offer images`() {
+        val oversizedOfferId = "o".repeat(150)
+        val oversizedOfferTitle = "t".repeat(600)
+        val oversizedOfferSku = "s".repeat(160)
+        withSingleJsonResponse(
+            """{"data":{"id":"thread-offer","relatedOffer":{"offerId":"$oversizedOfferId","title":"$oversizedOfferTitle","sku":"$oversizedOfferSku","image":"https://outside.example.test/api/mobile/products/media/pic.webp?variant=thumb"}}}""",
+        ) { client, _ ->
+            val relatedOffer = client.getMessageThread("token", "thread-offer", null, 20).relatedOffer
+
+            assertEquals(128, relatedOffer?.offerId?.length)
+            assertEquals(500, relatedOffer?.title?.length)
+            assertEquals(128, relatedOffer?.sku?.length)
+            assertNull(relatedOffer?.image)
+        }
+    }
+
+    @Test
+    fun `message detail keeps semantic tail when provider html exceeds reply limit`() {
+        val providerBody = "<table data-style=\"${"x".repeat(2_200)}\"><tr><td>Wstęp</td></tr></table>" +
+            "<p>Gratulacje, Kamilla_85 poleca zakupy u Ciebie.</p>" +
+            "<p>Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm</p>"
+        val response = JSONObject()
+            .put(
+                "data",
+                JSONObject()
+                    .put("id", "thread-full-html")
+                    .put("providerId", "gmail")
+                    .put("integrationId", "connection-1")
+                    .put("buyer", JSONObject().put("name", "Allegro").put("login", "powiadomienia@allegro.pl"))
+                    .put("subject", "Ocena")
+                    .put("lastMessageAt", "2026-09-16T18:33:47Z")
+                    .put("readAt", JSONObject.NULL)
+                    .put("status", "unread")
+                    .put("orderLink", JSONObject.NULL)
+                    .put("messages", JSONArray().put(
+                        JSONObject()
+                            .put("id", "message-full-html")
+                            .put("author", "Allegro")
+                            .put("direction", "inbound")
+                            .put("body", providerBody)
+                            .put("messageAt", "2026-09-16T18:33:47Z")
+                            .put("status", "received")
+                            .put("attachments", JSONArray()),
+                    )),
+            )
+            .put("meta", JSONObject().put("total", 1).put("nextCursor", JSONObject.NULL))
+            .toString()
+
+        withSingleJsonResponse(response) { client, _ ->
+            val detail = client.getMessageThread("token", "thread-full-html", null, 100)
+
+            assertTrue(detail.messages.single().body.length > 2_000)
+            assertTrue(detail.messages.single().body.contains("Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm"))
+            assertNull(detail.relatedOffer)
         }
     }
 
@@ -781,7 +882,7 @@ class MobileApiClientTest {
     fun `message mutations use encoded thread paths and expose operation data`() {
         val responses = ArrayDeque(
             listOf(
-                """{"data":{"operationId":"read-op","status":"read"}}""",
+                """{"data":{"operationId":"read-op","readAt":"2026-09-17T10:15:00Z","status":"read"}}""",
                 """{"data":{"operationId":"refresh-op","queued":true,"status":"queued"}}""",
                 """{"data":{"operationId":"reply-op","messageId":"message-1","queued":true,"duplicate":false,"status":"queued"}}""",
             ),
@@ -803,7 +904,9 @@ class MobileApiClientTest {
         }
         try {
             val client = MobileApiClient("http://127.0.0.1:${server.localPort}")
-            assertEquals("read-op", client.markMessageRead("token", "thread/one").operationId)
+            val read = client.markMessageRead("token", "thread/one")
+            assertEquals("read-op", read.operationId)
+            assertEquals("2026-09-17T10:15:00Z", read.readAt)
             assertEquals("refresh-op", client.refreshMessageThread("token", "thread/one").operationId)
             assertEquals("reply-op", client.replyToMessageThread("token", "thread/one", " Odpowiedź ", "request-1").operationId)
             future.get(2, TimeUnit.SECONDS)

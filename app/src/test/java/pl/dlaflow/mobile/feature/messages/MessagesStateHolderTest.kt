@@ -111,6 +111,8 @@ class MessagesStateHolderTest {
     fun `detail cursor pagination preserves current thread metadata`() {
         val holder = MessagesStateHolder()
         val relatedOrder = relatedOrder()
+        val previousOffer = MessageRelatedOffer("offer-old", "Stara bluza", "OLD-1", "")
+        val latestOffer = MessageRelatedOffer("offer-new", "Nowa bluza", "NEW-1", "")
         val initial = holder.beginDetailLoad("session-a", "thread-1")
         holder.acceptDetailSuccess(
             initial,
@@ -120,6 +122,7 @@ class MessagesStateHolderTest {
                 messages = listOf(bubble("newest")),
                 nextCursor = "next",
                 relatedOrder = relatedOrder,
+                relatedOffer = previousOffer,
             ),
         )
 
@@ -127,13 +130,14 @@ class MessagesStateHolderTest {
         assertTrue(more != null)
         holder.acceptDetailSuccess(
             more!!,
-            detail(status = "unread", messages = listOf(bubble("oldest")), nextCursor = null),
+            detail(status = "unread", messages = listOf(bubble("oldest")), nextCursor = null, relatedOffer = latestOffer),
         )
 
         val result = holder.state.detailContentOrNull()!!
         assertEquals("read", result.status)
         assertEquals("2026-08-27T09:00:00Z", result.readAt)
         assertEquals(relatedOrder, result.relatedOrder)
+        assertEquals(latestOffer, result.relatedOffer)
     }
 
     @Test
@@ -194,14 +198,32 @@ class MessagesStateHolderTest {
         val read = holder.beginMarkThreadRead("session-a")
 
         assertTrue(read != null)
-        assertTrue(holder.acceptMutationSuccess(read!!, operation()))
+        assertTrue(holder.acceptMutationSuccess(read!!, operation(readAt = "2026-09-17T10:15:00Z")))
         assertEquals("read", holder.state.detailContentOrNull()!!.status)
-        assertTrue(holder.state.detailContentOrNull()!!.readAt != null)
+        assertEquals("2026-09-17T10:15:00Z", holder.state.detailContentOrNull()!!.readAt)
         assertEquals(0, holder.state.listContentOrNull()!!.unreadCount)
         assertEquals("read", holder.state.listContentOrNull()!!.items.single().status)
         assertTrue(holder.state.listContentOrNull()!!.items.single().readAt != null)
         assertNull(holder.beginMarkThreadRead("session-a"))
         assertFalse(holder.state.isMarkingRead)
+    }
+
+    @Test
+    fun `provider read failure exposes the read mutation for retry`() {
+        val holder = MessagesStateHolder()
+        val detailRequest = holder.beginDetailLoad("session-a", "thread-1")
+        holder.acceptDetailSuccess(detailRequest, detail(status = "unread"))
+        val readRequest = holder.beginMarkThreadRead("session-a")
+
+        assertTrue(readRequest != null)
+        assertTrue(holder.acceptMutationFailure(readRequest!!, message))
+
+        assertEquals(
+            MessagesOperation.Mutation(MessagesMutationKind.MARK_READ, "thread-1"),
+            holder.state.retryOperation,
+        )
+        assertEquals("thread-1", holder.state.detailContentOrNull()!!.id)
+        assertNull(holder.state.detailContentOrNull()!!.readAt)
     }
 
     @Test
@@ -278,11 +300,12 @@ class MessagesStateHolderTest {
         messages: List<MessageBubble> = emptyList(),
         nextCursor: String? = null,
         relatedOrder: MessageRelatedOrder? = null,
+        relatedOffer: MessageRelatedOffer? = null,
     ) = MessageThreadDetail(
         id = "thread-1", providerId = "allegro", integrationId = "integration", providerLabel = "Allegro",
         customerName = "Anna", customerLogin = "anna", customerEmail = null, subject = "Temat", lastMessageAt = "",
         readAt = readAt, status = status, orderId = null, orderNumber = null, messages = messages, nextCursor = nextCursor,
-        customerContext = null, relatedOrder = relatedOrder,
+        customerContext = null, relatedOrder = relatedOrder, relatedOffer = relatedOffer,
     )
 
     private fun bubble(id: String) = MessageBubble(id, "Anna", MessageDirection.INBOUND, id, "", "received", emptyList())
@@ -292,7 +315,7 @@ class MessagesStateHolderTest {
         statusTone = "success", statusColor = "#00AA00", items = emptyList(),
     )
 
-    private fun operation(messageId: String? = null, queued: Boolean = false) = MessageOperation(
-        operationId = "operation", messageId = messageId, queued = queued, duplicate = false, status = "accepted",
+    private fun operation(messageId: String? = null, queued: Boolean = false, readAt: String? = null) = MessageOperation(
+        operationId = "operation", messageId = messageId, queued = queued, duplicate = false, status = "accepted", readAt = readAt,
     )
 }

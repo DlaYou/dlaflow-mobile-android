@@ -16,11 +16,15 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
-private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 2_000
+private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 20_000
+private const val MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS = 2_000
 private const val MOBILE_MESSAGE_SEARCH_MAX_CHARS = 120
 private const val MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS = 120
 private const val MOBILE_MESSAGE_CURSOR_MAX_CHARS = 512
 private const val MOBILE_MESSAGE_ID_MAX_CHARS = 200
+private const val MOBILE_MESSAGE_OFFER_ID_MAX_CHARS = 128
+private const val MOBILE_MESSAGE_OFFER_TITLE_MAX_CHARS = 500
+private const val MOBILE_MESSAGE_OFFER_SKU_MAX_CHARS = 128
 private const val MOBILE_MESSAGE_SUBJECT_MAX_CHARS = 240
 private const val MOBILE_MESSAGE_TEXT_MAX_CHARS = 120
 private const val MOBILE_MESSAGE_AUTHOR_MAX_CHARS = 120
@@ -496,6 +500,13 @@ data class MobileMessageOrderLink(
     val status: String = "",
 )
 
+data class MobileMessageRelatedOffer(
+    val offerId: String,
+    val title: String,
+    val sku: String,
+    val image: String?,
+)
+
 data class MobileMessageThread(
     val id: String,
     val providerId: String,
@@ -558,6 +569,7 @@ data class MobileMessageThreadDetail(
     val messages: List<MobileMessage>,
     val total: Int,
     val nextCursor: String?,
+    val relatedOffer: MobileMessageRelatedOffer? = null,
 )
 
 data class MobileMessageOperation(
@@ -566,6 +578,7 @@ data class MobileMessageOperation(
     val queued: Boolean,
     val duplicate: Boolean,
     val status: String,
+    val readAt: String? = null,
 )
 
 class MobileApiClient(
@@ -798,6 +811,7 @@ class MobileApiClient(
             messages = messages,
             total = total.coerceAtLeast(messages.size),
             nextCursor = nextCursor,
+            relatedOffer = parseMobileMessageRelatedOffer(data.optJSONObject("relatedOffer")),
         )
     }
 
@@ -811,8 +825,8 @@ class MobileApiClient(
 
     fun replyToMessageThread(token: String, threadId: String, body: String, requestId: String): MobileMessageOperation {
         val safeBody = body.trim()
-        require(safeBody.length in 1..MOBILE_MESSAGE_BODY_MAX_CHARS) {
-            "Message reply must contain between 1 and $MOBILE_MESSAGE_BODY_MAX_CHARS characters."
+        require(safeBody.length in 1..MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS) {
+            "Message reply must contain between 1 and $MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS characters."
         }
         val safeRequestId = requestId.trim()
         require(safeRequestId.isNotBlank() && safeRequestId.length <= MOBILE_MESSAGE_REQUEST_ID_MAX_CHARS) {
@@ -1257,6 +1271,26 @@ class MobileApiClient(
         return if (id.isBlank() && orderId.isBlank()) null else MobileMessageOrderLink(id, orderId, amount, currency, createdAt, status)
     }
 
+    private fun parseMobileMessageRelatedOffer(item: JSONObject?): MobileMessageRelatedOffer? {
+        val offer = item ?: return null
+        val offerId = boundedString(offer.optString("offerId", "").trim(), MOBILE_MESSAGE_OFFER_ID_MAX_CHARS)
+        if (offerId.isBlank()) return null
+
+        return MobileMessageRelatedOffer(
+            offerId = offerId,
+            title = boundedString(offer.optString("title", ""), MOBILE_MESSAGE_OFFER_TITLE_MAX_CHARS),
+            sku = boundedString(offer.optString("sku", ""), MOBILE_MESSAGE_OFFER_SKU_MAX_CHARS),
+            image = safeMobileRelatedOfferImage(offer.optString("image", "")),
+        )
+    }
+
+    private fun safeMobileRelatedOfferImage(value: String): String? {
+        val normalized = value.trim()
+        return normalized.takeIf {
+            it.matches(Regex("/api/mobile/products/media/[A-Za-z0-9][A-Za-z0-9._-]*(?:\\?variant=thumb)?"))
+        }
+    }
+
     private fun parseMobileMessage(item: JSONObject): MobileMessage {
         val attachmentsJson = item.optJSONArray("attachments")
         val attachments = mutableListOf<MobileMessageAttachment>()
@@ -1303,6 +1337,7 @@ class MobileApiClient(
             queued = data.optBoolean("queued", false),
             duplicate = data.optBoolean("duplicate", false),
             status = boundedString(data.optString("status", ""), MOBILE_MESSAGE_TEXT_MAX_CHARS),
+            readAt = nullableBoundedString(data, "readAt", MOBILE_MESSAGE_TEXT_MAX_CHARS),
         )
     }
 

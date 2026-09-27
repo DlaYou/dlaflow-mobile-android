@@ -75,6 +75,7 @@ internal data class MessageOperation(
     val queued: Boolean,
     val duplicate: Boolean,
     val status: String,
+    val readAt: String? = null,
 )
 
 internal data class MessageThreadDetail(
@@ -95,6 +96,14 @@ internal data class MessageThreadDetail(
     val nextCursor: String?,
     val customerContext: MessageCustomerContext?,
     val relatedOrder: MessageRelatedOrder? = null,
+    val relatedOffer: MessageRelatedOffer? = null,
+)
+
+internal data class MessageRelatedOffer(
+    val offerId: String,
+    val title: String,
+    val sku: String,
+    val image: String,
 )
 
 internal data class MessageRelatedOrder(

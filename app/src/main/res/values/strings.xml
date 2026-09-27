@@ -16,6 +16,12 @@
     <string name="mobile_error_server_description">Spróbuj ponownie za chwilę.</string>
     <string name="mobile_error_unknown_title">Nie udało się wykonać operacji</string>
     <string name="mobile_error_unknown_description">Spróbuj ponownie.</string>
+    <string name="mobile_session_recovery_title">Przywracamy połączenie</string>
+    <string name="mobile_session_recovery_checking">Sprawdzam bezpieczne połączenie z panelem DlaFlow.</string>
+    <string name="mobile_session_recovery_offline_title">Połączenie jest chwilowo niedostępne</string>
+    <string name="mobile_session_recovery_offline_description">Sesja telefonu została zachowana. Aplikacja spróbuje ponownie, gdy internet wróci.</string>
+    <string name="mobile_session_recovery_device">Zapisany telefon</string>
+    <string name="mobile_session_recovery_retry">Spróbuj ponownie</string>
     <string name="pairing_logo_content_description">DlaFlow</string>
     <string name="pairing_title">Połącz z panelem DlaFlow</string>
     <string name="pairing_description">Połącz aplikację mobilną z panelem, aby zarządzać zamówieniami, produktami i operacjami w swoim biznesie.</string>

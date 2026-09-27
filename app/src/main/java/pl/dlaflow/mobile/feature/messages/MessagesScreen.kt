@@ -48,7 +48,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -552,9 +551,6 @@ private fun MessageThreadDetailScreen(
     onAction: (MessagesAction) -> Unit,
 ) {
     val detail = state.detailContentOrNull()
-    LaunchedEffect(threadId, detail?.readAt) {
-        if (detail != null && detail.readAt == null) onAction(MessagesAction.MarkThreadRead)
-    }
     if (state.isRefreshingThread) {
         MessageDetailLoadingSkeleton(colors)
         return
@@ -623,6 +619,9 @@ private fun MessageDetailContent(
                 MessageDetailLoadMoreSkeleton(colors)
             }
             MessageBubbles(colors, detail?.messages.orEmpty())
+            detail?.relatedOffer?.let { relatedOffer ->
+                MessageRelatedOfferCard(colors, relatedOffer, thumbnailLoader)
+            }
             detail?.relatedOrder?.let { relatedOrder ->
                 MessageRelatedOrderCard(colors, relatedOrder, thumbnailLoader) {
                     onAction(MessagesAction.OpenRelatedOrder(relatedOrder.orderNumber.ifBlank { relatedOrder.id }))
@@ -822,6 +821,60 @@ private fun MessageRelatedOrderCard(
                 ) {
                     Text("Zobacz zamówienie", color = colors.primary, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     androidx.compose.material3.Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = colors.primary, modifier = Modifier.size(15.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageRelatedOfferCard(
+    colors: DlaFlowComposeColors,
+    offer: MessageRelatedOffer,
+    thumbnailLoader: DlaFlowThumbnailLoader,
+) {
+    val referenceLabel = offer.sku.takeIf(String::isNotBlank)?.let { "SKU: $it" }
+        ?: "Oferta #${offer.offerId}".takeIf { offer.title != "Oferta Allegro #${offer.offerId}" }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colors.primarySoft.copy(alpha = 0.45f))
+            .border(1.dp, colors.primarySoftBorder, RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Powiązany przedmiot", color = colors.textStrong, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(modifier = Modifier.size(52.dp).clip(RoundedCornerShape(7.dp)), contentAlignment = Alignment.Center) {
+                DlaFlowThumbnail(
+                    colors = colors,
+                    url = offer.image,
+                    loader = thumbnailLoader,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                    contentDescription = offer.title,
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    text = offer.title,
+                    color = colors.textStrong,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                referenceLabel?.let { label ->
+                    Text(
+                        text = label,
+                        color = colors.textMuted,
+                        fontSize = 9.sp,
+                        lineHeight = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

@@ -5,6 +5,8 @@ import pl.dlaflow.mobile.MobileOrderDetail
 import pl.dlaflow.mobile.MobileOrderFilter
 import pl.dlaflow.mobile.MobileOrderListItem
 import pl.dlaflow.mobile.MobileOrdersPage
+import pl.dlaflow.mobile.core.text.normalizeMessageBodyText
+import pl.dlaflow.mobile.core.text.normalizeMessageText
 import pl.dlaflow.mobile.normalizeMobileOrderMediaUrl
 
 internal fun MobileOrdersPage.toOrdersListContent() = OrdersListContent(
@@ -107,8 +109,8 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
     messages = messages.map { message ->
         OrderMessage(
             id = message.id,
-            author = message.author,
-            body = message.body,
+            author = normalizeMessageText(message.author),
+            body = normalizeMessageBodyText(message.body),
             messageAt = message.messageAt,
             threadId = message.threadId,
         )

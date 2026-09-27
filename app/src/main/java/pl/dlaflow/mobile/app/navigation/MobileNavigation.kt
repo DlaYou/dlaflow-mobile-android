@@ -24,6 +24,8 @@ enum class MobileAssistantBackAction {
 }
 
 sealed interface MobileRoute {
+    data object Recovery : MobileRoute
+
     data class Pairing(
         val helpVisible: Boolean,
         val nameVisible: Boolean = false,
@@ -40,6 +42,8 @@ sealed interface MobileRoute {
 
 fun mobileAssistantBackAction(route: MobileRoute): MobileAssistantBackAction {
     return when (route) {
+        MobileRoute.Recovery -> MobileAssistantBackAction.NONE
+
         is MobileRoute.Pairing -> when {
             route.helpVisible -> MobileAssistantBackAction.CLOSE_PAIRING_HELP
             route.nameVisible -> MobileAssistantBackAction.CLOSE_PAIRING_NAME

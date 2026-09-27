@@ -142,6 +142,7 @@ class MainActivity : ComponentActivity() {
             dispatchHandler.postDelayed(this, dispatchPollIntervalMs)
         }
     }
+    private val savedSessionRetryRunnable = Runnable { verifySavedSession(showInitialTransition = false) }
     private lateinit var sessionStore: MobileSessionStore
     private val settingsStateHolder = SettingsStateHolder()
     private val settingsCoordinator by lazy {
@@ -302,7 +303,11 @@ class MainActivity : ComponentActivity() {
     private var contentReadyForDisplay = false
     private var keepSystemSplashVisible = true
     private var initialContentStarted = false
+    private var appInForeground = false
     private var startupHasSavedSession = false
+    private var savedSessionVerificationInFlight = false
+    private var savedSessionRetryAttempt = 0
+    private var sessionUiState by mutableStateOf(MobileSessionUiState.PAIRING)
     private var session by mutableStateOf<MobileSession?>(null)
     private val dataRefreshController by lazy {
         MobileDataRefreshController(
@@ -343,11 +348,13 @@ class MainActivity : ComponentActivity() {
             notificationPreferences = sessionStore.readNotificationPreferences()
             DlaFlowNotifications.ensureChannels(this)
             handleLaunchIntent(intent)
-            startupHasSavedSession = sessionStore.readToken().isNotBlank()
+            val savedSession = sessionStore.readSavedSessionOrNull()
+            startupHasSavedSession = savedSession != null
+            session = savedSession
+            sessionUiState = if (savedSession == null) MobileSessionUiState.PAIRING else MobileSessionUiState.CHECKING
         }
         releaseSystemSplash()
         render()
-        dataRefreshController.start()
         if (consumeSmokePairingIntent()) {
             return
         } else if (startupHasSavedSession) {
@@ -366,6 +373,9 @@ class MainActivity : ComponentActivity() {
         if (consumeSmokePairingIntent()) {
             return
         }
+        if (sessionUiState != MobileSessionUiState.CONNECTED) {
+            return
+        }
         session?.token?.let(photoTasksCoordinator::refresh)
         if (selectedTab == MobileAssistantTab.ORDERS) {
             ensureOrdersLoaded()
@@ -374,6 +384,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
         dataRefreshController.stop()
         stopPhotoTaskDispatchPolling()
         photoTasksCoordinator.reset()
@@ -389,11 +400,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        appInForeground = true
         if (!::sessionStore.isInitialized) {
             return
         }
-        dataRefreshController.start()
         render()
+        if (sessionUiState == MobileSessionUiState.CONNECTED) {
+            val activeToken = session?.token.orEmpty()
+            val storedToken = sessionStore.readToken()
+            if (!isSameMobileSessionToken(storedToken, activeToken)) {
+                if (storedToken.isBlank()) {
+                    clearRevokedSession()
+                }
+                return
+            }
+            dataRefreshController.start()
+        } else if (session != null) {
+            retrySavedSessionVerification()
+        }
         val pendingFile = pendingInstallApkFile
         val pendingUpdate = pendingInstallUpdate
         if (pendingFile != null && pendingUpdate != null && canInstallMobileUpdates()) {
@@ -404,6 +428,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        appInForeground = false
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
         dataRefreshController.stop()
         super.onPause()
     }
@@ -621,6 +647,7 @@ class MainActivity : ComponentActivity() {
             setContent {
                 MobileAssistantScreen(
                     session = session,
+                    sessionUiState = sessionUiState,
                     dashboardState = dashboardStateHolder.state,
                     photoTasks = orderedPhotoTasks(),
                     scannerState = scannerStateHolder.state,
@@ -670,6 +697,7 @@ class MainActivity : ComponentActivity() {
                     onSubmitPairing = { submitPairing() },
                     onShowPairingHelp = pairingStateHolder::showHelp,
                     onPairingBack = { pairingStateHolder.back() },
+                    onRetrySession = { retrySavedSessionVerification() },
                     onSettingsAction = ::handleSettingsAction,
                     onDashboardAction = ::handleDashboardAction,
                     onRefreshCurrentTab = ::refreshCurrentTab,
@@ -911,13 +939,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun verifySavedSession(showInitialTransition: Boolean = true) {
-        val token = sessionStore.readToken()
+        val savedSession = session ?: sessionStore.readSavedSessionOrNull() ?: return
+        val token = savedSession.token.trim()
         val baseUrl = sessionStore.readBaseUrl()
 
-        if (token.isBlank()) {
+        if (token.isBlank() || savedSessionVerificationInFlight) {
             return
         }
 
+        savedSessionVerificationInFlight = true
+        session = savedSession
+        sessionUiState = MobileSessionUiState.CHECKING
+        render()
         if (showInitialTransition) {
             showSessionTransition(activeStepIndex = 0, progress = 18)
         }
@@ -927,48 +960,121 @@ class MainActivity : ComponentActivity() {
                 mobileApiClientForBaseUrl(baseUrl, sessionStore).verifySession(token)
             }.onSuccess { verifiedSession ->
                 runOnUiThread {
-                    if (session?.token != verifiedSession.token) {
-                        notificationPreferences = sessionStore.readNotificationPreferences()
-                        replaceSettingsSession()
-                        dashboardCoordinator.reset()
-                        ordersCoordinator.reset()
-                        scannerCoordinator.reset()
-                        productsCoordinator.reset()
-                        photoTasksCoordinator.reset()
-                        notificationsCoordinator.reset()
-                        messagesCoordinator.reset()
-                        clearMobileProductsState()
-                        clearMobileNotificationsState()
-                    }
-                    session = verifiedSession
-                    scannerCoordinator.resumePendingLaunch(verifiedSession.token)
-                    syncPushInstallation(verifiedSession)
-                    render()
-                    showSessionTransition(activeStepIndex = 2, progress = 78)
-                    setStatus("Telefon jest połączony.")
-                    completeSessionTransition {
-                        requestNotificationPermissionIfNeeded()
-                        DlaFlowBackgroundSyncService.start(this)
-                        startPhotoTaskDispatchPolling()
-                        dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
-                        notificationsCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
-                        messagesCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
-                        photoTasksCoordinator.refresh(verifiedSession.token)
-                        refreshAppUpdate(showStatus = false)
-                        if (selectedTab == MobileAssistantTab.ORDERS) {
-                            ensureOrdersLoaded()
+                    if (!isCurrentSessionToken(token) || !isStoredSessionToken(token)) {
+                        savedSessionVerificationInFlight = false
+                        if (sessionStore.readToken().isBlank()) {
+                            clearRevokedSession()
                         }
-                        openPendingMessageThreadIfReady()
+                        return@runOnUiThread
                     }
+                    finishSavedSessionVerification(verifiedSession)
                 }
-            }.onFailure {
+            }.onFailure { error ->
                 runOnUiThread {
-                    if (!handleMobileApiFailure(it, "Zapisane połączenie wygasło. Sparuj telefon ponownie.", confirmUnauthorized = false)) {
-                        hideSessionTransition()
+                    if (!isCurrentSessionToken(token) || !isStoredSessionToken(token)) {
+                        savedSessionVerificationInFlight = false
+                        if (sessionStore.readToken().isBlank()) {
+                            clearRevokedSession()
+                        }
+                        return@runOnUiThread
                     }
-                    scannerCoordinator.failPendingLaunch()
+                    if (isConfirmedMobileSessionUnauthorized(error)) {
+                        confirmRevokedSession(
+                            error = error,
+                            fallbackMessage = "Zapisane połączenie wygasło. Sparuj telefon ponownie.",
+                            showNonAuthStatus = false,
+                            onSessionValid = {
+                                if (isCurrentSessionToken(token)) {
+                                    finishSavedSessionVerification(session ?: savedSession)
+                                }
+                            },
+                            onSessionUnconfirmed = {},
+                            onSessionUnconfirmedWithError = ::markSavedSessionVerificationOffline,
+                        )
+                    } else {
+                        markSavedSessionVerificationOffline(error)
+                    }
                 }
             }
+        }
+    }
+
+    private fun retrySavedSessionVerification() {
+        if (session == null || savedSessionVerificationInFlight) {
+            return
+        }
+
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
+        savedSessionRetryAttempt = 0
+        sessionUiState = MobileSessionUiState.CHECKING
+        render()
+        verifySavedSession(showInitialTransition = false)
+    }
+
+    private fun scheduleSavedSessionRetry() {
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
+        if (!appInForeground) {
+            return
+        }
+        val delayMs = mobileSessionRetryDelayMs(savedSessionRetryAttempt)
+        savedSessionRetryAttempt = (savedSessionRetryAttempt + 1).coerceAtMost(4)
+        dispatchHandler.postDelayed(savedSessionRetryRunnable, delayMs)
+    }
+
+    private fun markSavedSessionVerificationOffline(error: Throwable) {
+        savedSessionVerificationInFlight = false
+        sessionUiState = MobileSessionUiState.OFFLINE
+        setStatus(mobileApiBusinessMessage(error, "Połączenie z panelem jest chwilowo niedostępne."))
+        scannerCoordinator.failPendingLaunch()
+        hideSessionTransition()
+        render()
+        if (isRetryableSavedSessionFailure(error)) {
+            scheduleSavedSessionRetry()
+        }
+    }
+
+    private fun finishSavedSessionVerification(verifiedSession: MobileSession) {
+        savedSessionVerificationInFlight = false
+        savedSessionRetryAttempt = 0
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
+        if (session?.token != verifiedSession.token) {
+            notificationPreferences = sessionStore.readNotificationPreferences()
+            replaceSettingsSession()
+            dashboardCoordinator.reset()
+            ordersCoordinator.reset()
+            scannerCoordinator.reset()
+            productsCoordinator.reset()
+            photoTasksCoordinator.reset()
+            notificationsCoordinator.reset()
+            messagesCoordinator.reset()
+            clearMobileProductsState()
+            clearMobileNotificationsState()
+        }
+        session = verifiedSession
+        sessionUiState = MobileSessionUiState.CONNECTED
+        if (appInForeground) {
+            dataRefreshController.start()
+        }
+        scannerCoordinator.resumePendingLaunch(verifiedSession.token)
+        syncPushInstallation(verifiedSession)
+        render()
+        if (!contentReadyForDisplay) {
+            showSessionTransition(activeStepIndex = 2, progress = 78)
+        }
+        setStatus("Telefon jest połączony.")
+        completeSessionTransition {
+            requestNotificationPermissionIfNeeded()
+            DlaFlowBackgroundSyncService.start(this)
+            startPhotoTaskDispatchPolling()
+            dashboardCoordinator.refresh(verifiedSession.token, showFeedback = false)
+            notificationsCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
+            messagesCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
+            photoTasksCoordinator.refresh(verifiedSession.token)
+            refreshAppUpdate(showStatus = false)
+            if (selectedTab == MobileAssistantTab.ORDERS) {
+                ensureOrdersLoaded()
+            }
+            openPendingMessageThreadIfReady()
         }
     }
 
@@ -1007,6 +1113,14 @@ class MainActivity : ComponentActivity() {
         clearMobileProductsState()
         clearMobileNotificationsState()
         session = nextSession
+        startupHasSavedSession = true
+        savedSessionVerificationInFlight = false
+        savedSessionRetryAttempt = 0
+        sessionUiState = MobileSessionUiState.CONNECTED
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
+        if (appInForeground) {
+            dataRefreshController.start()
+        }
         syncPushInstallation(nextSession)
         pairingStateHolder.reset()
         render()
@@ -2455,6 +2569,7 @@ class MainActivity : ComponentActivity() {
         showNonAuthStatus: Boolean,
         onSessionValid: () -> Unit = {},
         onSessionUnconfirmed: () -> Unit = {},
+        onSessionUnconfirmedWithError: (Throwable) -> Unit = {},
     ) {
         val currentSession = session
         if (currentSession == null) {
@@ -2469,6 +2584,7 @@ class MainActivity : ComponentActivity() {
         executor.execute {
             var sessionConfirmedValid = false
             var sessionUnconfirmed = false
+            var sessionUnconfirmedError: Throwable? = null
             val shouldClearSession = shouldClearMobileSessionAfterUnauthorized(
                 error = error,
                 verifyCurrentSession = {
@@ -2476,6 +2592,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onSessionValid = { sessionConfirmedValid = true },
                 onSessionUnconfirmed = { sessionUnconfirmed = true },
+                onSessionUnconfirmedWithError = { sessionUnconfirmedError = it },
             )
 
             runOnUiThread {
@@ -2493,6 +2610,7 @@ class MainActivity : ComponentActivity() {
                         onSessionValid()
                     } else if (sessionUnconfirmed) {
                         onSessionUnconfirmed()
+                        sessionUnconfirmedError?.let(onSessionUnconfirmedWithError)
                     }
                 }
             }
@@ -2520,6 +2638,10 @@ class MainActivity : ComponentActivity() {
 
     private fun isCurrentSessionToken(token: String): Boolean {
         return session?.token == token
+    }
+
+    private fun isStoredSessionToken(token: String): Boolean {
+        return isSameMobileSessionToken(sessionStore.readToken(), token)
     }
 
     private fun clearMobileProductsData(invalidateCallbacks: Boolean = false) {
@@ -2567,6 +2689,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearDisconnectedSession(message: String) {
+        dispatchHandler.removeCallbacks(savedSessionRetryRunnable)
+        savedSessionVerificationInFlight = false
+        savedSessionRetryAttempt = 0
+        startupHasSavedSession = false
+        dataRefreshController.stop()
         sessionStore.clearSession()
         MobileImageCache.clearAll(cacheDir)
         DlaFlowBackgroundSyncService.stop(this)
@@ -2590,6 +2717,7 @@ class MainActivity : ComponentActivity() {
         clearMobileNotificationsState()
         selectedTab = MobileAssistantTab.DASHBOARD
         pairingStateHolder.reset()
+        sessionUiState = MobileSessionUiState.PAIRING
         contentReadyForDisplay = true
         render()
         setStatus(message)

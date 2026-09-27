@@ -41,7 +41,8 @@ class SessionTransitionOverlayTest {
         assertTrue(onCreateSource.contains("screenView.doOnPreDraw"))
         assertTrue(onCreateSource.contains("dispatchHandler.post(::startInitialContent)"))
         assertTrue(source.contains("private fun startInitialContent()"))
-        assertTrue(source.contains("startupHasSavedSession = sessionStore.readToken().isNotBlank()"))
+        assertTrue(source.contains("startupHasSavedSession = savedSession != null"))
+        assertTrue(source.contains("session = savedSession"))
         assertTrue(onResumeSource.contains("if (!::sessionStore.isInitialized)"))
         assertTrue(source.contains("screenView.addView(composeView, 0"))
     }

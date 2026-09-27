@@ -294,6 +294,7 @@ private fun toneColorKey(tone: String): String {
 @Composable
 internal fun MobileAssistantScreen(
     session: MobileSession?,
+    sessionUiState: MobileSessionUiState = if (session == null) MobileSessionUiState.PAIRING else MobileSessionUiState.CONNECTED,
     dashboardState: DashboardUiState,
     photoTasks: List<MobilePhotoTask>,
     scannerState: ScannerUiState,
@@ -335,6 +336,7 @@ internal fun MobileAssistantScreen(
     onSubmitPairing: () -> Unit,
     onShowPairingHelp: () -> Unit,
     onPairingBack: () -> Unit,
+    onRetrySession: () -> Unit = {},
     onSettingsAction: (SettingsAction) -> Unit,
     onDashboardAction: (DashboardAction) -> Unit,
     onRefreshCurrentTab: () -> Unit = {},
@@ -355,13 +357,13 @@ internal fun MobileAssistantScreen(
 ) {
     val dashboard = dashboardState.contentOrNull()
     val dark = isSystemInDarkTheme()
-    val route = if (session == null) {
-        MobileRoute.Pairing(
+    val route = when (mobileSessionRoute(sessionUiState)) {
+        MobileSessionRoute.PAIRING -> MobileRoute.Pairing(
             helpVisible = pairingState.step == PairingStep.HELP,
             nameVisible = pairingState.step == PairingStep.NAME,
         )
-    } else {
-        MobileRoute.Assistant(
+        MobileSessionRoute.RECOVERY -> MobileRoute.Recovery
+        MobileSessionRoute.ASSISTANT -> MobileRoute.Assistant(
             selectedTab = selectedTab,
             overlayScreen = mobileOverlayScreen,
             orderDetailVisible = ordersState.route is OrdersRoute.Detail,
@@ -369,6 +371,7 @@ internal fun MobileAssistantScreen(
             settingsDetailVisible = settingsState.route is SettingsRoute.Detail,
         )
     }
+    val assistantVisible = route is MobileRoute.Assistant && session != null
     val backAction = mobileAssistantBackAction(route)
 
     DlaFlowTheme(dark = dark) { colors ->
@@ -389,7 +392,7 @@ internal fun MobileAssistantScreen(
             containerColor = colors.appBg,
             contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
-                if (session != null) {
+                if (assistantVisible) {
                     Column(modifier = Modifier.fillMaxWidth().background(colors.appBg)) {
                         if (selectedTab == MobileAssistantTab.MESSAGES && messagesState.detailContentOrNull() != null && !messagesState.isRefreshingThread) {
                             MessageReplyComposer(colors, messagesState, onMessagesAction, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
@@ -411,8 +414,8 @@ internal fun MobileAssistantScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                if (session == null) {
-                    PairingFeatureScreen(
+                when {
+                    route is MobileRoute.Pairing -> PairingFeatureScreen(
                         colors = colors,
                         state = pairingState,
                         appVersionName = appVersionName,
@@ -425,55 +428,62 @@ internal fun MobileAssistantScreen(
                         onShowHelp = onShowPairingHelp,
                         onBack = onPairingBack,
                     )
-                } else {
-                AssistantContent(
-                    colors = colors,
-                    apiUrl = apiUrl,
-                    session = session,
-                    dashboardState = dashboardState,
-                    dashboard = dashboard,
-                    photoTasks = photoTasks,
-                    scannerState = scannerState,
-                    statusMessage = statusMessage,
-                    selectedTab = selectedTab,
-                    mobileProducts = mobileProducts,
-                    mobileProductsNextCursor = mobileProductsNextCursor,
-                    mobileProductsTotal = mobileProductsTotal,
-                    mobileProductsLoading = mobileProductsLoading,
-                    mobileProductsSearch = mobileProductsSearch,
-                    mobileProductsFilter = mobileProductsFilter,
-                    mobileProductVariants = mobileProductVariants,
-                    mobileProductVariantsLoading = mobileProductVariantsLoading,
-                    mobileProductsReadOnly = mobileProductsReadOnly,
-                    mobileProductsNoAccess = mobileProductsNoAccess,
-                    mobileOverlayScreen = mobileOverlayScreen,
-                    mobileNotifications = mobileNotifications,
-                    mobileNotificationsLoading = mobileNotificationsLoading,
-                    mobileNotificationFilter = mobileNotificationFilter,
-                    messagesState = messagesState,
-                    settingsState = settingsState,
-                    settingsContent = settingsContent,
-                    ordersState = ordersState,
-                    onSettingsAction = onSettingsAction,
-                    onDashboardAction = onDashboardAction,
-                    onRefreshCurrentTab = onRefreshCurrentTab,
-                    onOrdersAction = onOrdersAction,
-                    onProductsSearchChange = onProductsSearchChange,
-                    onProductsFilterChange = onProductsFilterChange,
-                    onLoadMoreProducts = onLoadMoreProducts,
-                    onToggleProductVariants = onToggleProductVariants,
-                    onQuickEditProduct = onQuickEditProduct,
-                    onQuickEditVariant = onQuickEditVariant,
-                    onCloseOverlay = onCloseOverlay,
-                    onNotificationFilterChange = onNotificationFilterChange,
-                    onMarkNotificationsRead = onMarkNotificationsRead,
-                    onMessagesAction = onMessagesAction,
-                    onSelectTab = onSelectTab,
+                    route is MobileRoute.Recovery -> SessionRecoveryFeatureScreen(
+                        colors = colors,
+                        state = sessionUiState,
+                        session = session,
+                        onRetry = onRetrySession,
                     )
+                    assistantVisible -> session?.let { activeSession ->
+                        AssistantContent(
+                            colors = colors,
+                            apiUrl = apiUrl,
+                            session = activeSession,
+                            dashboardState = dashboardState,
+                            dashboard = dashboard,
+                            photoTasks = photoTasks,
+                            scannerState = scannerState,
+                            statusMessage = statusMessage,
+                            selectedTab = selectedTab,
+                            mobileProducts = mobileProducts,
+                            mobileProductsNextCursor = mobileProductsNextCursor,
+                            mobileProductsTotal = mobileProductsTotal,
+                            mobileProductsLoading = mobileProductsLoading,
+                            mobileProductsSearch = mobileProductsSearch,
+                            mobileProductsFilter = mobileProductsFilter,
+                            mobileProductVariants = mobileProductVariants,
+                            mobileProductVariantsLoading = mobileProductVariantsLoading,
+                            mobileProductsReadOnly = mobileProductsReadOnly,
+                            mobileProductsNoAccess = mobileProductsNoAccess,
+                            mobileOverlayScreen = mobileOverlayScreen,
+                            mobileNotifications = mobileNotifications,
+                            mobileNotificationsLoading = mobileNotificationsLoading,
+                            mobileNotificationFilter = mobileNotificationFilter,
+                            messagesState = messagesState,
+                            settingsState = settingsState,
+                            settingsContent = settingsContent,
+                            ordersState = ordersState,
+                            onSettingsAction = onSettingsAction,
+                            onDashboardAction = onDashboardAction,
+                            onRefreshCurrentTab = onRefreshCurrentTab,
+                            onOrdersAction = onOrdersAction,
+                            onProductsSearchChange = onProductsSearchChange,
+                            onProductsFilterChange = onProductsFilterChange,
+                            onLoadMoreProducts = onLoadMoreProducts,
+                            onToggleProductVariants = onToggleProductVariants,
+                            onQuickEditProduct = onQuickEditProduct,
+                            onQuickEditVariant = onQuickEditVariant,
+                            onCloseOverlay = onCloseOverlay,
+                            onNotificationFilterChange = onNotificationFilterChange,
+                            onMarkNotificationsRead = onMarkNotificationsRead,
+                            onMessagesAction = onMessagesAction,
+                            onSelectTab = onSelectTab,
+                        )
+                    }
                 }
             }
             }
-            if (session != null) {
+            if (assistantVisible) {
                 RefreshPopupOverlay(
                     colors = colors,
                     visible = shouldShowRefreshOverlay(
@@ -494,7 +504,7 @@ internal fun MobileAssistantScreen(
                 )
             }
         }
-        if (session != null && appUpdateDialogVisible && appUpdate != null) {
+        if (assistantVisible && appUpdateDialogVisible && appUpdate != null) {
             MobileAppUpdateDialog(
                 colors = colors,
                 update = appUpdate,

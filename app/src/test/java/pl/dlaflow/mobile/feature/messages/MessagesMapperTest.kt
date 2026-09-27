@@ -7,8 +7,10 @@ import org.junit.Test
 import pl.dlaflow.mobile.MobileMessage
 import pl.dlaflow.mobile.MobileMessageAttachment
 import pl.dlaflow.mobile.MobileMessageBuyer
+import pl.dlaflow.mobile.MobileMessageCustomerContext
 import pl.dlaflow.mobile.MobileMessageOrderLink
 import pl.dlaflow.mobile.MobileMessagePreview
+import pl.dlaflow.mobile.MobileMessageRelatedOffer
 import pl.dlaflow.mobile.MobileMessageThread
 import pl.dlaflow.mobile.MobileMessageThreadDetail
 import pl.dlaflow.mobile.MobileMessagesPage
@@ -75,6 +77,90 @@ class MessagesMapperTest {
         assertEquals(0, page.unreadCount)
         assertNull(page.nextCursor)
         assertEquals(0, page.items.single().messageCount)
+    }
+
+    @Test
+    fun `message text keeps Polish characters and removes provider html from body preview and subject`() {
+        val mojibake = "Dzie\u00C5\u201E dobry za\u00C5\u00BC\u00C3\u00B3\u00C5\u201A\u00C4\u2021"
+        val rawBody = "<p>$mojibake&nbsp;</p><br><strong>Odbiór</strong> &amp; płatność"
+        val thread = fixtureThread(
+            subject = "&lt;strong&gt;Pytanie o wysyłkę&lt;/strong&gt;",
+        ).copy(lastMessage = MobileMessagePreview(rawBody, "inbound", "2026-08-24T10:00:00Z"))
+
+        val listItem = thread.toMessageListItem()
+        assertEquals("Pytanie o wysyłkę", listItem.subject)
+        assertEquals("Dzień dobry zażółć Odbiór & płatność", listItem.preview?.body)
+
+        val detail = fixtureDetail().copy(
+            subject = "<div>Temat zażółć</div>",
+            messages = listOf(
+                MobileMessage(
+                    id = "inbound-1",
+                    author = "Klient",
+                    direction = "inbound",
+                    body = rawBody,
+                    messageAt = "2026-08-24T10:00:00Z",
+                    status = "received",
+                    attachments = emptyList(),
+                ),
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Temat zażółć", detail.subject)
+        assertEquals("Dzień dobry zażółć\nOdbiór & płatność", detail.messages.single().body)
+    }
+
+    @Test
+    fun `message html active content is not shown as visible text`() {
+        val bubble = MobileMessage(
+            id = "message-unsafe",
+            author = "Klient",
+            direction = "inbound",
+            body = "<script>alert('x')</script><style>.hidden{display:none}</style><div>Bezpieczna treść</div>",
+            messageAt = "2026-08-24T10:00:00Z",
+            status = "received",
+            attachments = emptyList(),
+        ).toMessageBubble()
+
+        assertEquals("Bezpieczna treść", bubble.body)
+    }
+
+    @Test
+    fun `related offer title removes html and keeps order context`() {
+        val detail = fixtureDetail().copy(
+            orderLink = MobileMessageOrderLink("ORD-1001", "order-1001"),
+            customerContext = MobileMessageCustomerContext(1, "2025-01-01", "PLN", 2, 149.99),
+            relatedOffer = MobileMessageRelatedOffer(
+                offerId = "1234567890",
+                title = "&lt;strong&gt;Bluza Classic&lt;/strong&gt;",
+                sku = "BLUZA-01",
+                image = "/api/mobile/products/media/product.webp?variant=thumb",
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Bluza Classic", detail.relatedOffer?.title)
+        assertEquals("BLUZA-01", detail.relatedOffer?.sku)
+        assertEquals("/api/mobile/products/media/product.webp?variant=thumb", detail.relatedOffer?.image)
+        assertEquals("1234567890", detail.relatedOffer?.offerId)
+        assertEquals("ORD-1001", detail.relatedOrder?.orderNumber)
+        assertEquals(2, detail.customerContext?.orderCount)
+    }
+
+    @Test
+    fun `missing offer catalog entry uses Allegro offer fallback and rejects external image`() {
+        val detail = fixtureDetail().copy(
+            relatedOffer = MobileMessageRelatedOffer(
+                offerId = "1234567890",
+                title = " ",
+                sku = " ",
+                image = "https://outside.example.test/api/mobile/products/media/product.webp?variant=thumb",
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Oferta Allegro #1234567890", detail.relatedOffer?.title)
+        assertEquals("", detail.relatedOffer?.sku)
+        assertEquals("", detail.relatedOffer?.image)
+        assertEquals("1234567890", detail.relatedOffer?.offerId)
     }
 
     private fun fixtureThread(

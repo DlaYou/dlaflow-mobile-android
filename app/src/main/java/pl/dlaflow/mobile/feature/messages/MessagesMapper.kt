@@ -8,8 +8,12 @@ import pl.dlaflow.mobile.MobileMessageThreadDetail
 import pl.dlaflow.mobile.MobileMessageOperation
 import pl.dlaflow.mobile.MobileMessagesPage
 import pl.dlaflow.mobile.MobileMessageOrderLink
+import pl.dlaflow.mobile.MobileMessageRelatedOffer
 import pl.dlaflow.mobile.normalizeMobileOrderMediaUrl
 import pl.dlaflow.mobile.MobileOrderDetail
+import pl.dlaflow.mobile.core.text.normalizeMessageBodyText
+import pl.dlaflow.mobile.core.text.normalizeMessagePreviewText
+import pl.dlaflow.mobile.core.text.normalizeMessageText
 
 internal fun MobileMessagesPage.toMessagesContent(): MessagesContent = MessagesContent(
     items = items.map(MobileMessageThread::toMessageListItem),
@@ -25,9 +29,9 @@ internal fun MobileMessageThread.toMessageListItem(): MessageListItem {
         providerId = safeProvider,
         integrationId = integrationId.clean(),
         providerLabel = providerLabel(safeProvider),
-        customerName = buyer.name.clean().ifBlank { "Nieznany klient" },
+        customerName = normalizeMessageText(buyer.name).ifBlank { "Nieznany klient" },
         customerLogin = buyer.login.clean(),
-        subject = subject.clean().ifBlank { "Bez tematu" },
+        subject = normalizeMessageText(subject).ifBlank { "Bez tematu" },
         preview = lastMessage?.toMessagePreview(),
         lastMessageAt = lastMessageAt.clean(),
         messageCount = messageCount.coerceAtLeast(0),
@@ -46,10 +50,10 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         providerId = safeProvider,
         integrationId = integrationId.clean(),
         providerLabel = providerLabel(safeProvider),
-        customerName = buyer.name.clean().ifBlank { "Nieznany klient" },
+        customerName = normalizeMessageText(buyer.name).ifBlank { "Nieznany klient" },
         customerLogin = buyer.login.clean(),
         customerEmail = buyer.email.cleanNullable(),
-        subject = subject.clean().ifBlank { "Bez tematu" },
+        subject = normalizeMessageText(subject).ifBlank { "Bez tematu" },
         lastMessageAt = lastMessageAt.clean(),
         readAt = readAt.cleanNullable(),
         status = status.clean(),
@@ -58,6 +62,7 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         messages = messages.map(MobileMessage::toMessageBubble),
         nextCursor = nextCursor.cleanNullable(),
         relatedOrder = orderLink?.toMessageRelatedOrderFallback(),
+        relatedOffer = relatedOffer?.toMessageRelatedOffer(),
         customerContext = customerContext?.let {
             MessageCustomerContext(
                 orderCount = it.orderCount.coerceAtLeast(0),
@@ -67,6 +72,21 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
                 activeConversationCount = it.activeConversationCount.coerceAtLeast(0),
             )
         },
+    )
+}
+
+private val safeRelatedOfferImagePattern = Regex("/api/mobile/products/media/[A-Za-z0-9][A-Za-z0-9._-]*(?:\\?variant=thumb)?")
+
+private fun MobileMessageRelatedOffer.toMessageRelatedOffer(): MessageRelatedOffer? {
+    val safeOfferId = offerId.clean().take(128)
+    if (safeOfferId.isBlank()) return null
+
+    val imagePath = image?.trim()?.takeIf(safeRelatedOfferImagePattern::matches).orEmpty()
+    return MessageRelatedOffer(
+        offerId = safeOfferId,
+        title = normalizeMessageText(title).ifBlank { "Oferta Allegro #$safeOfferId" },
+        sku = normalizeMessageText(sku).take(128),
+        image = imagePath,
     )
 }
 
@@ -107,20 +127,21 @@ internal fun MobileMessageOperation.toMessageOperation(): MessageOperation = Mes
     queued = queued,
     duplicate = duplicate,
     status = status.clean(),
+    readAt = readAt.cleanNullable(),
 )
 
 internal fun MobileMessage.toMessageBubble(): MessageBubble = MessageBubble(
     id = id.clean(),
-    author = author.clean().ifBlank { "Wiadomość" },
+    author = normalizeMessageText(author).ifBlank { "Wiadomość" },
     direction = direction.toMessageDirection(),
-    body = body.clean(),
+    body = normalizeMessageBodyText(body),
     messageAt = messageAt.clean(),
     status = status.clean(),
     attachments = attachments.map(MobileMessageAttachment::toMessageAttachment),
 )
 
 private fun pl.dlaflow.mobile.MobileMessagePreview.toMessagePreview() = MessagePreview(
-    body = body.clean(),
+    body = normalizeMessagePreviewText(body),
     direction = direction.toMessageDirection(),
     messageAt = messageAt.clean(),
 )

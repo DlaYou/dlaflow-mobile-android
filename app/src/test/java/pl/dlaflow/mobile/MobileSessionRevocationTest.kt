@@ -1,12 +1,28 @@
 package pl.dlaflow.mobile
 
 import java.io.File
+import java.net.SocketTimeoutException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import pl.dlaflow.mobile.core.network.MobileApiException
 
 class MobileSessionRevocationTest {
+    @Test
+    fun `network failure is retryable without treating the saved session as revoked`() {
+        assertTrue(isRetryableSavedSessionFailure(SocketTimeoutException()))
+        assertTrue(isRetryableSavedSessionFailure(MobileApiException(503, "SERVER_ERROR", "temporary")))
+        assertFalse(isRetryableSavedSessionFailure(MobileApiException(403, "FORBIDDEN", "forbidden")))
+        assertFalse(isRetryableSavedSessionFailure(MobileApiException(401, "AUTH_REQUIRED", "expired")))
+    }
+
+    @Test
+    fun `only http 401 starts session revocation confirmation`() {
+        assertTrue(isConfirmedMobileSessionUnauthorized(MobileApiException(401, "AUTH_REQUIRED", "expired")))
+        assertFalse(isConfirmedMobileSessionUnauthorized(MobileApiException(403, "AUTH_REQUIRED", "forbidden")))
+        assertFalse(isConfirmedMobileSessionUnauthorized(MobileApiException(500, "AUTH_REQUIRED", "temporary")))
+    }
+
     @Test
     fun `unauthorized action does not clear session when mobile session is still valid`() {
         val shouldClear = shouldClearMobileSessionAfterUnauthorized(
@@ -38,6 +54,19 @@ class MobileSessionRevocationTest {
 
         assertFalse(shouldClear)
         assertTrue(unconfirmedCallbackCount == 1)
+    }
+
+    @Test
+    fun `temporary verification failure exposes the verification error for retry decisions`() {
+        var verificationError: Throwable? = null
+
+        shouldClearMobileSessionAfterUnauthorized(
+            error = MobileApiException(401, "AUTH_REQUIRED", "Authentication is required."),
+            verifyCurrentSession = { throw SocketTimeoutException("offline") },
+            onSessionUnconfirmedWithError = { verificationError = it },
+        )
+
+        assertTrue(verificationError is SocketTimeoutException)
     }
 
     @Test
