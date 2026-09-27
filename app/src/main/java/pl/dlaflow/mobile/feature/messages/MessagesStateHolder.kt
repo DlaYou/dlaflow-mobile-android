@@ -601,6 +601,7 @@ internal class MessagesStateHolder {
         return current.copy(
             messages = (incoming.messages + current.messages).distinctBy(MessageBubble::id),
             nextCursor = incoming.nextCursor,
+            relatedOffer = incoming.relatedOffer ?: current.relatedOffer,
         )
     }
 

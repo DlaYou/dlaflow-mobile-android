@@ -784,6 +784,12 @@ class MobileApiClientTest {
                     "readAt": null,
                     "status": "unread",
                     "orderLink": null,
+                    "relatedOffer": {
+                        "offerId": "1234567890",
+                        "title": "Bluza Classic",
+                        "sku": "BLUZA-01",
+                        "image": "/api/mobile/products/media/0123456789abcdef0123456789abcdef.webp?variant=thumb"
+                    },
                     "customerContext": {"orderCount": 2, "totalOrderAmount": 99.5, "currency": "PLN", "customerSince": "2025-01-01", "activeConversationCount": 1},
                     "messages": [{
                         "id": "message-1",
@@ -807,6 +813,27 @@ class MobileApiClientTest {
             assertEquals("invoice.pdf", detail.messages.single().attachments.single().filename)
             assertEquals("/api/orders/messages/media/invoice.pdf", detail.messages.single().attachments.single().url)
             assertEquals(2, detail.customerContext?.orderCount)
+            assertEquals("1234567890", detail.relatedOffer?.offerId)
+            assertEquals("Bluza Classic", detail.relatedOffer?.title)
+            assertEquals("BLUZA-01", detail.relatedOffer?.sku)
+            assertEquals("/api/mobile/products/media/0123456789abcdef0123456789abcdef.webp?variant=thumb", detail.relatedOffer?.image)
+        }
+    }
+
+    @Test
+    fun `message detail bounds offer ids and rejects external related offer images`() {
+        val oversizedOfferId = "o".repeat(150)
+        val oversizedOfferTitle = "t".repeat(600)
+        val oversizedOfferSku = "s".repeat(160)
+        withSingleJsonResponse(
+            """{"data":{"id":"thread-offer","relatedOffer":{"offerId":"$oversizedOfferId","title":"$oversizedOfferTitle","sku":"$oversizedOfferSku","image":"https://outside.example.test/api/mobile/products/media/pic.webp?variant=thumb"}}}""",
+        ) { client, _ ->
+            val relatedOffer = client.getMessageThread("token", "thread-offer", null, 20).relatedOffer
+
+            assertEquals(128, relatedOffer?.offerId?.length)
+            assertEquals(500, relatedOffer?.title?.length)
+            assertEquals(128, relatedOffer?.sku?.length)
+            assertNull(relatedOffer?.image)
         }
     }
 
@@ -847,6 +874,7 @@ class MobileApiClientTest {
 
             assertTrue(detail.messages.single().body.length > 2_000)
             assertTrue(detail.messages.single().body.contains("Drewniany Bon na Pieniądze Prezent na Imieniny Urodziny 9x14cm"))
+            assertNull(detail.relatedOffer)
         }
     }
 

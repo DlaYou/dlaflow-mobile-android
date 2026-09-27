@@ -8,6 +8,7 @@ import pl.dlaflow.mobile.MobileMessageThreadDetail
 import pl.dlaflow.mobile.MobileMessageOperation
 import pl.dlaflow.mobile.MobileMessagesPage
 import pl.dlaflow.mobile.MobileMessageOrderLink
+import pl.dlaflow.mobile.MobileMessageRelatedOffer
 import pl.dlaflow.mobile.normalizeMobileOrderMediaUrl
 import pl.dlaflow.mobile.MobileOrderDetail
 import pl.dlaflow.mobile.core.text.normalizeMessageBodyText
@@ -61,6 +62,7 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
         messages = messages.map(MobileMessage::toMessageBubble),
         nextCursor = nextCursor.cleanNullable(),
         relatedOrder = orderLink?.toMessageRelatedOrderFallback(),
+        relatedOffer = relatedOffer?.toMessageRelatedOffer(),
         customerContext = customerContext?.let {
             MessageCustomerContext(
                 orderCount = it.orderCount.coerceAtLeast(0),
@@ -70,6 +72,21 @@ internal fun MobileMessageThreadDetail.toMessageThreadDetail(): MessageThreadDet
                 activeConversationCount = it.activeConversationCount.coerceAtLeast(0),
             )
         },
+    )
+}
+
+private val safeRelatedOfferImagePattern = Regex("/api/mobile/products/media/[A-Za-z0-9][A-Za-z0-9._-]*(?:\\?variant=thumb)?")
+
+private fun MobileMessageRelatedOffer.toMessageRelatedOffer(): MessageRelatedOffer? {
+    val safeOfferId = offerId.clean().take(128)
+    if (safeOfferId.isBlank()) return null
+
+    val imagePath = image?.trim()?.takeIf(safeRelatedOfferImagePattern::matches).orEmpty()
+    return MessageRelatedOffer(
+        offerId = safeOfferId,
+        title = normalizeMessageText(title).ifBlank { "Oferta Allegro #$safeOfferId" },
+        sku = normalizeMessageText(sku).take(128),
+        image = imagePath,
     )
 }
 

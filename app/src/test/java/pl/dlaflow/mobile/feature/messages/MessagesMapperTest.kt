@@ -7,8 +7,10 @@ import org.junit.Test
 import pl.dlaflow.mobile.MobileMessage
 import pl.dlaflow.mobile.MobileMessageAttachment
 import pl.dlaflow.mobile.MobileMessageBuyer
+import pl.dlaflow.mobile.MobileMessageCustomerContext
 import pl.dlaflow.mobile.MobileMessageOrderLink
 import pl.dlaflow.mobile.MobileMessagePreview
+import pl.dlaflow.mobile.MobileMessageRelatedOffer
 import pl.dlaflow.mobile.MobileMessageThread
 import pl.dlaflow.mobile.MobileMessageThreadDetail
 import pl.dlaflow.mobile.MobileMessagesPage
@@ -121,6 +123,44 @@ class MessagesMapperTest {
         ).toMessageBubble()
 
         assertEquals("Bezpieczna treść", bubble.body)
+    }
+
+    @Test
+    fun `related offer title removes html and keeps order context`() {
+        val detail = fixtureDetail().copy(
+            orderLink = MobileMessageOrderLink("ORD-1001", "order-1001"),
+            customerContext = MobileMessageCustomerContext(1, "2025-01-01", "PLN", 2, 149.99),
+            relatedOffer = MobileMessageRelatedOffer(
+                offerId = "1234567890",
+                title = "&lt;strong&gt;Bluza Classic&lt;/strong&gt;",
+                sku = "BLUZA-01",
+                image = "/api/mobile/products/media/product.webp?variant=thumb",
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Bluza Classic", detail.relatedOffer?.title)
+        assertEquals("BLUZA-01", detail.relatedOffer?.sku)
+        assertEquals("/api/mobile/products/media/product.webp?variant=thumb", detail.relatedOffer?.image)
+        assertEquals("1234567890", detail.relatedOffer?.offerId)
+        assertEquals("ORD-1001", detail.relatedOrder?.orderNumber)
+        assertEquals(2, detail.customerContext?.orderCount)
+    }
+
+    @Test
+    fun `missing offer catalog entry uses Allegro offer fallback and rejects external image`() {
+        val detail = fixtureDetail().copy(
+            relatedOffer = MobileMessageRelatedOffer(
+                offerId = "1234567890",
+                title = " ",
+                sku = " ",
+                image = "https://outside.example.test/api/mobile/products/media/product.webp?variant=thumb",
+            ),
+        ).toMessageThreadDetail()
+
+        assertEquals("Oferta Allegro #1234567890", detail.relatedOffer?.title)
+        assertEquals("", detail.relatedOffer?.sku)
+        assertEquals("", detail.relatedOffer?.image)
+        assertEquals("1234567890", detail.relatedOffer?.offerId)
     }
 
     private fun fixtureThread(
