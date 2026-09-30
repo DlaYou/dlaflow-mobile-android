@@ -111,6 +111,50 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `customer message title prefers the channel label from the push payload`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość",
+            customerMessageNotificationTitle("gmail", " Gmail - Nowa wiadomość "),
+        )
+        assertEquals(
+            "Allegro - Nowa wiadomość",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość"),
+        )
+    }
+
+    @Test
+    fun `customer message title derives known channel when title is absent`() {
+        assertEquals("Gmail - Nowa wiadomość", customerMessageNotificationTitle("gmail", null))
+        assertEquals("Allegro - Nowa wiadomość", customerMessageNotificationTitle("ALLEGRO", " "))
+        assertEquals("E-mail - Nowa wiadomość", customerMessageNotificationTitle("email", null))
+        assertEquals("Social - Nowa wiadomość", customerMessageNotificationTitle("social", null))
+    }
+
+    @Test
+    fun `customer message title keeps legacy fallback for unknown or missing channel`() {
+        assertEquals(
+            "Nowa wiadomość od klienta",
+            customerMessageNotificationTitle("future-provider", null),
+        )
+        assertEquals(
+            "Nowa wiadomość od klienta",
+            customerMessageNotificationTitle(null, ""),
+        )
+    }
+
+    @Test
+    fun `customer message title strips control whitespace and stays bounded`() {
+        val title = customerMessageNotificationTitle(
+            "gmail",
+            "Gmail\n-\tNowa\u0000 wiadomość" + "x".repeat(200),
+        )
+
+        assertEquals(120, title.length)
+        assertFalse(title.any(Char::isISOControl))
+        assertFalse(title.contains("\n"))
+    }
+
+    @Test
     fun `canonical panel notification id overrides the legacy push fallback`() {
         assertEquals(
             "message:panel-canonical-123",
