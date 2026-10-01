@@ -108,6 +108,8 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
             title = customerMessageNotificationTitle(
                 providerId = message.data["providerId"],
                 suppliedTitle = message.data["title"],
+                senderName = message.data["senderName"],
+                isReply = message.data["isReply"].toBooleanPushFlag(),
             ),
             description = description,
             tone = "attention",
@@ -134,7 +136,21 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
  * payloads useful. Values are bounded and control characters are removed
  * before they reach Android's notification surface.
  */
-internal fun customerMessageNotificationTitle(providerId: String?, suppliedTitle: String?): String {
+internal fun customerMessageNotificationTitle(
+    providerId: String?,
+    suppliedTitle: String?,
+    senderName: String? = null,
+    isReply: Boolean = false,
+): String {
+    val channel = providerId?.trim()?.lowercase(Locale.ROOT)?.toCustomerMessageChannel()
+    val sender = senderName?.normalizeCustomerMessageSender()
+    if (channel != null && (sender != null || isReply)) {
+        val messageKind = if (isReply) "Odpowiedź na wiadomość" else "Nowa wiadomość"
+        return listOfNotNull("$channel - $messageKind", sender?.let { "od $it" })
+            .joinToString(" ")
+            .take(maxCustomerMessageNotificationTitleLength)
+    }
+
     val title = suppliedTitle
         ?.replace(notificationControlCharacters, " ")
         ?.replace(whitespaceCharacters, " ")
@@ -143,16 +159,28 @@ internal fun customerMessageNotificationTitle(providerId: String?, suppliedTitle
         .orEmpty()
     if (title.isNotBlank()) return title
 
-    val channel = when (providerId?.trim()?.lowercase(Locale.ROOT)) {
-        "gmail" -> "Gmail"
-        "allegro" -> "Allegro"
-        "woocommerce" -> "WooCommerce"
-        "inpost" -> "InPost"
-        "email" -> "E-mail"
-        "social" -> "Social"
-        else -> null
-    }
     return channel?.let { "$it - Nowa wiadomość" } ?: "Nowa wiadomość od klienta"
+}
+
+private fun String.toCustomerMessageChannel(): String? = when (this) {
+    "gmail" -> "Gmail"
+    "allegro" -> "Allegro"
+    "woocommerce" -> "WooCommerce"
+    "inpost" -> "InPost"
+    "email" -> "E-mail"
+    "social" -> "Social"
+    else -> null
+}
+
+private fun String.normalizeCustomerMessageSender(): String? = replace(notificationControlCharacters, " ")
+    .replace(whitespaceCharacters, " ")
+    .trim()
+    .take(maxCustomerMessageSenderLength)
+    .takeIf(String::isNotBlank)
+
+private fun String?.toBooleanPushFlag(): Boolean = when (this?.trim()?.lowercase(Locale.ROOT)) {
+    "1", "true", "yes", "y" -> true
+    else -> false
 }
 
 internal fun pushNotificationDeliveryId(
@@ -183,6 +211,7 @@ internal fun pushTargetMatchesDevice(targetDeviceId: String?, currentDeviceId: S
 private const val maxPushIdentifierLength = 200
 private const val maxPushDeviceIdLength = 80
 private const val maxCustomerMessageNotificationTitleLength = 120
+private const val maxCustomerMessageSenderLength = 80
 
 private val notificationControlCharacters = Regex("[\\u0000-\\u001F\\u007F]")
 private val whitespaceCharacters = Regex("\\s+")

@@ -131,6 +131,38 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `customer message title includes sender for Gmail and Allegro`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość od Anna Kowalska",
+            customerMessageNotificationTitle("gmail", "Gmail - Nowa wiadomość", " Anna\nKowalska ", false),
+        )
+        assertEquals(
+            "Allegro - Nowa wiadomość od kupujacy_123",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość", "kupujacy_123", false),
+        )
+    }
+
+    @Test
+    fun `customer message title labels a reply with sender`() {
+        assertEquals(
+            "Allegro - Odpowiedź na wiadomość od kupujacy_123",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość", "kupujacy_123", true),
+        )
+    }
+
+    @Test
+    fun `customer message title falls back when sender metadata is absent`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość",
+            customerMessageNotificationTitle("gmail", "Gmail - Nowa wiadomość", null, false),
+        )
+        assertEquals(
+            "Allegro - Odpowiedź na wiadomość",
+            customerMessageNotificationTitle("allegro", null, " ", true),
+        )
+    }
+
+    @Test
     fun `customer message title keeps legacy fallback for unknown or missing channel`() {
         assertEquals(
             "Nowa wiadomość od klienta",
@@ -201,6 +233,24 @@ class MobileNotificationsTest {
         assertTrue(isMessagesNotificationAction("OPEN_MESSAGES"))
         assertTrue(isMessagesNotificationAction("messages"))
         assertFalse(isMessagesNotificationAction("OPEN_LOGS_SUMMARY"))
+    }
+
+    @Test
+    fun `legacy message notification without mobile action still opens messages`() {
+        assertTrue(
+            isLegacyMessagesNotification(
+                actionType = "OPEN_LOGS_SUMMARY",
+                title = "Gmail - Nowa wiadomość",
+                description = "Odebrano nową wiadomość.",
+            ),
+        )
+        assertFalse(
+            isLegacyMessagesNotification(
+                actionType = "OPEN_ORDERS",
+                title = "Wiadomości synchronizacji",
+                description = "Sprawdź zamówienie.",
+            ),
+        )
     }
 
     @Test
