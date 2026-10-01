@@ -32,6 +32,14 @@ class DlaFlowDispatchJobService : JobService() {
         executor.execute {
             runCatching {
                 val client = mobileApiClientForSession(sessionStore)
+                runCatching {
+                    checkAndNotifyMobileAppUpdate(
+                        context = this,
+                        client = client,
+                        sessionStore = sessionStore,
+                        token = token,
+                    )
+                }
                 val capturedKey = NotificationSessionKey.create(sessionStore.readBaseUrl(), sessionStore.readDeviceId(), token)
                     ?: return@runCatching
                 NotificationsBackgroundRuntime.coordinator.poll(

@@ -121,6 +121,7 @@ import pl.dlaflow.mobile.feature.settings.SettingsCoordinator
 import pl.dlaflow.mobile.feature.settings.SettingsDisconnectRequest
 import pl.dlaflow.mobile.feature.settings.SettingsEffect
 import pl.dlaflow.mobile.feature.settings.SettingsInput
+import pl.dlaflow.mobile.feature.settings.SettingsKind
 import pl.dlaflow.mobile.feature.settings.SettingsNotificationPreference
 import pl.dlaflow.mobile.feature.settings.SettingsStateHolder
 import pl.dlaflow.mobile.feature.settings.SettingsTextResolver
@@ -380,6 +381,12 @@ class MainActivity : ComponentActivity() {
         }
         session?.token?.let(photoTasksCoordinator::refresh)
         ensureSelectedTabLoaded()
+        if (intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenAppUpdate, false)) {
+            selectedTab = MobileAssistantTab.MORE
+            settingsStateHolder.select(SettingsKind.APP)
+            refreshAppUpdate(showStatus = false)
+            intent.removeExtra(DlaFlowDeepLinks.extraOpenAppUpdate)
+        }
         openPendingMessageThreadIfReady()
     }
 
@@ -504,7 +511,12 @@ class MainActivity : ComponentActivity() {
             photoTasksCoordinator.mediaSelectionCancelled()
             setStatus("Aparat nie ma zgody. Możesz wybrać zdjęcie z telefonu.")
         } else if (requestCode == notificationPermissionRequestCode) {
-            setStatus(if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "Powiadomienia zadań włączone." else "Bez powiadomień otwórz aplikację, żeby zobaczyć zadania.")
+            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+                setStatus("Powiadomienia DlaFlow włączone.")
+                refreshAppUpdate(showStatus = false)
+            } else {
+                setStatus("Bez powiadomień otwórz aplikację, żeby zobaczyć zadania.")
+            }
         } else if (requestCode == phoneStatePermissionRequestCode) {
             if (hasCallerIdRuntimePermissions()) {
                 requestCallerIdRole()
@@ -1643,6 +1655,7 @@ class MainActivity : ComponentActivity() {
                     appUpdate = update
                     appUpdateDismissalState = sessionStore.readUpdateDismissalState()
                     appUpdateDialogVisible = shouldShowAppUpdateDialog(update)
+                    maybeShowAppUpdateNotification(update)
                     if (showStatus) {
                         setStatus(if (update == null) "Masz aktualną wersję aplikacji." else "Dostępna jest nowa wersja aplikacji.")
                     }
@@ -1658,6 +1671,16 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    private fun maybeShowAppUpdateNotification(update: MobileAppUpdate?) {
+        if (update == null || !DlaFlowNotifications.canPostNotifications(this)) {
+            return
+        }
+
+        if (sessionStore.claimUpdateNotification(update)) {
+            DlaFlowNotifications.showAppUpdateNotification(this, update)
         }
     }
 
@@ -2013,6 +2036,11 @@ class MainActivity : ComponentActivity() {
                 ?.take(200)
                 ?.takeIf { it.isNotBlank() }
             intent.removeExtra(DlaFlowDeepLinks.extraMessageThreadId)
+        }
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenAppUpdate, false) == true) {
+            selectedTab = MobileAssistantTab.MORE
+            settingsStateHolder.select(SettingsKind.APP)
+            statusMessage = "Sprawdzam dostępną aktualizację."
         }
         val taskId = intent?.getStringExtra(DlaFlowDeepLinks.extraFocusPhotoTaskId).orEmpty()
         if (taskId.isNotBlank()) {

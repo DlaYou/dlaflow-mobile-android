@@ -49,4 +49,12 @@ class NotificationLaunchIntentTest {
 
         assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenSettings, false))
     }
+
+    @Test
+    fun appUpdateNotificationIntentTargetsAppUpdateSection() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = DlaFlowDeepLinks.appUpdateIntent(context)
+
+        assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenAppUpdate, false))
+    }
 }

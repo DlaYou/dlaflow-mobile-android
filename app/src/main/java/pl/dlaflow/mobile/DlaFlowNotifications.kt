@@ -24,6 +24,7 @@ object DlaFlowDeepLinks {
     const val extraOpenDashboard = "pl.dlaflow.mobile.OPEN_DASHBOARD"
     const val extraOpenSettings = "pl.dlaflow.mobile.OPEN_SETTINGS"
     const val extraOpenMessages = "pl.dlaflow.mobile.OPEN_MESSAGES"
+    const val extraOpenAppUpdate = "pl.dlaflow.mobile.OPEN_APP_UPDATE"
     const val extraMessageThreadId = "pl.dlaflow.mobile.MESSAGE_THREAD_ID"
     const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
 
@@ -63,6 +64,12 @@ object DlaFlowDeepLinks {
             .apply { threadId?.trim()?.takeIf { it.isNotBlank() }?.let { putExtra(extraMessageThreadId, it.take(200)) } }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
+
+    fun appUpdateIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenAppUpdate, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
 }
 
 object DlaFlowNotifications {
@@ -70,11 +77,13 @@ object DlaFlowNotifications {
     const val photoTaskNotificationId = 2701
     const val callerIdNotificationId = 2702
     const val panelAlertNotificationId = 2703
+    const val appUpdateNotificationId = 2704
 
     private const val photoTaskChannelId = "product-photo-tasks"
     private const val callerIdChannelId = "caller-id"
     private const val backgroundChannelId = "mobile-background-sync"
     private const val panelAlertChannelId = "panel-alerts"
+    private const val appUpdateChannelId = "app-updates"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -95,11 +104,15 @@ object DlaFlowNotifications {
         val panelAlertChannel = NotificationChannel(panelAlertChannelId, "Powiadomienia panelu", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Ważne sprawy z panelu DlaFlow."
         }
+        val appUpdateChannel = NotificationChannel(appUpdateChannelId, "Aktualizacje aplikacji", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "Informacja o nowej wersji aplikacji DlaFlow."
+        }
 
         notificationManager.createNotificationChannel(photoTaskChannel)
         notificationManager.createNotificationChannel(callerIdChannel)
         notificationManager.createNotificationChannel(backgroundChannel)
         notificationManager.createNotificationChannel(panelAlertChannel)
+        notificationManager.createNotificationChannel(appUpdateChannel)
     }
 
     fun canPostNotifications(context: Context): Boolean {
@@ -235,6 +248,33 @@ object DlaFlowNotifications {
 
         return notifyIfAllowed(context, panelAlertNotificationId(notification.id), systemNotification)
     }
+
+    fun showAppUpdateNotification(context: Context, update: MobileAppUpdate): Boolean {
+        if (!canPostNotifications(context)) {
+            return false
+        }
+
+        val versionName = update.latestVersionName.ifBlank { "nowsza wersja" }
+        val systemNotification = NotificationCompat.Builder(context, appUpdateChannelId)
+            .setSmallIcon(R.drawable.ic_notification_dlaflow)
+            .setContentTitle("Dostępna aktualizacja DlaFlow")
+            .setContentText("Wersja $versionName jest gotowa do pobrania.")
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    context,
+                    appUpdateNotificationRequestCode(update.latestVersionCode),
+                    DlaFlowDeepLinks.appUpdateIntent(context),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .build()
+
+        return notifyIfAllowed(context, appUpdateNotificationId, systemNotification)
+    }
 }
 
 internal fun isOrdersNotificationAction(actionType: String): Boolean =
@@ -254,6 +294,9 @@ internal fun panelAlertNotificationId(id: String): Int {
 
     return DlaFlowNotifications.panelAlertNotificationId + id.hashCode()
 }
+
+internal fun appUpdateNotificationRequestCode(versionCode: Int): Int =
+    DlaFlowNotifications.appUpdateNotificationId + versionCode.coerceAtLeast(0)
 
 @SuppressLint("MissingPermission")
 private fun notifyIfAllowed(context: Context, notificationId: Int, notification: Notification): Boolean {

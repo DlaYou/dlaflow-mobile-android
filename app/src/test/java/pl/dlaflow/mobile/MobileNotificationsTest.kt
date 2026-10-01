@@ -222,6 +222,12 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `app update notification request code is stable for one version`() {
+        assertEquals(appUpdateNotificationRequestCode(35), appUpdateNotificationRequestCode(35))
+        assertTrue(appUpdateNotificationRequestCode(35) != appUpdateNotificationRequestCode(36))
+    }
+
+    @Test
     fun `canonical orders actions open the orders screen`() {
         assertTrue(isOrdersNotificationAction("OPEN_ORDERS"))
         assertTrue(isOrdersNotificationAction("orders"))

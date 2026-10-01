@@ -696,7 +696,13 @@ class MobileApiClient(
         )
     }
 
-    fun updatePushInstallation(token: String, deviceId: String, installationId: String) {
+    fun updatePushInstallation(
+        token: String,
+        deviceId: String,
+        installationId: String,
+        appVersionCode: Int = BuildConfig.VERSION_CODE,
+        appVersionName: String = BuildConfig.VERSION_NAME,
+    ) {
         putJson(
             path = "/api/mobile/devices/${encodeQueryValue(deviceId)}/push-installation",
             body = JSONObject()

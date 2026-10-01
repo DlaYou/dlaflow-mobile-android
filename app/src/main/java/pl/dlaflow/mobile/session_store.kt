@@ -126,6 +126,26 @@ class MobileSessionStore(context: Context) {
             .apply()
     }
 
+    fun readUpdateNotificationState(): MobileAppUpdateNotificationState {
+        return MobileAppUpdateNotificationState(
+            versionCode = preferences.getInt(updateNotificationVersionCodeKey, 0),
+        )
+    }
+
+    fun claimUpdateNotification(update: MobileAppUpdate): Boolean {
+        return AppNotificationSessionSynchronization.instance.withLock {
+            val state = readUpdateNotificationState()
+            if (!shouldNotifyMobileAppUpdate(update, state)) {
+                false
+            } else {
+                preferences.edit()
+                    .putInt(updateNotificationVersionCodeKey, update.latestVersionCode)
+                    .apply()
+                true
+            }
+        }
+    }
+
     fun readLastBackgroundPhotoTaskId(): String {
         return preferences.getString(lastBackgroundPhotoTaskIdKey, "") ?: ""
     }
@@ -168,8 +188,10 @@ class MobileSessionStore(context: Context) {
         AppNotificationSessionSynchronization.instance.withLock {
             val baseUrl = readBaseUrl()
             val updateDismissalState = readUpdateDismissalState()
+            val updateNotificationState = readUpdateNotificationState()
             preferences.edit().clear().putString("base_url", baseUrl).apply()
             preserveUpdateDismissalState(updateDismissalState)
+            preserveUpdateNotificationState(updateNotificationState)
         }
     }
 
@@ -177,6 +199,12 @@ class MobileSessionStore(context: Context) {
         preferences.edit()
             .putInt("app_update_dismissed_version_code", updateDismissalState.versionCode)
             .putInt("app_update_dismiss_count", updateDismissalState.count)
+            .apply()
+    }
+
+    private fun preserveUpdateNotificationState(updateNotificationState: MobileAppUpdateNotificationState) {
+        preferences.edit()
+            .putInt(updateNotificationVersionCodeKey, updateNotificationState.versionCode)
             .apply()
     }
 
@@ -230,6 +258,7 @@ private const val defaultBaseUrl = "https://panel.dlayou.pl"
 private const val lastBackgroundPhotoTaskIdKey = "last_background_photo_task_id"
 private const val shownPanelNotificationIdsKey = "shown_panel_notification_ids"
 private const val notificationPreferencesKey = "notification_preferences"
+private const val updateNotificationVersionCodeKey = "app_update_notification_version_code"
 
 private data class EncryptedToken(
     val cipherText: String,

@@ -42,6 +42,32 @@ data class MobileAppUpdateDismissalState(
     val count: Int = 0,
 )
 
+data class MobileAppUpdateNotificationState(
+    val versionCode: Int = 0,
+)
+
+fun shouldNotifyMobileAppUpdate(
+    update: MobileAppUpdate?,
+    notificationState: MobileAppUpdateNotificationState,
+): Boolean {
+    if (update == null || update.latestVersionCode <= update.currentVersionCode) {
+        return false
+    }
+
+    return update.latestVersionCode != notificationState.versionCode
+}
+
+fun nextMobileAppUpdateNotificationState(
+    update: MobileAppUpdate,
+    notificationState: MobileAppUpdateNotificationState,
+): MobileAppUpdateNotificationState {
+    if (!shouldNotifyMobileAppUpdate(update, notificationState)) {
+        return notificationState
+    }
+
+    return MobileAppUpdateNotificationState(versionCode = update.latestVersionCode)
+}
+
 fun mobileAppUpdateIsBlocking(
     update: MobileAppUpdate?,
     dismissals: MobileAppUpdateDismissalState,
