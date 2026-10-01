@@ -585,6 +585,54 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `push registration sends the current app version for an existing device`() {
+        val requestBody = AtomicReference("")
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        val future = executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                reader.readLine()
+                var contentLength = 0
+                generateSequence { reader.readLine() }
+                    .takeWhile { it.isNotEmpty() }
+                    .forEach { header ->
+                        if (header.startsWith("Content-Length:", ignoreCase = true)) {
+                            contentLength = header.substringAfter(":").trim().toInt()
+                        }
+                    }
+                val chars = CharArray(contentLength)
+                reader.read(chars)
+                requestBody.set(String(chars))
+                val body = "{\"data\":{}}".toByteArray(Charsets.UTF_8)
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient(
+                baseUrl = "http://127.0.0.1:${server.localPort}",
+                appVersionCode = 35,
+                appVersionName = "0.7.7",
+            )
+            client.updatePushInstallation("token", "device-1", "fid-1")
+            future.get(2, TimeUnit.SECONDS)
+
+            val body = JSONObject(requestBody.get())
+            assertEquals("fid-1", body.getString("installationId"))
+            assertEquals(35, body.getInt("appVersionCode"))
+            assertEquals("0.7.7", body.getString("appVersionName"))
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `orders page parser preserves rows badges and pagination metadata`() {
         withSingleJsonResponse(
             """{
