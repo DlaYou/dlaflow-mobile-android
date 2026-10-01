@@ -105,9 +105,11 @@ internal sealed interface NotificationsAction {
 }
 
 internal sealed interface NotificationsEffect {
+    data class OpenDashboard(val explainFallback: Boolean = false) : NotificationsEffect
     data object OpenOrders : NotificationsEffect
     data object OpenProducts : NotificationsEffect
     data object OpenMessages : NotificationsEffect
     data object OpenPhotoTasks : NotificationsEffect
+    data object OpenTeamSettings : NotificationsEffect
     data class ShowSafeExplanation(val destination: NotificationDestination) : NotificationsEffect
 }

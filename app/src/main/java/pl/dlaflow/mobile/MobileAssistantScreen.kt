@@ -351,6 +351,7 @@ internal fun MobileAssistantScreen(
     onCloseOverlay: () -> Unit = {},
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit = {},
     onMarkNotificationsRead: () -> Unit = {},
+    onOpenNotification: (DashboardNotification) -> Unit = {},
     onMessagesAction: (MessagesAction) -> Unit = {},
     onInstallAppUpdate: () -> Unit,
     onDismissAppUpdate: () -> Unit,
@@ -476,6 +477,7 @@ internal fun MobileAssistantScreen(
                             onCloseOverlay = onCloseOverlay,
                             onNotificationFilterChange = onNotificationFilterChange,
                             onMarkNotificationsRead = onMarkNotificationsRead,
+                            onOpenNotification = onOpenNotification,
                             onMessagesAction = onMessagesAction,
                             onSelectTab = onSelectTab,
                         )
@@ -650,6 +652,7 @@ private fun AssistantContent(
     onCloseOverlay: () -> Unit,
     onNotificationFilterChange: (MobileNotificationFilter) -> Unit,
     onMarkNotificationsRead: () -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit,
     onMessagesAction: (MessagesAction) -> Unit,
     onSelectTab: (MobileAssistantTab) -> Unit,
 ) {
@@ -765,6 +768,7 @@ private fun AssistantContent(
                     onFilterChange = onNotificationFilterChange,
                     onBack = onCloseOverlay,
                     onMarkRead = onMarkNotificationsRead,
+                    onOpenNotification = onOpenNotification,
                 )
             } else {
                 when (selectedTab) {
@@ -785,6 +789,7 @@ private fun AssistantContent(
                             )
                         },
                         onAction = onDashboardAction,
+                        onOpenNotification = onOpenNotification,
                     )
                     MobileAssistantTab.ORDERS -> OrdersFeatureScreen(
                         colors = colors,
@@ -1763,9 +1768,10 @@ private fun MessagesTab(
     dashboard: DashboardContent?,
     loading: Boolean,
     onOpenNotifications: () -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit,
 ) {
     SectionTitle(colors, "Wiadomości", "Ostatnie sprawy klienta i operacji")
-    LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications, loading)
+    LegacyNotificationsList(colors, dashboard?.notifications.orEmpty(), onOpenNotifications, onOpenNotification, loading)
 }
 
 @Composable
@@ -1787,6 +1793,7 @@ private fun LegacyNotificationsList(
     colors: DlaFlowComposeColors,
     notifications: List<DashboardNotification>,
     onOpenNotifications: () -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit,
     loading: Boolean = false,
 ) {
     DlaFlowNotificationPreviewCard(
@@ -1803,7 +1810,7 @@ private fun LegacyNotificationsList(
         } else {
             Column {
                 notifications.take(4).forEachIndexed { index, notification ->
-                    NotificationRow(colors, notification)
+                    NotificationRow(colors, notification, onClick = { onOpenNotification(notification) })
                     if (index < notifications.take(4).lastIndex) {
                         Box(
                             modifier = Modifier
@@ -2112,6 +2119,7 @@ private fun NotificationsScreen(
     onFilterChange: (MobileNotificationFilter) -> Unit,
     onBack: () -> Unit,
     onMarkRead: () -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -2149,7 +2157,7 @@ private fun NotificationsScreen(
                 return@DlaFlowCard
             }
             visible.forEachIndexed { index, notification ->
-                NotificationRow(colors, notification)
+                NotificationRow(colors, notification, onClick = { onOpenNotification(notification) })
                 if (index < visible.lastIndex) {
                     Box(
                         modifier = Modifier
@@ -2214,13 +2222,18 @@ private fun NotificationFilterTabs(
 }
 
 @Composable
-private fun NotificationRow(colors: DlaFlowComposeColors, notification: DashboardNotification) {
+private fun NotificationRow(
+    colors: DlaFlowComposeColors,
+    notification: DashboardNotification,
+    onClick: () -> Unit,
+) {
     DlaFlowNotificationRow(
         colors = colors,
         title = notification.title,
         description = notification.description,
         tone = notification.tone,
         occurredLabel = relativeTime(notification.occurredAt),
+        onClick = onClick,
     )
 }
 

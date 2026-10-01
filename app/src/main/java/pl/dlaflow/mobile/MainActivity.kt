@@ -96,6 +96,7 @@ import pl.dlaflow.mobile.feature.notifications.NotificationsCoordinator
 import pl.dlaflow.mobile.feature.notifications.NotificationsEffect
 import pl.dlaflow.mobile.feature.notifications.NotificationsStateHolder
 import pl.dlaflow.mobile.feature.notifications.canonicalContentOrNull
+import pl.dlaflow.mobile.feature.notifications.notificationEffectFor
 import pl.dlaflow.mobile.feature.messages.MessagesAction
 import pl.dlaflow.mobile.feature.messages.MessagesCoordinator
 import pl.dlaflow.mobile.feature.messages.MessagesOperation
@@ -110,6 +111,7 @@ import pl.dlaflow.mobile.feature.scanner.ScannerCoordinator
 import pl.dlaflow.mobile.feature.scanner.ScannerFeedback
 import pl.dlaflow.mobile.feature.scanner.ScannerStateHolder
 import pl.dlaflow.mobile.feature.settings.SettingsAction
+import pl.dlaflow.mobile.feature.settings.SettingsKind
 import pl.dlaflow.mobile.app.navigation.MobileKpiDestination
 import pl.dlaflow.mobile.app.navigation.toOrdersFilterOrNull
 import pl.dlaflow.mobile.feature.settings.SettingsCallerIdLookupRequest
@@ -377,9 +379,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         session?.token?.let(photoTasksCoordinator::refresh)
-        if (selectedTab == MobileAssistantTab.ORDERS) {
-            ensureOrdersLoaded()
-        }
+        ensureSelectedTabLoaded()
         openPendingMessageThreadIfReady()
     }
 
@@ -737,6 +737,7 @@ class MainActivity : ComponentActivity() {
                     onCloseOverlay = { mobileOverlayScreen = MobileAssistantOverlayScreen.NONE },
                     onNotificationFilterChange = ::selectMobileNotificationFilter,
                     onMarkNotificationsRead = { markVisibleNotificationsRead() },
+                    onOpenNotification = ::handleNotificationTap,
                     onMessagesAction = ::handleMessagesAction,
                     onInstallAppUpdate = { installAppUpdate() },
                     onDismissAppUpdate = { dismissAppUpdate() },
@@ -1071,9 +1072,7 @@ class MainActivity : ComponentActivity() {
             messagesCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(verifiedSession.token)
             refreshAppUpdate(showStatus = false)
-            if (selectedTab == MobileAssistantTab.ORDERS) {
-                ensureOrdersLoaded()
-            }
+            ensureSelectedTabLoaded()
             openPendingMessageThreadIfReady()
         }
     }
@@ -1135,9 +1134,7 @@ class MainActivity : ComponentActivity() {
             messagesCoordinator.refresh(nextSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
-            if (selectedTab == MobileAssistantTab.ORDERS) {
-                ensureOrdersLoaded()
-            }
+            ensureSelectedTabLoaded()
             openPendingMessageThreadIfReady()
         }
     }
@@ -1438,6 +1435,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun ensureSelectedTabLoaded() {
+        when {
+            selectedTab == MobileAssistantTab.ORDERS -> ensureOrdersLoaded()
+            selectedTab == MobileAssistantTab.PRODUCTS -> ensureProductsLoaded()
+            selectedTab == MobileAssistantTab.MESSAGES -> ensureMessagesLoaded()
+        }
+    }
+
     private fun handleMessagesAction(action: MessagesAction) {
         val currentSession = session ?: return
         when (action) {
@@ -1533,6 +1538,14 @@ class MainActivity : ComponentActivity() {
 
     private fun handleNotificationsEffect(effect: NotificationsEffect) {
         when (effect) {
+            is NotificationsEffect.OpenDashboard -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.DASHBOARD
+                session?.token?.let { dashboardCoordinator.refresh(it, showFeedback = false) }
+                if (effect.explainFallback) {
+                    setStatus("Nie ma dokładniejszego celu dla tego powiadomienia.")
+                }
+            }
             NotificationsEffect.OpenOrders -> {
                 mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
                 selectedTab = MobileAssistantTab.ORDERS
@@ -1549,9 +1562,21 @@ class MainActivity : ComponentActivity() {
                 selectedTab = MobileAssistantTab.MESSAGES
                 ensureMessagesLoaded()
             }
+            NotificationsEffect.OpenTeamSettings -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.MORE
+                settingsCoordinator.onAction(SettingsAction.Select(SettingsKind.TEAM), settingsContent())
+                setStatus("Ta sprawa wymaga działania w panelu.")
+            }
             is NotificationsEffect.ShowSafeExplanation -> setStatus("Ta sprawa wymaga działania w panelu.")
         }
         render()
+    }
+
+    private fun handleNotificationTap(notification: pl.dlaflow.mobile.feature.dashboard.DashboardNotification) {
+        handleNotificationsEffect(
+            notificationEffectFor(notification.actionType, notification.title, notification.description),
+        )
     }
 
     private fun handleNotificationsUnauthorized(
@@ -1963,9 +1988,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleLaunchIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenDashboard, false) == true) {
+            selectedTab = MobileAssistantTab.DASHBOARD
+            statusMessage = "Otwieram pulpit z powiadomienia."
+        }
         if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenOrders, false) == true) {
             selectedTab = MobileAssistantTab.ORDERS
             statusMessage = "Otwieram zamówienia z powiadomienia."
+        }
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenProducts, false) == true) {
+            selectedTab = MobileAssistantTab.PRODUCTS
+            statusMessage = "Otwieram produkty z powiadomienia."
+        }
+        if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenSettings, false) == true) {
+            selectedTab = MobileAssistantTab.MORE
+            settingsCoordinator.onAction(SettingsAction.Select(SettingsKind.TEAM), settingsContent())
+            statusMessage = "Otwieram ustawienia z powiadomienia."
         }
         if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false) == true) {
             selectedTab = MobileAssistantTab.MESSAGES

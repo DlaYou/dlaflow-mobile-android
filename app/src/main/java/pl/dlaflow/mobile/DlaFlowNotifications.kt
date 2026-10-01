@@ -14,10 +14,15 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.util.Locale
+import pl.dlaflow.mobile.feature.notifications.NotificationDestination
+import pl.dlaflow.mobile.feature.notifications.notificationDestinationFor
 
 object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
     const val extraOpenOrders = "pl.dlaflow.mobile.OPEN_ORDERS"
+    const val extraOpenProducts = "pl.dlaflow.mobile.OPEN_PRODUCTS"
+    const val extraOpenDashboard = "pl.dlaflow.mobile.OPEN_DASHBOARD"
+    const val extraOpenSettings = "pl.dlaflow.mobile.OPEN_SETTINGS"
     const val extraOpenMessages = "pl.dlaflow.mobile.OPEN_MESSAGES"
     const val extraMessageThreadId = "pl.dlaflow.mobile.MESSAGE_THREAD_ID"
     const val extraSmokePackageCode = "pl.dlaflow.mobile.SMOKE_PACKAGE_CODE"
@@ -31,6 +36,24 @@ object DlaFlowDeepLinks {
     fun ordersIntent(context: Context): Intent {
         return Intent(context, MainActivity::class.java)
             .putExtra(extraOpenOrders, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+
+    fun productsIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenProducts, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+
+    fun dashboardIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenDashboard, true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    }
+
+    fun settingsIntent(context: Context): Intent {
+        return Intent(context, MainActivity::class.java)
+            .putExtra(extraOpenSettings, true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 
@@ -171,11 +194,20 @@ object DlaFlowNotifications {
             return false
         }
 
-        val appIntent = when {
-            isOrdersNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.ordersIntent(context)
-            isMessagesNotificationAction(notification.mobileAction.type) -> DlaFlowDeepLinks.messagesIntent(context, messageThreadId)
-            else -> Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val appIntent = when (notificationDestinationFor(
+            actionType = notification.mobileAction.type,
+            title = notification.title,
+            description = notification.description,
+        )) {
+            NotificationDestination.Orders -> DlaFlowDeepLinks.ordersIntent(context)
+            NotificationDestination.Products,
+            NotificationDestination.PhotoTasks,
+            -> DlaFlowDeepLinks.productsIntent(context)
+            NotificationDestination.Messages -> DlaFlowDeepLinks.messagesIntent(context, messageThreadId)
+            NotificationDestination.ContactAdmin -> DlaFlowDeepLinks.settingsIntent(context)
+            NotificationDestination.LogsSummary,
+            NotificationDestination.Unsupported,
+            -> DlaFlowDeepLinks.dashboardIntent(context)
         }
 
         val notificationText = notification.description
@@ -206,10 +238,14 @@ object DlaFlowNotifications {
 }
 
 internal fun isOrdersNotificationAction(actionType: String): Boolean =
-    actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_ORDERS", "ORDERS")
+    actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_ORDERS", "OPEN_ORDER", "ORDERS")
 
 internal fun isMessagesNotificationAction(actionType: String): Boolean =
     actionType.trim().uppercase(Locale.ROOT) in setOf("OPEN_MESSAGES", "MESSAGES")
+
+/** Keeps compatibility with older tests and callers that classify legacy rows directly. */
+internal fun isLegacyMessagesNotification(actionType: String, title: String, description: String): Boolean =
+    notificationDestinationFor(actionType, title, description) == NotificationDestination.Messages
 
 internal fun panelAlertNotificationId(id: String): Int {
     if (id.isBlank()) {

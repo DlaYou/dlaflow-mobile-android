@@ -25,4 +25,28 @@ class NotificationLaunchIntentTest {
         assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenMessages, false))
         assertEquals("thread/42", intent.getStringExtra(DlaFlowDeepLinks.extraMessageThreadId))
     }
+
+    @Test
+    fun productNotificationIntentTargetsProductsTab() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = DlaFlowDeepLinks.productsIntent(context)
+
+        assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenProducts, false))
+    }
+
+    @Test
+    fun genericNotificationIntentTargetsDashboard() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = DlaFlowDeepLinks.dashboardIntent(context)
+
+        assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenDashboard, false))
+    }
+
+    @Test
+    fun adminNotificationIntentTargetsSettings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = DlaFlowDeepLinks.settingsIntent(context)
+
+        assertTrue(intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenSettings, false))
+    }
 }

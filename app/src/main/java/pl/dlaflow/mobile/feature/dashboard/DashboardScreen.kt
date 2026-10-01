@@ -87,6 +87,7 @@ internal fun DashboardFeatureScreen(
     state: DashboardUiState,
     fallbackPhotoTask: DashboardPhotoTask?,
     onAction: (DashboardAction) -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit = {},
 ) {
     val surface = state.toDashboardSurface()
     val density = LocalDensity.current
@@ -120,7 +121,12 @@ internal fun DashboardFeatureScreen(
                 KpiGrid(colors, content.kpis, layoutPolicy) { destination ->
                     onAction(DashboardAction.OpenOrdersFilter(destination))
                 }
-                NotificationsList(colors, content.notifications) { onAction(DashboardAction.OpenNotifications) }
+                NotificationsList(
+                    colors = colors,
+                    notifications = content.notifications,
+                    onOpenNotifications = { onAction(DashboardAction.OpenNotifications) },
+                    onOpenNotification = onOpenNotification,
+                )
                 QuickActions(colors, layoutPolicy, onAction)
                 ActivePhotoTaskSection(colors, content.activePhotoTask, fallbackPhotoTask, onAction)
             }
@@ -692,6 +698,7 @@ private fun NotificationsList(
     colors: DlaFlowComposeColors,
     notifications: List<DashboardNotification>,
     onOpenNotifications: () -> Unit,
+    onOpenNotification: (DashboardNotification) -> Unit,
 ) {
     DlaFlowNotificationPreviewCard(
         colors = colors,
@@ -710,6 +717,7 @@ private fun NotificationsList(
                     description = notification.description,
                     tone = notification.tone,
                     occurredLabel = relativeTime(notification.occurredAt),
+                    onClick = { onOpenNotification(notification) },
                 )
                 if (index < notifications.take(4).lastIndex) {
                     Box(

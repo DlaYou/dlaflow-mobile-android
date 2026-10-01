@@ -51,6 +51,43 @@ class NotificationsMapperTest {
     }
 
     @Test
+    fun `maps message actions case insensitively so notification taps open messages`() {
+        val content = MobileNotificationsPage(
+            attentionCount = 0,
+            unreadAttentionCount = 0,
+            unreadCount = 1,
+            notifications = listOf(notification(id = "message-1", action = "open_messages")),
+        ).toNotificationsContent()
+
+        assertEquals(NotificationDestination.Messages, content.items.single().destination)
+    }
+
+    @Test
+    fun `maps panel action aliases to their mobile destinations`() {
+        val content = MobileNotificationsPage(
+            attentionCount = 0,
+            unreadAttentionCount = 0,
+            unreadCount = 4,
+            notifications = listOf(
+                notification(id = "order-singular", action = "OPEN_ORDER"),
+                notification(id = "orders-legacy", action = "ORDERS"),
+                notification(id = "messages-legacy", action = "MESSAGES"),
+                notification(id = "contact-admin", action = "OPEN_CONTACT_ADMIN"),
+            ),
+        ).toNotificationsContent()
+
+        assertEquals(
+            listOf(
+                NotificationDestination.Orders,
+                NotificationDestination.Orders,
+                NotificationDestination.Messages,
+                NotificationDestination.ContactAdmin,
+            ),
+            content.items.map(NotificationItem::destination),
+        )
+    }
+
+    @Test
     fun `blank read timestamp remains unread`() {
         val item = notification(id = "unread", readAt = "  ").toNotificationItem()
 
