@@ -121,7 +121,6 @@ import pl.dlaflow.mobile.feature.settings.SettingsCoordinator
 import pl.dlaflow.mobile.feature.settings.SettingsDisconnectRequest
 import pl.dlaflow.mobile.feature.settings.SettingsEffect
 import pl.dlaflow.mobile.feature.settings.SettingsInput
-import pl.dlaflow.mobile.feature.settings.SettingsKind
 import pl.dlaflow.mobile.feature.settings.SettingsNotificationPreference
 import pl.dlaflow.mobile.feature.settings.SettingsStateHolder
 import pl.dlaflow.mobile.feature.settings.SettingsTextResolver
