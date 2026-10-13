@@ -133,7 +133,7 @@
     <string name="dashboard_photo_task_photos">Zdjęcia</string>
     <string name="dashboard_photo_task_photo_count">%1$d/%2$d</string>
     <string name="dashboard_photo_task_take">Zrób</string>
-    <string name="dashboard_photo_task_pick">Wybierz</string>
+    <string name="dashboard_photo_task_pick">Wybierz zdjęcia</string>
     <string name="dashboard_photo_task_complete">Zakończ zadanie</string>
     <string name="dashboard_time_now">teraz</string>
     <string name="dashboard_time_minutes_ago">%1$d min temu</string>

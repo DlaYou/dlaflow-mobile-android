@@ -72,6 +72,8 @@ class MobileFeatureIntegrationGuardTest {
             )
             assertEquals("Bearer synthetic-token", request.authorization)
             assertEquals("installation-123", JSONObject(request.body).getString("installationId"))
+            assertEquals(BuildConfig.VERSION_CODE, JSONObject(request.body).getInt("appVersionCode"))
+            assertEquals(BuildConfig.VERSION_NAME, JSONObject(request.body).getString("appVersionName"))
         }
     }
 

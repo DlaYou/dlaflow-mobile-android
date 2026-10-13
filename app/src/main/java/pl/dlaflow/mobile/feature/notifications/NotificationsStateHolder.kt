@@ -239,16 +239,7 @@ internal class NotificationsStateHolder {
 
     fun effectFor(notificationId: String): NotificationsEffect? {
         val item = state.visibleItems().firstOrNull { it.id == notificationId } ?: return null
-        return when (val destination = item.destination) {
-            NotificationDestination.Orders -> NotificationsEffect.OpenOrders
-            NotificationDestination.Products -> NotificationsEffect.OpenProducts
-            NotificationDestination.Messages -> NotificationsEffect.OpenMessages
-            NotificationDestination.PhotoTasks -> NotificationsEffect.OpenPhotoTasks
-            NotificationDestination.LogsSummary,
-            NotificationDestination.ContactAdmin,
-            NotificationDestination.Unsupported,
-            -> NotificationsEffect.ShowSafeExplanation(destination)
-        }
+        return notificationEffectFor(item.destination)
     }
 
     fun reset() {

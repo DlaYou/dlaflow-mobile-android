@@ -4,7 +4,7 @@ import java.io.InputStream
 import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
-internal const val PHOTO_TASK_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
+internal const val PHOTO_TASK_UPLOAD_MAX_BYTES = 50L * 1024L * 1024L
 
 internal enum class PhotoTaskStatus {
     PENDING,

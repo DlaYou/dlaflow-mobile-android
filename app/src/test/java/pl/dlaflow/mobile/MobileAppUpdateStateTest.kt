@@ -7,6 +7,47 @@ import org.junit.Test
 
 class MobileAppUpdateStateTest {
     @Test
+    fun `update notification is sent once for one latest version`() {
+        val update = mobileUpdate(required = false, latestVersionCode = 5)
+
+        assertTrue(shouldNotifyMobileAppUpdate(update, MobileAppUpdateNotificationState()))
+        assertFalse(
+            shouldNotifyMobileAppUpdate(
+                update,
+                nextMobileAppUpdateNotificationState(update, MobileAppUpdateNotificationState()),
+            ),
+        )
+    }
+
+    @Test
+    fun `update notification becomes eligible when latest version changes`() {
+        val update = mobileUpdate(required = false, latestVersionCode = 6)
+
+        assertTrue(
+            shouldNotifyMobileAppUpdate(
+                update,
+                MobileAppUpdateNotificationState(versionCode = 5),
+            ),
+        )
+    }
+
+    @Test
+    fun `missing or non newer update never triggers notification`() {
+        assertFalse(
+            shouldNotifyMobileAppUpdate(
+                null,
+                MobileAppUpdateNotificationState(),
+            ),
+        )
+        assertFalse(
+            shouldNotifyMobileAppUpdate(
+                mobileUpdate(required = false, latestVersionCode = 3),
+                MobileAppUpdateNotificationState(versionCode = 3),
+            ),
+        )
+    }
+
+    @Test
     fun `optional update can be deferred three times`() {
         val update = mobileUpdate(required = false, latestVersionCode = 5)
 

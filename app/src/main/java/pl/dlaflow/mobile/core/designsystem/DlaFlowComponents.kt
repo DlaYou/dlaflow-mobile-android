@@ -1035,12 +1035,20 @@ internal fun DlaFlowNotificationRow(
     description: String,
     tone: String,
     occurredLabel: String,
+    onClick: (() -> Unit)? = null,
 ) {
     val color = notificationPresentationToneColor(colors, tone)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(60.dp)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
             .padding(top = 7.dp, bottom = 7.dp),
         verticalAlignment = Alignment.Top,
     ) {
