@@ -132,7 +132,46 @@ class DashboardFeatureScreenTest {
         }
     }
 
-    private fun setDashboard(state: DashboardUiState, actions: MutableList<DashboardAction>) {
+    @Test
+    fun notificationRowEmitsTheTappedNotification() {
+        val tapped = mutableListOf<DashboardNotification>()
+        setDashboard(
+            state = DashboardUiState(
+                contentState = DlaFlowUiState.Content(
+                    dashboardContent().copy(
+                        notifications = listOf(
+                            DashboardNotification(
+                                id = "message-42",
+                                title = "Nowa wiadomość",
+                                description = "Klient napisał w sprawie zamówienia.",
+                                tone = "attention",
+                                source = "gmail",
+                                account = "",
+                                occurredAt = "2026-07-17T10:00:00Z",
+                                readAt = null,
+                                actionType = "OPEN_MESSAGES",
+                                actionLabel = "Otwórz wiadomości",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+            onOpenNotification = tapped::add,
+        )
+
+        composeRule.onNodeWithText("Nowa wiadomość").performScrollTo().performClick()
+
+        composeRule.runOnIdle {
+            assertEquals("message-42", tapped.single().id)
+        }
+    }
+
+    private fun setDashboard(
+        state: DashboardUiState,
+        actions: MutableList<DashboardAction>,
+        onOpenNotification: (DashboardNotification) -> Unit = {},
+    ) {
         composeRule.setContent {
             DlaFlowTheme(dark = false) { colors ->
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
@@ -142,6 +181,7 @@ class DashboardFeatureScreenTest {
                         state = state,
                         fallbackPhotoTask = null,
                         onAction = actions::add,
+                        onOpenNotification = onOpenNotification,
                     )
                 }
             }

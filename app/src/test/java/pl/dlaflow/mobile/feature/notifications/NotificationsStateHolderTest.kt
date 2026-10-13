@@ -153,16 +153,29 @@ class NotificationsStateHolderTest {
     }
 
     @Test
-    fun `unknown item action emits only safe explanation`() {
+    fun `unknown item action navigates to dashboard with a safe explanation`() {
         val holder = loadedHolder(
             listOf(item("unknown", destination = NotificationDestination.Unsupported)),
         )
 
         assertEquals(
-            NotificationsEffect.ShowSafeExplanation(NotificationDestination.Unsupported),
+            NotificationsEffect.OpenDashboard(explainFallback = true),
             holder.effectFor("unknown"),
         )
         assertNull(holder.effectFor("missing"))
+    }
+
+    @Test
+    fun `panel summary and contact admin items navigate instead of stopping at an explanation`() {
+        val holder = loadedHolder(
+            listOf(
+                item("summary", destination = NotificationDestination.LogsSummary),
+                item("admin", destination = NotificationDestination.ContactAdmin),
+            ),
+        )
+
+        assertEquals(NotificationsEffect.OpenDashboard(), holder.effectFor("summary"))
+        assertEquals(NotificationsEffect.OpenTeamSettings, holder.effectFor("admin"))
     }
 
     private fun loadedHolder(items: List<NotificationItem>): NotificationsStateHolder =

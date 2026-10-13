@@ -7,6 +7,7 @@ import com.google.firebase.messaging.RemoteMessage
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
+import java.util.Locale
 import pl.dlaflow.mobile.core.session.AppNotificationSessionSynchronization
 
 /**
@@ -104,7 +105,12 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
                     canonicalNotificationId = message.data["notificationId"],
                 ),
             ),
-            title = "Nowa wiadomość od klienta",
+            title = customerMessageNotificationTitle(
+                providerId = message.data["providerId"],
+                suppliedTitle = message.data["title"],
+                senderName = message.data["senderName"],
+                isReply = message.data["isReply"].toBooleanPushFlag(),
+            ),
             description = description,
             tone = "attention",
             source = "push",
@@ -123,6 +129,58 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         DlaFlowPushInstallation.save(applicationContext, token)
     }
+}
+
+/**
+ * Uses the server's channel-aware title when available while keeping old FCM
+ * payloads useful. Values are bounded and control characters are removed
+ * before they reach Android's notification surface.
+ */
+internal fun customerMessageNotificationTitle(
+    providerId: String?,
+    suppliedTitle: String?,
+    senderName: String? = null,
+    isReply: Boolean = false,
+): String {
+    val channel = providerId?.trim()?.lowercase(Locale.ROOT)?.toCustomerMessageChannel()
+    val sender = senderName?.normalizeCustomerMessageSender()
+    if (channel != null && (sender != null || isReply)) {
+        val messageKind = if (isReply) "Odpowiedź na wiadomość" else "Nowa wiadomość"
+        return listOfNotNull("$channel - $messageKind", sender?.let { "od $it" })
+            .joinToString(" ")
+            .take(maxCustomerMessageNotificationTitleLength)
+    }
+
+    val title = suppliedTitle
+        ?.replace(notificationControlCharacters, " ")
+        ?.replace(whitespaceCharacters, " ")
+        ?.trim()
+        ?.take(maxCustomerMessageNotificationTitleLength)
+        .orEmpty()
+    if (title.isNotBlank()) return title
+
+    return channel?.let { "$it - Nowa wiadomość" } ?: "Nowa wiadomość od klienta"
+}
+
+private fun String.toCustomerMessageChannel(): String? = when (this) {
+    "gmail" -> "Gmail"
+    "allegro" -> "Allegro"
+    "woocommerce" -> "WooCommerce"
+    "inpost" -> "InPost"
+    "email" -> "E-mail"
+    "social" -> "Social"
+    else -> null
+}
+
+private fun String.normalizeCustomerMessageSender(): String? = replace(notificationControlCharacters, " ")
+    .replace(whitespaceCharacters, " ")
+    .trim()
+    .take(maxCustomerMessageSenderLength)
+    .takeIf(String::isNotBlank)
+
+private fun String?.toBooleanPushFlag(): Boolean = when (this?.trim()?.lowercase(Locale.ROOT)) {
+    "1", "true", "yes", "y" -> true
+    else -> false
 }
 
 internal fun pushNotificationDeliveryId(
@@ -152,6 +210,11 @@ internal fun pushTargetMatchesDevice(targetDeviceId: String?, currentDeviceId: S
 
 private const val maxPushIdentifierLength = 200
 private const val maxPushDeviceIdLength = 80
+private const val maxCustomerMessageNotificationTitleLength = 120
+private const val maxCustomerMessageSenderLength = 80
+
+private val notificationControlCharacters = Regex("[\\u0000-\\u001F\\u007F]")
+private val whitespaceCharacters = Regex("\\s+")
 
 private fun normalizePushIdentifier(value: String?): String? {
     val normalized = value?.trim()?.takeIf { it.isNotBlank() } ?: return null

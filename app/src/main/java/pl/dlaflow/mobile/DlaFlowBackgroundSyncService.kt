@@ -22,6 +22,7 @@ class DlaFlowBackgroundSyncService : Service() {
         }
     }
     private lateinit var sessionStore: MobileSessionStore
+    private var updateCheckQueued = false
 
     override fun onCreate() {
         super.onCreate()
@@ -41,6 +42,7 @@ class DlaFlowBackgroundSyncService : Service() {
             DlaFlowNotifications.backgroundServiceNotificationId,
             DlaFlowNotifications.backgroundServiceNotification(this),
         )
+        checkForAppUpdate(token = sessionStore.readToken())
         startPolling()
         return START_STICKY
     }
@@ -61,6 +63,23 @@ class DlaFlowBackgroundSyncService : Service() {
     private fun startPolling() {
         handler.removeCallbacks(pollRunnable)
         handler.post(pollRunnable)
+    }
+
+    private fun checkForAppUpdate(token: String) {
+        if (updateCheckQueued || token.isBlank()) {
+            return
+        }
+        updateCheckQueued = true
+        executor.execute {
+            runCatching {
+                checkAndNotifyMobileAppUpdate(
+                    context = this,
+                    client = mobileApiClientForSession(sessionStore),
+                    sessionStore = sessionStore,
+                    token = token,
+                )
+            }
+        }
     }
 
     private fun checkDispatch() {

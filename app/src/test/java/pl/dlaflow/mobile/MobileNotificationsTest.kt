@@ -111,6 +111,82 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `customer message title prefers the channel label from the push payload`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość",
+            customerMessageNotificationTitle("gmail", " Gmail - Nowa wiadomość "),
+        )
+        assertEquals(
+            "Allegro - Nowa wiadomość",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość"),
+        )
+    }
+
+    @Test
+    fun `customer message title derives known channel when title is absent`() {
+        assertEquals("Gmail - Nowa wiadomość", customerMessageNotificationTitle("gmail", null))
+        assertEquals("Allegro - Nowa wiadomość", customerMessageNotificationTitle("ALLEGRO", " "))
+        assertEquals("E-mail - Nowa wiadomość", customerMessageNotificationTitle("email", null))
+        assertEquals("Social - Nowa wiadomość", customerMessageNotificationTitle("social", null))
+    }
+
+    @Test
+    fun `customer message title includes sender for Gmail and Allegro`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość od Anna Kowalska",
+            customerMessageNotificationTitle("gmail", "Gmail - Nowa wiadomość", " Anna\nKowalska ", false),
+        )
+        assertEquals(
+            "Allegro - Nowa wiadomość od kupujacy_123",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość", "kupujacy_123", false),
+        )
+    }
+
+    @Test
+    fun `customer message title labels a reply with sender`() {
+        assertEquals(
+            "Allegro - Odpowiedź na wiadomość od kupujacy_123",
+            customerMessageNotificationTitle("allegro", "Allegro - Nowa wiadomość", "kupujacy_123", true),
+        )
+    }
+
+    @Test
+    fun `customer message title falls back when sender metadata is absent`() {
+        assertEquals(
+            "Gmail - Nowa wiadomość",
+            customerMessageNotificationTitle("gmail", "Gmail - Nowa wiadomość", null, false),
+        )
+        assertEquals(
+            "Allegro - Odpowiedź na wiadomość",
+            customerMessageNotificationTitle("allegro", null, " ", true),
+        )
+    }
+
+    @Test
+    fun `customer message title keeps legacy fallback for unknown or missing channel`() {
+        assertEquals(
+            "Nowa wiadomość od klienta",
+            customerMessageNotificationTitle("future-provider", null),
+        )
+        assertEquals(
+            "Nowa wiadomość od klienta",
+            customerMessageNotificationTitle(null, ""),
+        )
+    }
+
+    @Test
+    fun `customer message title strips control whitespace and stays bounded`() {
+        val title = customerMessageNotificationTitle(
+            "gmail",
+            "Gmail\n-\tNowa\u0000 wiadomość" + "x".repeat(200),
+        )
+
+        assertEquals(120, title.length)
+        assertFalse(title.any(Char::isISOControl))
+        assertFalse(title.contains("\n"))
+    }
+
+    @Test
     fun `canonical panel notification id overrides the legacy push fallback`() {
         assertEquals(
             "message:panel-canonical-123",
@@ -146,6 +222,12 @@ class MobileNotificationsTest {
     }
 
     @Test
+    fun `app update notification request code is stable for one version`() {
+        assertEquals(appUpdateNotificationRequestCode(35), appUpdateNotificationRequestCode(35))
+        assertTrue(appUpdateNotificationRequestCode(35) != appUpdateNotificationRequestCode(36))
+    }
+
+    @Test
     fun `canonical orders actions open the orders screen`() {
         assertTrue(isOrdersNotificationAction("OPEN_ORDERS"))
         assertTrue(isOrdersNotificationAction("orders"))
@@ -157,6 +239,24 @@ class MobileNotificationsTest {
         assertTrue(isMessagesNotificationAction("OPEN_MESSAGES"))
         assertTrue(isMessagesNotificationAction("messages"))
         assertFalse(isMessagesNotificationAction("OPEN_LOGS_SUMMARY"))
+    }
+
+    @Test
+    fun `legacy message notification without mobile action still opens messages`() {
+        assertTrue(
+            isLegacyMessagesNotification(
+                actionType = "OPEN_LOGS_SUMMARY",
+                title = "Gmail - Nowa wiadomość",
+                description = "Odebrano nową wiadomość.",
+            ),
+        )
+        assertFalse(
+            isLegacyMessagesNotification(
+                actionType = "OPEN_ORDERS",
+                title = "Wiadomości synchronizacji",
+                description = "Sprawdź zamówienie.",
+            ),
+        )
     }
 
     @Test
