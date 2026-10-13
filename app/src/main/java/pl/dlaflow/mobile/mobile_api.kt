@@ -15,7 +15,7 @@ import java.util.UUID
 import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
-internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 5L * 1024L * 1024L
+internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 50L * 1024L * 1024L
 private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 20_000
 private const val MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS = 2_000
 private const val MOBILE_MESSAGE_SEARCH_MAX_CHARS = 120
