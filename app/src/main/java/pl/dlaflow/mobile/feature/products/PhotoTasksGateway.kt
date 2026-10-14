@@ -5,6 +5,7 @@ import pl.dlaflow.mobile.MobilePhotoUploadSource
 
 internal interface PhotoTasksGateway {
     fun loadActive(token: String): List<ProductPhotoTask>
+    fun load(token: String, taskId: String): ProductPhotoTask
     fun upload(token: String, taskId: String, source: PhotoUploadSource): ProductPhotoTask
     fun complete(token: String, taskId: String): ProductPhotoTask
     fun loadDispatch(token: String): ProductPhotoTask?
@@ -15,6 +16,9 @@ internal class MobileApiPhotoTasksGateway(
 ) : PhotoTasksGateway {
     override fun loadActive(token: String): List<ProductPhotoTask> =
         clientProvider().listActivePhotoTasks(token).toActiveProductPhotoTasks()
+
+    override fun load(token: String, taskId: String): ProductPhotoTask =
+        clientProvider().getPhotoTask(token, taskId).toProductPhotoTask(expectedTaskId = taskId)
 
     override fun upload(token: String, taskId: String, source: PhotoUploadSource): ProductPhotoTask =
         clientProvider().uploadPhotoTaskMedia(

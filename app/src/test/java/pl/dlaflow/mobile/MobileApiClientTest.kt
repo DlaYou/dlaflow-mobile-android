@@ -136,6 +136,51 @@ class MobileApiClientTest {
     }
 
     @Test
+    fun `photo task status transport fetches canonical task endpoint`() {
+        val method = runCatching {
+            MobileApiClient::class.java.getMethod(
+                "getPhotoTask",
+                String::class.java,
+                String::class.java,
+            )
+        }.getOrNull()
+        assertTrue("MobileApiClient must expose signed photo-task status GET", method != null)
+        if (method == null) return
+
+        val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
+        val executor = Executors.newSingleThreadExecutor()
+        val requestPath = AtomicReference("")
+        executor.submit {
+            server.accept().use { socket ->
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+                requestPath.set(reader.readLine().orEmpty().split(" ").getOrElse(1) { "" })
+                generateSequence { reader.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                val body = """
+                    {"data":{"id":"task-1","productName":"Produkt","productSku":"SKU-1","status":"pending","mediaCount":1,"maxPhotos":3,"expiresAt":"2030-01-01T00:00:00Z","media":[{"id":"media-1","filename":"produkt.jpg","status":"READY","progress":100,"previewUrl":"/api/products/media/preview.webp","url":"/api/products/media/final.webp","errorCode":null}]}}
+                """.trimIndent().toByteArray(Charsets.UTF_8)
+                val headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
+                socket.getOutputStream().use { output ->
+                    output.write(headers.toByteArray(Charsets.UTF_8))
+                    output.write(body)
+                }
+            }
+        }
+
+        try {
+            val client = MobileApiClient("http://127.0.0.1:${server.localPort}")
+            val task = method.invoke(client, "token", "task/one") as MobilePhotoTask
+
+            assertEquals("/api/mobile/photo-tasks/task%2Fone", requestPath.get())
+            assertEquals("task-1", task.id)
+            assertEquals("READY", task.media.single().status)
+            assertEquals(100, task.media.single().progress)
+        } finally {
+            server.close()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun `mobile media rejects declared content length above thumbnail limit`() {
         val server = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
         val executor = Executors.newSingleThreadExecutor()

@@ -195,6 +195,14 @@ internal class PhotoTasksStateHolder {
         return true
     }
 
+    fun acceptUploadProgress(request: PhotoTaskUploadRequest, task: ProductPhotoTask): Boolean {
+        if (!matches(request) || task.id != request.taskId) return false
+        state = state.withUpsertedTask(task)
+        return true
+    }
+
+    fun isUploadActive(request: PhotoTaskUploadRequest): Boolean = matches(request)
+
     fun acceptUploadFailure(request: PhotoTaskUploadRequest, message: DlaFlowUiMessage): Boolean {
         if (!matches(request)) return false
         finishUpload(message)
