@@ -15,6 +15,35 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiState
 
 class PhotoTasksCoordinatorTest {
     @Test
+    fun `failure releases source before notifying batch consumer`() {
+        val source = TestPhotoUploadSource()
+        val harness = PhotoTasksHarness(upload = { _, _ -> throw UnknownHostException("offline") }, effectObserver = {
+            if (it == PhotoTasksEffect.OperationFailed) assertEquals(1, source.disposeCount)
+        })
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", source))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        assertEquals(listOf(PhotoTasksEffect.OperationFailed), harness.effects)
+    }
+
+    @Test
+    fun `accepted upload releases source before next sequential upload`() {
+        val first = TestPhotoUploadSource()
+        val second = TestPhotoUploadSource(sourceId = "source-2")
+        var count = 0
+        lateinit var harness: PhotoTasksHarness
+        harness = PhotoTasksHarness(effectObserver = {
+            if (it == PhotoTasksEffect.UploadSucceeded && count++ == 0) {
+                assertEquals(1, first.disposeCount)
+                assertTrue(harness.coordinator.submitUpload("session-a", "task-1", second))
+            }
+        })
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", first))
+        repeat(2) { harness.executor.runNext(); harness.mainQueue.runNext() }
+        assertEquals(1, second.disposeCount)
+        assertEquals(2, count)
+    }
+    @Test
     fun `active tasks reach state only through main queue`() {
         val harness = PhotoTasksHarness()
 
@@ -332,6 +361,7 @@ class PhotoTasksCoordinatorTest {
 private class PhotoTasksHarness(
     active: () -> List<ProductPhotoTask> = { listOf(photoTask("task-1")) },
     upload: (String, PhotoUploadSource) -> ProductPhotoTask = { taskId, _ -> photoTask(taskId, mediaCount = 1) },
+    effectObserver: (PhotoTasksEffect) -> Unit = {},
 ) {
     val holder = PhotoTasksStateHolder()
     val executor = PhotoTasksQueuedExecutor()
@@ -351,7 +381,7 @@ private class PhotoTasksHarness(
         gateway = gateway,
         executor = executor,
         postToMain = mainQueue::post,
-        onEffect = effects::add,
+        onEffect = { effects.add(it); effectObserver(it) },
         onUnauthorized = { error, allowRetry, onSessionValid, onSessionUnconfirmed ->
             unauthorized += PhotoTasksUnauthorizedEvent(error, allowRetry, onSessionValid, onSessionUnconfirmed)
         },

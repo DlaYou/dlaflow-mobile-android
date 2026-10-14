@@ -16,6 +16,7 @@ import pl.dlaflow.mobile.core.network.MobileApiException
 
 private const val DEFAULT_MOBILE_MEDIA_MAX_BYTES = 8 * 1024 * 1024
 internal const val MOBILE_PHOTO_UPLOAD_MAX_BYTES = 50L * 1024L * 1024L
+internal const val MOBILE_PHOTO_UPLOAD_TIMEOUT_MS = 30_000
 private const val MOBILE_MESSAGE_BODY_MAX_CHARS = 20_000
 private const val MOBILE_MESSAGE_REPLY_BODY_MAX_CHARS = 2_000
 private const val MOBILE_MESSAGE_SEARCH_MAX_CHARS = 120
@@ -63,6 +64,17 @@ data class MobilePhotoTask(
     val mediaCount: Int,
     val maxPhotos: Int,
     val expiresAt: String,
+    val media: List<MobilePhotoTaskMedia> = emptyList(),
+)
+
+data class MobilePhotoTaskMedia(
+    val id: String,
+    val filename: String,
+    val status: String,
+    val progress: Int,
+    val previewUrl: String?,
+    val url: String?,
+    val errorCode: String?,
 )
 
 data class MobilePhotoTaskDispatch(
@@ -962,7 +974,22 @@ class MobileApiClient(
         )
         val data = response.getJSONObject("data")
 
-        return parsePhotoTask(data.getJSONObject("task"))
+        val task = parsePhotoTask(data.getJSONObject("task"))
+        val uploadedMedia = data.optJSONObject("media")?.let(::parsePhotoTaskMedia)
+            ?: task.media.lastOrNull()
+        throwIfFailedPhotoMedia(uploadedMedia)
+        if (uploadedMedia == null) return task
+        return if (uploadedMedia.id.isNotBlank() && task.media.none { it.id == uploadedMedia.id }) {
+            task.copy(media = task.media + uploadedMedia)
+        } else task
+    }
+
+    private fun throwIfFailedPhotoMedia(media: MobilePhotoTaskMedia?) {
+        if (media?.status != "FAILED") return
+        val code = media.errorCode.takeIf {
+            it == "MOBILE_PHOTO_IMAGE_INVALID" || it == "MOBILE_PHOTO_PROCESSING_FAILED" || it == "MOBILE_PHOTO_PROCESSING_UNAVAILABLE"
+        } ?: "MOBILE_PHOTO_PROCESSING_FAILED"
+        throw MobileApiException(422, code, "Nie udało się przetworzyć zdjęcia. Wybierz zdjęcie ponownie.")
     }
 
     fun completePhotoTask(token: String, taskId: String): MobilePhotoTask {
@@ -1099,6 +1126,7 @@ class MobileApiClient(
         val footer = "\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8)
         val contentLength = head.size.toLong() + source.byteCount + footer.size.toLong()
         val connection = openConnection(path)
+        connection.readTimeout = MOBILE_PHOTO_UPLOAD_TIMEOUT_MS
         connection.requestMethod = "POST"
         connection.doOutput = true
         connection.setFixedLengthStreamingMode(contentLength)
@@ -1218,6 +1246,12 @@ class MobileApiClient(
 
     private fun parsePhotoTask(task: JSONObject): MobilePhotoTask {
         val product = task.optJSONObject("product")
+        val media = buildList {
+            val mediaJson = task.optJSONArray("media") ?: return@buildList
+            for (index in 0 until mediaJson.length()) {
+                mediaJson.optJSONObject(index)?.let(::parsePhotoTaskMedia)?.let(::add)
+            }
+        }
 
         return MobilePhotoTask(
             id = task.getString("id"),
@@ -1227,6 +1261,19 @@ class MobileApiClient(
             mediaCount = task.optInt("mediaCount", 0),
             maxPhotos = task.optInt("maxPhotos", 0),
             expiresAt = task.optString("expiresAt", ""),
+            media = media,
+        )
+    }
+
+    private fun parsePhotoTaskMedia(media: JSONObject): MobilePhotoTaskMedia {
+        return MobilePhotoTaskMedia(
+            id = media.optString("id", ""),
+            filename = media.optString("filename", ""),
+            status = media.optString("status", "READY"),
+            progress = media.optInt("progress", 0).coerceIn(0, 100),
+            previewUrl = media.optString("previewUrl").takeIf { !media.isNull("previewUrl") && it.isNotBlank() },
+            url = media.optString("url").takeIf { !media.isNull("url") && it.isNotBlank() },
+            errorCode = media.optString("errorCode").takeIf { !media.isNull("errorCode") && it.isNotBlank() },
         )
     }
 

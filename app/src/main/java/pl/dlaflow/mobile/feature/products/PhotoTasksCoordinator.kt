@@ -202,8 +202,8 @@ internal class PhotoTasksCoordinator(
                     return
                 }
                 if (!allowUnauthorizedRetry) {
-                    onEffect(PhotoTasksEffect.OperationFailed)
                     releaseSource(request.requestId, owner)
+                    onEffect(PhotoTasksEffect.OperationFailed)
                     return
                 }
                 onUnauthorized(
@@ -239,8 +239,9 @@ internal class PhotoTasksCoordinator(
         owner: UploadSourceOwner,
         message: pl.dlaflow.mobile.core.state.DlaFlowUiMessage,
     ) {
-        if (stateHolder.acceptUploadFailure(request, message)) onEffect(PhotoTasksEffect.OperationFailed)
+        val accepted = stateHolder.acceptUploadFailure(request, message)
         releaseSource(request.requestId, owner)
+        if (accepted) onEffect(PhotoTasksEffect.OperationFailed)
     }
 
     private fun executeCompletion(

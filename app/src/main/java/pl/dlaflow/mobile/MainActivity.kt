@@ -2259,8 +2259,7 @@ class MainActivity : ComponentActivity() {
         val input = contentResolver.openInputStream(uri)
         if (input == null) {
             clearPendingCameraPhoto()
-            setStatus("Pominięto zdjęcie, którego nie udało się odczytać.")
-            processNextGalleryPhoto()
+            abortGalleryUploadQueue("Nie udało się odczytać zdjęcia. Wysyłanie pozostałych zdjęć zatrzymano.")
             return
         }
         uploadPhoto(taskId, input, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
@@ -2313,8 +2312,7 @@ class MainActivity : ComponentActivity() {
                 when {
                     source == null -> {
                         if (pendingGalleryUploadQueue != null) {
-                            setStatus("Pominięto puste, za duże albo niedostępne zdjęcie.")
-                            processNextGalleryPhoto()
+                            abortGalleryUploadQueue("Zdjęcie jest puste, za duże albo niedostępne. Wysyłanie pozostałych zdjęć zatrzymano.")
                         } else {
                             photoTasksCoordinator.mediaSelectionCancelled()
                             setStatus("Zdjęcie jest puste, za duże albo niedostępne.")
@@ -2346,7 +2344,7 @@ class MainActivity : ComponentActivity() {
         pendingGalleryUploadQueue = null
         pendingGalleryTaskId = null
         photoTasksCoordinator.mediaSelectionCancelled()
-        setStatus("Dodano $completed z $total zdjęć do produktu.")
+        setStatus("Przyjęto $completed z $total zdjęć. Panel przetwarza zdjęcia.")
     }
 
     private fun abortGalleryUploadQueue(message: String) {
@@ -2526,7 +2524,7 @@ class MainActivity : ComponentActivity() {
                 pendingGalleryUploadQueue?.let { queue ->
                     queue.markSucceeded()
                     processNextGalleryPhoto()
-                } ?: setStatus("Zdjęcie dodane do produktu.")
+                } ?: setStatus("Zdjęcie przyjęte. Panel przetwarza zdjęcie.")
             }
             PhotoTasksEffect.CompletionSucceeded -> {
                 session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
