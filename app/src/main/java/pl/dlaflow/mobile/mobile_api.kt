@@ -741,6 +741,16 @@ class MobileApiClient(
         return MobilePhotoTaskDispatch(pendingOpenTask = pendingTask)
     }
 
+    fun getPhotoTask(token: String, taskId: String): MobilePhotoTask {
+        val safeTaskId = taskId.trim()
+        require(safeTaskId.isNotBlank()) { "Photo task ID must not be blank." }
+        val response = getJson(
+            "/api/mobile/photo-tasks/${encodePathSegment(safeTaskId)}",
+            token,
+        )
+        return parsePhotoTask(response.getJSONObject("data"))
+    }
+
     fun getAssistantDashboard(token: String): MobileAssistantDashboard {
         val data = getJson("/api/mobile/assistant/dashboard", token).getJSONObject("data")
 

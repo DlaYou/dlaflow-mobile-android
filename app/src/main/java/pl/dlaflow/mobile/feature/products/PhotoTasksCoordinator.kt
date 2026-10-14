@@ -8,12 +8,16 @@ internal class PhotoTasksCoordinator(
     private val gateway: PhotoTasksGateway,
     private val executor: Executor,
     private val postToMain: (() -> Unit) -> Unit,
+    private val pollScheduler: ProductsSearchScheduler,
     private val onEffect: (PhotoTasksEffect) -> Unit,
     private val onUnauthorized: (Throwable, Boolean, () -> Unit, () -> Unit) -> Unit,
     private val onTasksChanged: () -> Unit = {},
 ) {
     private val uploadSources = mutableMapOf<Long, UploadSourceOwner>()
     private val uploadSourcesLock = Any()
+    private var pendingUploadPoll: ProductsScheduledTask? = null
+    private var uploadPollAttempt = 0
+    private var pendingUploadPollUnauthorizedRequestId: Long? = null
 
     fun setFallback(task: ProductPhotoTask?) = stateHolder.setFallback(task)
 
@@ -105,6 +109,7 @@ internal class PhotoTasksCoordinator(
     }
 
     fun reset() {
+        cancelUploadPolling()
         releaseAllUploadSources()
         stateHolder.reset()
     }
@@ -173,18 +178,153 @@ internal class PhotoTasksCoordinator(
             runCatching { gateway.upload(token, request.taskId, owner.source) }
                 .onSuccess { task ->
                     postToMain {
-                        val accepted = stateHolder.acceptUploadSuccess(request, task)
                         releaseSource(request.requestId, owner)
-                        if (accepted) {
-                            onTasksChanged()
-                            onEffect(PhotoTasksEffect.UploadSucceeded)
-                        }
+                        handleUploadResult(token, request, task, allowUnauthorizedRetry)
                     }
                 }
                 .onFailure { error ->
                     postToMain { handleUploadFailure(token, request, owner, error, allowUnauthorizedRetry) }
                 }
         }
+    }
+
+    private fun handleUploadResult(
+        token: String,
+        request: PhotoTaskUploadRequest,
+        task: ProductPhotoTask,
+        allowUnauthorizedRetry: Boolean,
+    ) {
+        when {
+            task.hasFailedMedia() -> finishUploadWithFailure(request)
+            task.isUploadReady() -> {
+                if (stateHolder.acceptUploadSuccess(request, task)) {
+                    cancelUploadPolling()
+                    onTasksChanged()
+                    onEffect(PhotoTasksEffect.UploadSucceeded)
+                }
+            }
+            else -> {
+                if (stateHolder.acceptUploadProgress(request, task)) {
+                    uploadPollAttempt = 0
+                    scheduleUploadPoll(token, request, allowUnauthorizedRetry)
+                }
+            }
+        }
+    }
+
+    private fun scheduleUploadPoll(
+        token: String,
+        request: PhotoTaskUploadRequest,
+        allowUnauthorizedRetry: Boolean,
+    ) {
+        if (uploadPollAttempt >= MAX_UPLOAD_POLL_ATTEMPTS) {
+            finishUploadWithFailure(request)
+            return
+        }
+        pendingUploadPoll?.cancel()
+        pendingUploadPoll = pollScheduler.schedule(UPLOAD_POLL_INTERVAL_MS) {
+            uploadPollAttempt += 1
+            executor.execute {
+                runCatching { gateway.load(token, request.taskId) }
+                    .onSuccess { task ->
+                        postToMain { handleUploadPollResult(token, request, task, allowUnauthorizedRetry) }
+                    }
+                    .onFailure { error ->
+                        postToMain {
+                            val failure = mapPhotoTasksFailure(error)
+                            when (failure) {
+                                is PhotoTasksFailure.Offline,
+                                is PhotoTasksFailure.Retryable -> {
+                                    if (stateHolder.isUploadActive(request)) {
+                                        scheduleUploadPoll(token, request, allowUnauthorizedRetry)
+                                    }
+                                }
+                                is PhotoTasksFailure.Unauthorized -> handleUploadPollUnauthorized(
+                                    token,
+                                    request,
+                                    error,
+                                    failure,
+                                    allowUnauthorizedRetry,
+                                )
+                                is PhotoTasksFailure.NoAccess,
+                                is PhotoTasksFailure.InvalidPayload -> finishUploadWithFailure(request, failure.message)
+                            }
+                        }
+                    }
+            }
+        }
+    }
+
+    private fun handleUploadPollResult(
+        token: String,
+        request: PhotoTaskUploadRequest,
+        task: ProductPhotoTask,
+        allowUnauthorizedRetry: Boolean,
+    ) {
+        when {
+            task.hasFailedMedia() -> finishUploadWithFailure(request)
+            task.isUploadReady() -> {
+                if (stateHolder.acceptUploadSuccess(request, task)) {
+                    cancelUploadPolling()
+                    onTasksChanged()
+                    onEffect(PhotoTasksEffect.UploadSucceeded)
+                }
+            }
+            else -> {
+                if (stateHolder.acceptUploadProgress(request, task)) {
+                    scheduleUploadPoll(token, request, allowUnauthorizedRetry)
+                }
+            }
+        }
+    }
+
+    private fun handleUploadPollUnauthorized(
+        token: String,
+        request: PhotoTaskUploadRequest,
+        error: Throwable,
+        failure: PhotoTasksFailure.Unauthorized,
+        allowUnauthorizedRetry: Boolean,
+    ) {
+        if (!stateHolder.isUploadActive(request)) return
+        pendingUploadPoll = null
+        if (!allowUnauthorizedRetry || pendingUploadPollUnauthorizedRequestId == request.requestId) {
+            finishUploadWithFailure(request, failure.message)
+            return
+        }
+        pendingUploadPollUnauthorizedRequestId = request.requestId
+        onUnauthorized(
+            error,
+            true,
+            {
+                if (pendingUploadPollUnauthorizedRequestId != request.requestId) return@onUnauthorized
+                pendingUploadPollUnauthorizedRequestId = null
+                if (stateHolder.isUploadActive(request)) {
+                    scheduleUploadPoll(token, request, allowUnauthorizedRetry = false)
+                }
+            },
+            {
+                if (pendingUploadPollUnauthorizedRequestId != request.requestId) return@onUnauthorized
+                pendingUploadPollUnauthorizedRequestId = null
+                finishUploadWithFailure(request, photoTasksSessionUnconfirmedMessage())
+            },
+        )
+    }
+
+    private fun finishUploadWithFailure(
+        request: PhotoTaskUploadRequest,
+        message: pl.dlaflow.mobile.core.state.DlaFlowUiMessage = photoTaskProcessingFailedMessage(),
+    ) {
+        if (stateHolder.acceptUploadFailure(request, message)) {
+            cancelUploadPolling()
+            onEffect(PhotoTasksEffect.OperationFailed)
+        }
+    }
+
+    private fun cancelUploadPolling() {
+        pendingUploadPoll?.cancel()
+        pendingUploadPoll = null
+        uploadPollAttempt = 0
+        pendingUploadPollUnauthorizedRequestId = null
     }
 
     private fun handleUploadFailure(
@@ -394,7 +534,15 @@ internal class PhotoTasksCoordinator(
 
     private fun String.validTaskId(): String? = trim().takeIf { it.isNotEmpty() }
 
+    private fun ProductPhotoTask.hasFailedMedia(): Boolean =
+        media.any { it.status == PhotoTaskMediaStatus.FAILED }
+
+    private fun ProductPhotoTask.isUploadReady(): Boolean =
+        media.isNotEmpty() && media.all { it.status == PhotoTaskMediaStatus.READY }
+
     private companion object {
+        const val UPLOAD_POLL_INTERVAL_MS = 2_000L
+        const val MAX_UPLOAD_POLL_ATTEMPTS = 15
         val SAFE_FILE_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
         val SAFE_IMAGE_MIME_TYPES = setOf(
             "image/avif",

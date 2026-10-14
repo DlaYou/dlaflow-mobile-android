@@ -43,6 +43,260 @@ class PhotoTasksCoordinatorTest {
         assertEquals(1, second.disposeCount)
         assertEquals(2, count)
     }
+
+    @Test
+    fun `staged upload does not report success before worker reaches ready`() {
+        val harness = PhotoTasksHarness(upload = { taskId, _ ->
+            photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1)
+        })
+        val source = TestPhotoUploadSource()
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", source))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertFalse(harness.effects.contains(PhotoTasksEffect.UploadSucceeded))
+        assertEquals("task-1", harness.holder.state.uploadingTaskId)
+        assertEquals(1, harness.pollScheduler.pendingCount)
+    }
+
+    @Test
+    fun `polling reaches ready and emits success after bounded status refresh`() {
+        var statusCalls = 0
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, taskId ->
+                statusCalls += 1
+                photoTask(
+                    taskId,
+                    status = PhotoTaskStatus.COMPLETED,
+                    mediaCount = 1,
+                    media = listOf(
+                        ProductPhotoTaskMedia(
+                            id = "media-1",
+                            filename = "photo.jpg",
+                            status = PhotoTaskMediaStatus.READY,
+                            progress = 100,
+                            previewUrl = "/api/mobile/products/media/photo-preview.webp",
+                            url = "/api/mobile/products/media/photo.webp",
+                            errorCode = null,
+                        ),
+                    ),
+                )
+            },
+        )
+        val source = TestPhotoUploadSource()
+
+        harness.coordinator.submitUpload("session-a", "task-1", source)
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        assertEquals("task-1", harness.holder.state.uploadingTaskId)
+        assertTrue(harness.holder.state.activeUploadRequestId != null)
+        assertEquals(1, harness.pollScheduler.pendingCount)
+        harness.pollScheduler.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(1, statusCalls)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertEquals(PhotoTaskStatus.COMPLETED, harness.holder.state.orderedTasks().single().status)
+        assertEquals(PhotoTaskMediaStatus.READY, harness.holder.state.orderedTasks().single().media.single().status)
+        assertEquals(listOf(PhotoTasksEffect.UploadSucceeded), harness.effects)
+        assertNullUpload(harness)
+    }
+
+    @Test
+    fun `polling stops on failed media and releases upload state`() {
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, taskId ->
+                photoTask(
+                    taskId,
+                    status = PhotoTaskStatus.IN_PROGRESS,
+                    mediaCount = 1,
+                    media = listOf(
+                        ProductPhotoTaskMedia(
+                            id = "media-1",
+                            filename = "photo.jpg",
+                            status = PhotoTaskMediaStatus.FAILED,
+                            progress = 100,
+                            previewUrl = null,
+                            url = null,
+                            errorCode = "MOBILE_PHOTO_PROCESSING_FAILED",
+                        ),
+                    ),
+                )
+            },
+        )
+
+        harness.coordinator.submitUpload("session-a", "task-1", TestPhotoUploadSource())
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        harness.pollScheduler.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(listOf(PhotoTasksEffect.OperationFailed), harness.effects)
+        assertNullUpload(harness)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+    }
+
+    @Test
+    fun `transient poll failures keep polling until media is ready`() {
+        var loadCalls = 0
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, taskId ->
+                loadCalls += 1
+                when (loadCalls) {
+                    1 -> throw UnknownHostException("temporary-offline")
+                    2 -> throw MobileApiException(503, "TEMPORARY_FAILURE", "private")
+                    else -> readyPhotoTask(taskId)
+                }
+            },
+        )
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", TestPhotoUploadSource()))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        repeat(2) {
+            harness.pollScheduler.runNext()
+            harness.executor.runNext()
+            harness.mainQueue.runNext()
+            assertTrue(harness.effects.isEmpty())
+            assertEquals("task-1", harness.holder.state.uploadingTaskId)
+            assertEquals(1, harness.pollScheduler.pendingCount)
+        }
+
+        harness.pollScheduler.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(listOf(PhotoTasksEffect.UploadSucceeded), harness.effects)
+        assertNullUpload(harness)
+    }
+
+    @Test
+    fun `poll authorization failure asks for session once and second failure is terminal`() {
+        var loadCalls = 0
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, _ ->
+                loadCalls += 1
+                throw MobileApiException(401, "AUTH_REQUIRED", "private")
+            },
+        )
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", TestPhotoUploadSource()))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        harness.pollScheduler.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertTrue(harness.effects.isEmpty())
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertEquals(1, harness.unauthorized.size)
+
+        harness.unauthorized.single().onSessionValid()
+        harness.unauthorized.single().onSessionValid()
+        assertEquals(1, harness.pollScheduler.pendingCount)
+
+        harness.pollScheduler.runNext()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(2, loadCalls)
+        assertEquals(listOf(PhotoTasksEffect.OperationFailed), harness.effects)
+        assertNullUpload(harness)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertEquals(1, harness.unauthorized.size)
+    }
+
+    @Test
+    fun `polling ends with controlled failure after bounded attempts`() {
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, taskId -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+        )
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", TestPhotoUploadSource()))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        repeat(15) {
+            harness.pollScheduler.runNext()
+            harness.executor.runNext()
+            harness.mainQueue.runNext()
+        }
+
+        assertEquals(listOf(PhotoTasksEffect.OperationFailed), harness.effects)
+        assertNullUpload(harness)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+    }
+
+    @Test
+    fun `empty media for pending or unknown task never reports upload success`() {
+        listOf(PhotoTaskStatus.PENDING, PhotoTaskStatus.UNKNOWN).forEach { status ->
+            val harness = PhotoTasksHarness(
+                upload = { taskId, _ -> photoTask(taskId, status = status, mediaCount = 0) },
+            )
+
+            assertTrue(harness.coordinator.submitUpload("session-a", "task-$status", TestPhotoUploadSource(sourceId = "source-$status")))
+            harness.executor.runNext()
+            harness.mainQueue.runNext()
+
+            assertTrue(harness.effects.isEmpty())
+            assertEquals(1, harness.pollScheduler.pendingCount)
+        }
+    }
+
+    @Test
+    fun `staged and preview media remain in polling`() {
+        listOf(PhotoTaskMediaStatus.STAGED, PhotoTaskMediaStatus.PREVIEW_READY).forEach { mediaStatus ->
+            val harness = PhotoTasksHarness(
+                upload = { taskId, _ ->
+                    photoTask(
+                        taskId,
+                        status = PhotoTaskStatus.IN_PROGRESS,
+                        mediaCount = 1,
+                        media = listOf(photoMedia(status = mediaStatus, progress = 50)),
+                    )
+                },
+            )
+
+            assertTrue(harness.coordinator.submitUpload("session-a", "task-$mediaStatus", TestPhotoUploadSource(sourceId = "source-$mediaStatus")))
+            harness.executor.runNext()
+            harness.mainQueue.runNext()
+
+            assertTrue(harness.effects.isEmpty())
+            assertEquals(1, harness.pollScheduler.pendingCount)
+        }
+    }
+
+    @Test
+    fun `late poll response after reset cannot schedule a new poll`() {
+        val harness = PhotoTasksHarness(
+            upload = { taskId, _ -> photoTask(taskId, status = PhotoTaskStatus.IN_PROGRESS, mediaCount = 1) },
+            loadTask = { _, taskId -> readyPhotoTask(taskId) },
+        )
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", TestPhotoUploadSource()))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+        assertEquals(1, harness.pollScheduler.pendingCount)
+
+        harness.pollScheduler.runNext()
+        harness.coordinator.reset()
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertTrue(harness.effects.isEmpty())
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertNullUpload(harness)
+    }
+
     @Test
     fun `active tasks reach state only through main queue`() {
         val harness = PhotoTasksHarness()
@@ -361,16 +615,19 @@ class PhotoTasksCoordinatorTest {
 private class PhotoTasksHarness(
     active: () -> List<ProductPhotoTask> = { listOf(photoTask("task-1")) },
     upload: (String, PhotoUploadSource) -> ProductPhotoTask = { taskId, _ -> photoTask(taskId, mediaCount = 1) },
+    loadTask: (String, String) -> ProductPhotoTask = { _, taskId -> photoTask(taskId, mediaCount = 1) },
     effectObserver: (PhotoTasksEffect) -> Unit = {},
 ) {
     val holder = PhotoTasksStateHolder()
     val executor = PhotoTasksQueuedExecutor()
     val mainQueue = PhotoTasksMainQueue()
+    val pollScheduler = PhotoTasksManualScheduler()
     val effects = mutableListOf<PhotoTasksEffect>()
     val unauthorized = mutableListOf<PhotoTasksUnauthorizedEvent>()
     var tasksChangedCount = 0
     private val gateway = object : PhotoTasksGateway {
         override fun loadActive(token: String): List<ProductPhotoTask> = active()
+        override fun load(token: String, taskId: String): ProductPhotoTask = loadTask(token, taskId)
         override fun upload(token: String, taskId: String, source: PhotoUploadSource): ProductPhotoTask = upload(taskId, source)
         override fun complete(token: String, taskId: String): ProductPhotoTask =
             photoTask(taskId, status = PhotoTaskStatus.COMPLETED)
@@ -381,6 +638,7 @@ private class PhotoTasksHarness(
         gateway = gateway,
         executor = executor,
         postToMain = mainQueue::post,
+        pollScheduler = pollScheduler,
         onEffect = { effects.add(it); effectObserver(it) },
         onUnauthorized = { error, allowRetry, onSessionValid, onSessionUnconfirmed ->
             unauthorized += PhotoTasksUnauthorizedEvent(error, allowRetry, onSessionValid, onSessionUnconfirmed)
@@ -431,6 +689,47 @@ private class PhotoTasksMainQueue {
     fun runNext() = tasks.removeFirst().invoke()
 }
 
+private class PhotoTasksManualScheduler : ProductsSearchScheduler {
+    private data class Pending(var cancelled: Boolean, val action: () -> Unit)
+    private val pending = mutableListOf<Pending>()
+    val pendingCount: Int get() = pending.count { !it.cancelled }
+
+    override fun schedule(delayMillis: Long, action: () -> Unit): ProductsScheduledTask {
+        assertEquals(2_000L, delayMillis)
+        val item = Pending(cancelled = false, action = action)
+        pending += item
+        return ProductsScheduledTask { item.cancelled = true }
+    }
+
+    fun runNext() {
+        val item = pending.firstOrNull { !it.cancelled } ?: error("No pending scheduled task")
+        pending.remove(item)
+        item.action()
+    }
+}
+
 private fun assertNullUpload(harness: PhotoTasksHarness) {
     assertEquals(null, harness.holder.state.uploadingTaskId)
 }
+
+private fun readyPhotoTask(taskId: String): ProductPhotoTask = photoTask(
+    taskId,
+    status = PhotoTaskStatus.COMPLETED,
+    mediaCount = 1,
+    media = listOf(photoMedia(status = PhotoTaskMediaStatus.READY, progress = 100)),
+)
+
+private fun photoMedia(
+    status: PhotoTaskMediaStatus,
+    progress: Int,
+) = ProductPhotoTaskMedia(
+    id = "media-$status",
+    filename = "photo.jpg",
+    status = status,
+    progress = progress,
+    previewUrl = "/api/mobile/products/media/photo-preview.webp".takeIf {
+        status == PhotoTaskMediaStatus.PREVIEW_READY || status == PhotoTaskMediaStatus.READY
+    },
+    url = "/api/mobile/products/media/photo.webp".takeIf { status == PhotoTaskMediaStatus.READY },
+    errorCode = null,
+)

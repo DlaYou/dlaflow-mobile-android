@@ -561,6 +561,7 @@ class MainActivity : ComponentActivity() {
             gateway = MobileApiPhotoTasksGateway { mobileApiClientForSession(sessionStore) },
             executor = executor,
             postToMain = { action -> runOnUiThread(action) },
+            pollScheduler = productsSearchScheduler,
             onEffect = ::handlePhotoTasksEffect,
             onUnauthorized = ::handlePhotoTasksUnauthorized,
             onTasksChanged = {
@@ -2628,6 +2629,17 @@ class MainActivity : ComponentActivity() {
                 mediaCount = task.mediaCount,
                 maxPhotos = task.maxPhotos,
                 expiresAt = task.expiresAt,
+                media = task.media.map { media ->
+                    MobilePhotoTaskMedia(
+                        id = media.id,
+                        filename = media.filename,
+                        status = media.status.name,
+                        progress = media.progress,
+                        previewUrl = media.previewUrl,
+                        url = media.url,
+                        errorCode = media.errorCode,
+                    )
+                },
             )
         }
         focusedPhotoTaskId = photoTasksStateHolder.state.focusedTaskId
@@ -2643,6 +2655,17 @@ class MainActivity : ComponentActivity() {
             mediaCount = task.mediaCount,
             maxPhotos = task.maxPhotos,
             expiresAt = task.expiresAt,
+            media = task.media.map { media ->
+                MobilePhotoTaskMedia(
+                    id = media.id,
+                    filename = media.filename,
+                    status = media.status.name,
+                    progress = media.progress,
+                    previewUrl = media.previewUrl,
+                    url = media.url,
+                    errorCode = media.errorCode,
+                )
+            },
         )
         selectedTab = MobileAssistantTab.PRODUCTS
         showPhotoTaskNotification(mobileTask)
