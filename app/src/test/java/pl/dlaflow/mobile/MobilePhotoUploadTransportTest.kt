@@ -16,6 +16,63 @@ import org.junit.Test
 
 class MobilePhotoUploadTransportTest {
     @Test
+    fun `failed accepted media is a safe terminal upload error`() {
+        withPhotoResponse("""{"id":"media-1","status":"FAILED","errorCode":"MOBILE_PHOTO_IMAGE_INVALID"}""", 202) { client ->
+            val error = assertThrows(pl.dlaflow.mobile.core.network.MobileApiException::class.java) {
+                client.uploadPhotoTaskMedia("mobile-token", "task-1", MobilePhotoUploadSource(1) { ByteArrayInputStream(byteArrayOf(1)) }, "photo.jpg", "image/jpeg")
+            }
+            assertEquals("MOBILE_PHOTO_IMAGE_INVALID", error.code)
+        }
+    }
+
+    @Test
+    fun `failed task media without top level media is a safe terminal upload error`() {
+        withPhotoResponse(
+            media = null,
+            status = 202,
+            taskMedia = """[{"id":"media-1","status":"FAILED","errorCode":"MOBILE_PHOTO_PROCESSING_FAILED"}]""",
+        ) { client ->
+            val error = assertThrows(pl.dlaflow.mobile.core.network.MobileApiException::class.java) {
+                client.uploadPhotoTaskMedia("mobile-token", "task-1", MobilePhotoUploadSource(1) { ByteArrayInputStream(byteArrayOf(1)) }, "photo.jpg", "image/jpeg")
+            }
+            assertEquals("MOBILE_PHOTO_PROCESSING_FAILED", error.code)
+        }
+    }
+
+    @Test
+    fun `legacy 201 media without status remains ready`() {
+        withPhotoResponse("""{"id":"media-1","url":"/image.webp"}""", 201) { client ->
+            val task = client.uploadPhotoTaskMedia("mobile-token", "task-1", MobilePhotoUploadSource(1) { ByteArrayInputStream(byteArrayOf(1)) }, "photo.jpg", "image/jpeg")
+            assertEquals("READY", task.media.single().status)
+        }
+    }
+
+    private fun withPhotoResponse(media: String?, status: Int, taskMedia: String? = null, check: (MobileApiClient) -> Unit) {
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            val executor = Executors.newSingleThreadExecutor()
+            val responseFuture = executor.submit {
+                server.accept().use { socket ->
+                    val input = socket.getInputStream()
+                    readAsciiLine(input)
+                    var length = 0
+                    while (true) {
+                        val line = readAsciiLine(input)
+                        if (line.isEmpty()) break
+                        if (line.startsWith("Content-Length:", true)) length = line.substringAfter(":").trim().toInt()
+                    }
+                    input.readNBytes(length)
+                    val mediaField = media?.let { "\"media\":$it," }.orEmpty()
+                    val taskMediaField = taskMedia?.let { ",\"media\":$it" }.orEmpty()
+                    val body = """{"data":{$mediaField"task":{"id":"task-1","product":{"name":"Test","sku":"SKU"},"status":"in_progress","mediaCount":1,"maxPhotos":3,"expiresAt":""$taskMediaField}}}""".toByteArray()
+                    socket.getOutputStream().write("HTTP/1.1 $status Accepted\r\nContent-Type: application/json\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n".toByteArray() + body)
+                }
+            }
+            try { check(MobileApiClient("http://127.0.0.1:${server.localPort}")); responseFuture.get(2, TimeUnit.SECONDS) }
+            finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test
     fun `photo upload hashes and streams repeatable source with encoded task path`() {
         val payload = "synthetic-image-content".toByteArray()
         val opens = AtomicInteger(0)
@@ -36,9 +93,10 @@ class MobilePhotoUploadTransportTest {
                 }
                 requestHeaders.set(headers)
                 requestBody.set(input.readNBytes(headers["content-length"]?.toInt() ?: 0))
-                val response = """{"data":{"task":{"id":"task-1","productName":"Test","productSku":"SKU","status":"pending","mediaCount":1,"maxPhotos":3,"expiresAt":""}}}""".toByteArray()
+                Thread.sleep(8_500)
+                val response = """{"data":{"media":{"id":"media-1","status":"STAGED","progress":0,"previewUrl":null},"task":{"id":"task-1","product":{"name":"Test","sku":"SKU"},"status":"in_progress","mediaCount":1,"maxPhotos":3,"expiresAt":""}}}""".toByteArray()
                 socket.getOutputStream().use { output ->
-                    output.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                    output.write("HTTP/1.1 202 Accepted\r\nContent-Type: application/json\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray())
                     output.write(response)
                 }
             }
@@ -49,7 +107,7 @@ class MobilePhotoUploadTransportTest {
                 opens.incrementAndGet()
                 ByteArrayInputStream(payload)
             }
-            client.uploadPhotoTaskMedia("mobile-token", "task /1", source, "photo\"\r\nInjected: yes.jpg", "image/jpeg\r\nX-Injected: yes")
+            val task = client.uploadPhotoTaskMedia("mobile-token", "task /1", source, "photo\"\r\nInjected: yes.jpg", "image/jpeg\r\nX-Injected: yes")
             responseFuture.get(2, TimeUnit.SECONDS)
             val expectedHash = MessageDigest.getInstance("SHA-256").digest(payload).joinToString("") { "%02x".format(it) }
             assertEquals(2, opens.get())
@@ -59,6 +117,9 @@ class MobilePhotoUploadTransportTest {
             assertTrue(requestBody.get().toString(Charsets.ISO_8859_1).contains("filename=\"photo___Injected_ yes.jpg\""))
             assertTrue(requestBody.get().toString(Charsets.ISO_8859_1).contains("Content-Type: application/octet-stream\r\n"))
             assertTrue(requestBody.get().containsSubsequence(payload))
+            assertEquals("STAGED", task.media.single().status)
+            assertEquals(0, task.media.single().progress)
+            assertEquals(null, task.media.single().previewUrl)
         } finally {
             server.close()
             executor.shutdownNow()

@@ -257,6 +257,21 @@ internal fun photoTask(
     id: String,
     status: PhotoTaskStatus = PhotoTaskStatus.PENDING,
     mediaCount: Int = 0,
+    media: List<ProductPhotoTaskMedia> = if (mediaCount > 0 && status != PhotoTaskStatus.IN_PROGRESS) {
+        listOf(
+            ProductPhotoTaskMedia(
+                id = "media-$id",
+                filename = "photo.jpg",
+                status = PhotoTaskMediaStatus.READY,
+                progress = 100,
+                previewUrl = "/api/mobile/products/media/photo-preview.webp",
+                url = "/api/mobile/products/media/photo.webp",
+                errorCode = null,
+            ),
+        )
+    } else {
+        emptyList()
+    },
 ) = ProductPhotoTask(
     id = id,
     productName = "Produkt $id",
@@ -265,4 +280,5 @@ internal fun photoTask(
     mediaCount = mediaCount,
     maxPhotos = 3,
     expiresAt = "2030-01-01T00:00:00Z",
+    media = media,
 )

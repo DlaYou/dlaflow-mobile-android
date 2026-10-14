@@ -13,6 +13,24 @@ internal enum class PhotoTaskStatus {
     UNKNOWN,
 }
 
+internal enum class PhotoTaskMediaStatus {
+    STAGED,
+    PREVIEW_READY,
+    READY,
+    FAILED,
+    UNKNOWN,
+}
+
+internal data class ProductPhotoTaskMedia(
+    val id: String,
+    val filename: String,
+    val status: PhotoTaskMediaStatus,
+    val progress: Int,
+    val previewUrl: String?,
+    val url: String?,
+    val errorCode: String?,
+)
+
 internal data class ProductPhotoTask(
     val id: String,
     val productName: String,
@@ -21,6 +39,7 @@ internal data class ProductPhotoTask(
     val mediaCount: Int,
     val maxPhotos: Int,
     val expiresAt: String,
+    val media: List<ProductPhotoTaskMedia> = emptyList(),
 )
 
 /** A repeatable, private source prepared by the host. It is never part of Compose state. */

@@ -8,11 +8,12 @@ import pl.dlaflow.mobile.core.state.DlaFlowUiMessage
 import pl.dlaflow.mobile.core.state.mobileErrorToUiMessage
 
 internal sealed interface PhotoTasksFailure {
-    data class Unauthorized(val message: DlaFlowUiMessage) : PhotoTasksFailure
-    data class NoAccess(val message: DlaFlowUiMessage) : PhotoTasksFailure
-    data class Offline(val message: DlaFlowUiMessage) : PhotoTasksFailure
-    data class InvalidPayload(val message: DlaFlowUiMessage) : PhotoTasksFailure
-    data class Retryable(val message: DlaFlowUiMessage) : PhotoTasksFailure
+    val message: DlaFlowUiMessage
+    data class Unauthorized(override val message: DlaFlowUiMessage) : PhotoTasksFailure
+    data class NoAccess(override val message: DlaFlowUiMessage) : PhotoTasksFailure
+    data class Offline(override val message: DlaFlowUiMessage) : PhotoTasksFailure
+    data class InvalidPayload(override val message: DlaFlowUiMessage) : PhotoTasksFailure
+    data class Retryable(override val message: DlaFlowUiMessage) : PhotoTasksFailure
 }
 
 internal fun mapPhotoTasksFailure(error: Throwable): PhotoTasksFailure = when {
@@ -43,4 +44,10 @@ internal fun invalidPhotoTaskPayloadMessage() = DlaFlowUiMessage(
     titleRes = R.string.mobile_error_unknown_title,
     descriptionRes = R.string.mobile_error_unknown_description,
     retryable = false,
+)
+
+internal fun photoTaskProcessingFailedMessage() = DlaFlowUiMessage(
+    titleRes = R.string.mobile_error_server_title,
+    descriptionRes = R.string.mobile_error_server_description,
+    retryable = true,
 )

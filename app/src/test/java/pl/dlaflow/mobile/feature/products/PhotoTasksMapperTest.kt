@@ -1,10 +1,12 @@
 package pl.dlaflow.mobile.feature.products
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import pl.dlaflow.mobile.MobilePhotoTask
+import pl.dlaflow.mobile.MobilePhotoTaskMedia
 import pl.dlaflow.mobile.MobilePhotoTaskDispatch
 
 class PhotoTasksMapperTest {
@@ -24,6 +26,35 @@ class PhotoTasksMapperTest {
         val mapped = mobileTask(status = "private-backend-value").toProductPhotoTask()
 
         assertEquals(PhotoTaskStatus.UNKNOWN, mapped.status)
+    }
+
+    @Test
+    fun `mapper preserves per-media processing status progress and urls`() {
+        val mapped = mobileTask(
+            mediaCount = 1,
+            media = listOf(
+                MobilePhotoTaskMedia(
+                    id = "media-1",
+                    filename = "produkt.jpg",
+                    status = "PREVIEW_READY",
+                    progress = 72,
+                    previewUrl = "/api/products/media/preview.webp",
+                    url = null,
+                    errorCode = null,
+                ),
+            ),
+        ).toProductPhotoTask()
+
+        val mediaField = mapped.javaClass.declaredFields.singleOrNull { it.name == "media" }
+        assertNotNull("ProductPhotoTask must expose per-media state", mediaField)
+        mediaField!!.isAccessible = true
+        val mappedMedia = mediaField.get(mapped) as? List<*>
+        assertNotNull(mappedMedia)
+        assertEquals(1, mappedMedia!!.size)
+        val firstMedia = mappedMedia.single()
+        assertEquals("media-1", firstMedia!!.javaClass.getDeclaredField("id").apply { isAccessible = true }.get(firstMedia))
+        assertEquals(PhotoTaskMediaStatus.PREVIEW_READY, firstMedia.javaClass.getDeclaredField("status").apply { isAccessible = true }.get(firstMedia))
+        assertEquals(72, firstMedia.javaClass.getDeclaredField("progress").apply { isAccessible = true }.get(firstMedia))
     }
 
     @Test
@@ -58,6 +89,7 @@ internal fun mobileTask(
     status: String = "pending",
     mediaCount: Int = 0,
     maxPhotos: Int = 3,
+    media: List<MobilePhotoTaskMedia> = emptyList(),
 ) = MobilePhotoTask(
     id = id,
     productName = "Produkt testowy",
@@ -66,4 +98,5 @@ internal fun mobileTask(
     mediaCount = mediaCount,
     maxPhotos = maxPhotos,
     expiresAt = "2030-01-01T00:00:00Z",
+    media = media,
 )
