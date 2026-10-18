@@ -115,6 +115,15 @@ internal fun MobileOrderDetail.toOrderDetailContent() = OrderDetailContent(
             threadId = message.threadId,
         )
     },
+    internalNotes = internalNotes.map { note ->
+        OrderMessage(
+            id = note.id,
+            author = normalizeMessageText(note.author),
+            body = normalizeMessageBodyText(note.body),
+            messageAt = note.messageAt,
+            threadId = note.threadId,
+        )
+    },
     documentsCount = documents.size,
     internalNotesCount = internalNotes.size,
     statusHistoryCount = statusHistory.size,

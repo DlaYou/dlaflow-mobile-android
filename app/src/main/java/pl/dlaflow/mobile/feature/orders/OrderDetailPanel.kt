@@ -128,6 +128,18 @@ private fun OrderDetailContentBody(
     onOpenMessages: (String) -> Unit,
 ) {
     Spacer(Modifier.height(6.dp))
+    if (order.internalNotes.isNotEmpty()) {
+        OrderDetailSection(colors, stringResource(R.string.orders_section_internal_notes)) {
+            order.internalNotes.forEach { note ->
+                OrderDetailListRow(
+                    colors = colors,
+                    title = note.author.ifBlank { stringResource(R.string.orders_value_panel) },
+                    subtitle = note.body,
+                    value = orderRelativeTime(note.messageAt),
+                )
+            }
+        }
+    }
     OrderDetailProductCards(colors, order, thumbnailLoader)
     OrderDetailSection(colors, stringResource(R.string.orders_section_timing)) {
         DlaFlowKeyValue(colors, stringResource(R.string.orders_label_ordered_at), ordersDisplayTimestamp(order.createdAt).ifBlank { stringResource(R.string.orders_value_missing) })

@@ -187,6 +187,7 @@
     <string name="orders_section_products">Produkty</string>
     <string name="orders_section_shipments">Przesyłki</string>
     <string name="orders_section_messages">Wiadomości</string>
+    <string name="orders_section_internal_notes">Notatka wewnętrzna</string>
     <string name="orders_label_phone">Telefon</string>
     <string name="orders_label_email">E-mail</string>
     <string name="orders_label_login">Login</string>
