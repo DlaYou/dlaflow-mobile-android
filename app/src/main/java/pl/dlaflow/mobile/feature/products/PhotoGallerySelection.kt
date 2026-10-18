@@ -2,7 +2,6 @@ package pl.dlaflow.mobile.feature.products
 
 import android.content.Intent
 import android.net.Uri
-import java.util.ArrayDeque
 
 internal fun galleryUrisFromIntent(intent: Intent?): List<Uri> {
     if (intent == null) return emptyList()
@@ -27,18 +26,3 @@ internal fun galleryUriStrings(primary: String?, clipUris: List<String>): List<S
 
 internal fun <T> limitGalleryUris(uris: List<T>, remainingSlots: Int): List<T> =
     if (remainingSlots <= 0) emptyList() else uris.distinct().take(remainingSlots)
-
-internal class PhotoGalleryUploadQueue<T>(items: List<T>) {
-    private val pending = ArrayDeque(items)
-    val totalCount: Int = pending.size
-    var completedCount: Int = 0
-        private set
-    val remainingCount: Int get() = pending.size
-    val hasNext: Boolean get() = pending.isNotEmpty()
-
-    fun takeNext(): T? = if (pending.isEmpty()) null else pending.removeFirst()
-
-    fun markSucceeded() {
-        if (completedCount < totalCount) completedCount += 1
-    }
-}

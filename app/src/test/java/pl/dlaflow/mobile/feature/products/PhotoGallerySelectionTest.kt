@@ -32,17 +32,4 @@ class PhotoGallerySelectionTest {
         assertEquals(emptyList<String>(), limitGalleryUris(selected, remainingSlots = 0))
     }
 
-    @Test
-    fun `upload queue exposes one item at a time and tracks successful uploads`() {
-        val queue = PhotoGalleryUploadQueue(listOf("one", "two", "three"))
-
-        assertEquals(3, queue.totalCount)
-        assertEquals("one", queue.takeNext())
-        assertEquals(2, queue.remainingCount)
-        queue.markSucceeded()
-        assertEquals(1, queue.completedCount)
-        assertEquals("two", queue.takeNext())
-        assertEquals("three", queue.takeNext())
-        assertEquals(null, queue.takeNext())
-    }
 }

@@ -147,6 +147,8 @@ internal data class PhotoTaskUploadRequest(
     internal val sessionKey: String,
     val taskId: String,
     internal val sourceId: String,
+    internal val existingMediaIds: Set<String>,
+    internal val waitForProcessing: Boolean,
 )
 
 internal data class PhotoTaskCompletionRequest(
@@ -173,6 +175,7 @@ internal sealed interface PhotoTasksEffect {
     data class LaunchGallery(val taskId: String) : PhotoTasksEffect
     data class PresentDispatch(val task: ProductPhotoTask) : PhotoTasksEffect
     data object UploadSucceeded : PhotoTasksEffect
+    data class UploadFailed(val retryable: Boolean) : PhotoTasksEffect
     data object CompletionSucceeded : PhotoTasksEffect
     data object OperationFailed : PhotoTasksEffect
 }

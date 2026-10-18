@@ -86,7 +86,8 @@ import pl.dlaflow.mobile.feature.pairing.PairingStateHolder
 import pl.dlaflow.mobile.feature.pairing.pairingSmokeSeed
 import pl.dlaflow.mobile.feature.products.PhotoCaptureKind
 import pl.dlaflow.mobile.feature.products.PhotoCaptureStateHolder
-import pl.dlaflow.mobile.feature.products.PhotoGalleryUploadQueue
+import pl.dlaflow.mobile.feature.products.PhotoGalleryBatchUploadCoordinator
+import pl.dlaflow.mobile.feature.products.PHOTO_GALLERY_UPLOAD_MAX_CONCURRENCY
 import pl.dlaflow.mobile.feature.products.createGalleryIntent
 import pl.dlaflow.mobile.feature.products.galleryUrisFromIntent
 import pl.dlaflow.mobile.feature.products.limitGalleryUris
@@ -141,6 +142,7 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionRequestCode = 4105
     private val phoneStatePermissionRequestCode = 4106
     private val executor = Executors.newSingleThreadExecutor()
+    private val photoGalleryUploadExecutor = Executors.newFixedThreadPool(PHOTO_GALLERY_UPLOAD_MAX_CONCURRENCY)
     private val dispatchHandler = Handler(Looper.getMainLooper())
     private val dispatchRunnable = object : Runnable {
         override fun run() {
@@ -303,7 +305,7 @@ class MainActivity : ComponentActivity() {
     private var pendingPhotoResultRequestCode: Int? = null
     private var pendingPhotoResultSourceId: String? = null
     private var pendingGalleryTaskId: String? = null
-    private var pendingGalleryUploadQueue: PhotoGalleryUploadQueue<Uri>? = null
+    private var pendingGalleryBatch: PhotoGalleryBatchUploadCoordinator<Uri, ProductPhotoTask>? = null
     private var nextPhotoResultRequestCode = photoResultRequestCodeMin
     private var pendingSmokeApiUrl: String? = null
     private var pendingSmokePairingCode: String? = null
@@ -408,6 +410,7 @@ class MainActivity : ComponentActivity() {
         activeCallerIdLookupRequest = null
         activeSettingsUpdateOperation = null
         executor.shutdownNow()
+        photoGalleryUploadExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -2218,71 +2221,103 @@ class MainActivity : ComponentActivity() {
         }
 
         pendingGalleryTaskId = taskId
-        pendingGalleryUploadQueue = PhotoGalleryUploadQueue(uris)
         if (uris.size < selectedUris.size) {
             setStatus("Dodaję ${uris.size} z ${selectedUris.size} wybranych zdjęć (limit zadania).")
         }
         clearPendingCameraPhoto()
-        processNextGalleryPhoto()
-    }
-
-    private fun processNextGalleryPhoto() {
-        val taskId = pendingGalleryTaskId ?: return
-        val queue = pendingGalleryUploadQueue ?: return
-        val uri = queue.takeNext()
-        if (uri == null) {
-            finishGalleryUploadQueue()
-            return
-        }
-
         val sessionToken = session?.token
         if (sessionToken.isNullOrBlank()) {
-            abortGalleryUploadQueue("Sesja telefonu wygasła. Wybierz zdjęcia ponownie.")
+            abortGalleryBatch("Sesja telefonu wygasła. Wybierz zdjęcia ponownie.")
             return
         }
-        if (!photoTasksCoordinator.restoreMediaSelection(taskId)) {
-            abortGalleryUploadQueue("Nie udało się kontynuować kolejki zdjęć.")
-            return
-        }
-        val capture = photoCaptureStateHolder.begin(
-            sessionKey = sessionToken,
-            taskId = taskId,
-            kind = PhotoCaptureKind.GALLERY,
-            sourceId = java.util.UUID.randomUUID().toString(),
+
+        lateinit var batch: PhotoGalleryBatchUploadCoordinator<Uri, ProductPhotoTask>
+        val gateway = MobileApiPhotoTasksGateway { mobileApiClientForSession(sessionStore) }
+        batch = PhotoGalleryBatchUploadCoordinator(
+            items = uris,
+            executor = photoGalleryUploadExecutor,
+            postToMain = { action -> runOnUiThread(action) },
+            upload = { uri -> uploadGalleryPhoto(gateway, sessionToken, taskId, uri) },
+            isRetryable = ::isRetryableGalleryPhotoUpload,
+            onAccepted = { _, _, progress ->
+                if (pendingGalleryBatch === batch) {
+                    setStatus("Wysłano ${progress.finished} z ${progress.total} zdjęć. Panel przetwarza je w tle.")
+                }
+            },
+            onFailed = { _, attempts, error, progress ->
+                if (pendingGalleryBatch === batch) {
+                    val detail = when (error) {
+                        GalleryPhotoTooLarge -> "Zdjęcie przekracza limit 50 MB."
+                        GalleryPhotoUploadRejected -> "Nie udało się odczytać zdjęcia."
+                        else -> "Nie udało się wysłać zdjęcia po $attempts próbach."
+                    }
+                    setStatus("$detail Wysłano ${progress.finished} z ${progress.total} zdjęć.")
+                }
+            },
+            onComplete = { progress -> finishGalleryBatch(batch, progress) },
         )
-        if (capture == null) {
-            abortGalleryUploadQueue("Nie udało się przygotować kolejki zdjęć.")
-            return
+        pendingGalleryBatch = batch
+        setStatus("Wysyłam ${uris.size} zdjęć do panelu. Obróbka odbędzie się w tle.")
+        batch.start()
+    }
+
+    private fun uploadGalleryPhoto(
+        gateway: MobileApiPhotoTasksGateway,
+        token: String,
+        taskId: String,
+        uri: Uri,
+    ): ProductPhotoTask {
+        val sourceId = java.util.UUID.randomUUID().toString()
+        val destination = File(cacheDir, "mobile-photo-uploads/$sourceId.bin")
+        val mimeType = runCatching { contentResolver.getType(uri) }.getOrNull() ?: "image/jpeg"
+        val input = try {
+            contentResolver.openInputStream(uri)
+        } catch (_: SecurityException) {
+            throw GalleryPhotoUploadRejected
+        } ?: throw GalleryPhotoUploadRejected
+        val extension = mimeType.substringAfterLast('/').substringBefore('+').takeIf { it.matches(Regex("[A-Za-z0-9]{1,8}")) } ?: "jpg"
+        val prepared = input.use { stream ->
+            prepareMobilePhotoUpload(
+                input = stream,
+                destination = destination,
+                sourceId = sourceId,
+                fileName = "zdjecie.$extension",
+                mimeType = mimeType,
+            )
         }
-        pendingPhotoTaskId = taskId
-        pendingPhotoResultRequestCode = null
-        pendingPhotoResultSourceId = capture.sourceId
-        val input = contentResolver.openInputStream(uri)
-        if (input == null) {
-            clearPendingCameraPhoto()
-            abortGalleryUploadQueue("Nie udało się odczytać zdjęcia. Wysyłanie pozostałych zdjęć zatrzymano.")
-            return
+        val source = when (prepared) {
+            is MobilePhotoUploadPreparationResult.Ready -> prepared.source
+            MobilePhotoUploadPreparationResult.TooLarge -> throw GalleryPhotoTooLarge
+            MobilePhotoUploadPreparationResult.Empty -> throw GalleryPhotoUploadRejected
+            MobilePhotoUploadPreparationResult.Unavailable -> throw java.io.IOException("Photo source is temporarily unavailable.")
         }
-        uploadPhoto(taskId, input, "zdjecie-z-telefonu", contentResolver.getType(uri) ?: "image/jpeg")
+        return try {
+            gateway.upload(token, taskId, source)
+        } finally {
+            source.dispose()
+        }
+    }
+
+    private fun isRetryableGalleryPhotoUpload(error: Throwable): Boolean = when (error) {
+        is MobileApiException -> error.statusCode == 408 || error.statusCode == 429 || error.statusCode >= 500
+        is java.io.IOException -> true
+        else -> false
     }
 
     private fun uploadPhoto(taskId: String, input: java.io.InputStream, fileName: String, mimeType: String) {
         val capture = photoCaptureStateHolder.pending
         val currentSession = session ?: run {
             input.close()
-            if (pendingGalleryUploadQueue != null) {
-                abortGalleryUploadQueue("Sesja telefonu wygasła. Wybierz zdjęcia ponownie.")
-            }
+            clearPendingCameraPhoto()
+            photoTasksCoordinator.mediaSelectionCancelled()
+            setStatus("Sesja telefonu wygasła. Wybierz zdjęcie ponownie.")
             return
         }
         if (capture == null || capture.taskId != taskId || capture.sessionKey != currentSession.token) {
             input.close()
-            if (pendingGalleryUploadQueue != null) {
-                abortGalleryUploadQueue("Sesja telefonu zmieniła się. Wybierz zdjęcia ponownie.")
-                return
-            }
             clearPendingCameraPhoto()
             photoTasksCoordinator.mediaSelectionCancelled()
+            setStatus("Sesja telefonu zmieniła się. Wybierz zdjęcie ponownie.")
             return
         }
         if (!photoCaptureStateHolder.advance(capture, pl.dlaflow.mobile.feature.products.PhotoCapturePhase.PREPARING)) {
@@ -2290,11 +2325,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         val preparingCapture = capture.copy(phase = pl.dlaflow.mobile.feature.products.PhotoCapturePhase.PREPARING)
-        val galleryQueue = pendingGalleryUploadQueue
-        setStatus(
-            galleryQueue?.let { "Przygotowuję zdjęcie ${it.completedCount + 1} z ${it.totalCount}..." }
-                ?: "Wysyłam pełne zdjęcie...",
-        )
+        setStatus("Przygotowuję pełne zdjęcie...")
         executor.execute {
             val destination = File(cacheDir, "mobile-photo-uploads/${capture.sourceId}.bin")
             val prepared = input.use { stream ->
@@ -2304,52 +2335,49 @@ class MainActivity : ComponentActivity() {
                 val source = (prepared as? MobilePhotoUploadPreparationResult.Ready)?.source
                 if (!photoCaptureStateHolder.matches(preparingCapture) || !isCurrentSessionToken(currentSession.token)) {
                     source?.let(photoTasksCoordinator::discardUploadSource)
-                    if (pendingGalleryUploadQueue != null) {
-                        abortGalleryUploadQueue("Sesja telefonu zmieniła się. Wybierz zdjęcia ponownie.")
-                    }
                     return@runOnUiThread
                 }
                 clearPendingCameraPhoto()
                 when {
-                    source == null -> {
-                        if (pendingGalleryUploadQueue != null) {
-                            abortGalleryUploadQueue("Zdjęcie jest puste, za duże albo niedostępne. Wysyłanie pozostałych zdjęć zatrzymano.")
-                        } else {
-                            photoTasksCoordinator.mediaSelectionCancelled()
-                            setStatus("Zdjęcie jest puste, za duże albo niedostępne.")
-                        }
+                    source == null -> setStatus("Zdjęcie jest puste, za duże albo niedostępne.")
+                    photoTasksCoordinator.submitUpload(
+                        token = currentSession.token,
+                        taskId = taskId,
+                        source = source,
+                        waitForProcessing = true,
+                    ) -> {
+                        setStatus("Wysyłam pełne zdjęcie...")
                     }
-                    photoTasksCoordinator.submitUpload(currentSession.token, taskId, source) -> {
-                        setStatus(
-                            pendingGalleryUploadQueue?.let {
-                                "Wysyłam zdjęcie ${it.completedCount + 1} z ${it.totalCount}..."
-                            } ?: "Wysyłam pełne zdjęcie...",
-                        )
-                    }
-                    else -> {
-                        if (pendingGalleryUploadQueue != null) {
-                            abortGalleryUploadQueue("Nie udało się przygotować zdjęcia do wysłania.")
-                        } else {
-                            setStatus("Nie udało się przygotować zdjęcia do wysłania.")
-                        }
-                    }
+                    else -> setStatus("Nie udało się przygotować zdjęcia do wysłania.")
                 }
             }
         }
     }
 
-    private fun finishGalleryUploadQueue() {
-        val queue = pendingGalleryUploadQueue ?: return
-        val completed = queue.completedCount
-        val total = queue.totalCount
-        pendingGalleryUploadQueue = null
+    private fun finishGalleryBatch(
+        batch: PhotoGalleryBatchUploadCoordinator<Uri, ProductPhotoTask>,
+        progress: pl.dlaflow.mobile.feature.products.PhotoGalleryBatchUploadProgress,
+    ) {
+        if (pendingGalleryBatch !== batch) return
+        pendingGalleryBatch = null
         pendingGalleryTaskId = null
         photoTasksCoordinator.mediaSelectionCancelled()
-        setStatus("Przyjęto $completed z $total zdjęć. Panel przetwarza zdjęcia.")
+        session?.token?.let { token ->
+            photoTasksCoordinator.refresh(token, allowUnauthorizedRetry = true)
+            dashboardCoordinator.refresh(token, showFeedback = false)
+        }
+        setStatus(
+            if (progress.failed == 0) {
+                "Przyjęto ${progress.accepted} z ${progress.total} zdjęć. Panel przetwarza je w tle."
+            } else {
+                "Przyjęto ${progress.accepted} z ${progress.total} zdjęć. Nie udało się wysłać ${progress.failed}; spróbuj ponownie."
+            },
+        )
     }
 
-    private fun abortGalleryUploadQueue(message: String) {
-        pendingGalleryUploadQueue = null
+    private fun abortGalleryBatch(message: String) {
+        pendingGalleryBatch?.cancel()
+        pendingGalleryBatch = null
         pendingGalleryTaskId = null
         clearPendingCameraPhoto()
         photoTasksCoordinator.mediaSelectionCancelled()
@@ -2357,9 +2385,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearGalleryUploadQueue() {
-        pendingGalleryUploadQueue = null
+        pendingGalleryBatch?.cancel()
+        pendingGalleryBatch = null
         pendingGalleryTaskId = null
     }
+
+    private object GalleryPhotoUploadRejected : RuntimeException()
+    private object GalleryPhotoTooLarge : RuntimeException()
 
     private fun createCameraPhotoFile(): File {
         val directory = File(cacheDir, "mobile-photo-captures").apply {
@@ -2522,21 +2554,17 @@ class MainActivity : ComponentActivity() {
             is PhotoTasksEffect.PresentDispatch -> presentPhotoTaskDispatch(effect.task)
             PhotoTasksEffect.UploadSucceeded -> {
                 session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
-                pendingGalleryUploadQueue?.let { queue ->
-                    queue.markSucceeded()
-                    processNextGalleryPhoto()
-                } ?: setStatus("Zdjęcie przyjęte. Panel przetwarza zdjęcie.")
+                setStatus("Zdjęcie przyjęte. Panel przetwarza zdjęcie.")
             }
             PhotoTasksEffect.CompletionSucceeded -> {
                 session?.token?.let { token -> dashboardCoordinator.refresh(token, showFeedback = false) }
                 setStatus("Zadanie zakończone.")
             }
             PhotoTasksEffect.OperationFailed -> {
-                if (pendingGalleryUploadQueue != null) {
-                    abortGalleryUploadQueue("Nie udało się wysłać wszystkich wybranych zdjęć.")
-                } else {
-                    setStatus("Nie udało się wykonać operacji na zadaniu zdjęciowym.")
-                }
+                setStatus("Nie udało się wykonać operacji na zadaniu zdjęciowym.")
+            }
+            is PhotoTasksEffect.UploadFailed -> {
+                setStatus(if (effect.retryable) "Nie udało się wysłać zdjęcia. Możesz spróbować ponownie." else "Nie udało się wysłać zdjęcia.")
             }
         }
         render()
