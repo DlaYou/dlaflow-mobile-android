@@ -11,6 +11,17 @@ Panel, API, modele, tenant isolation, normalizery, storage i deploy VPS należą
 4. Nie pracuj w checkoutcie z cudzymi zmianami. Użyj własnego brancha `codex/*` i osobnego worktree.
 5. Nie kopiuj kodu Androida do repo panelu ani kodu panelu do repo Androida.
 
+## Kanoniczny przepływ branch -> main -> artefakt -> emulator
+
+- Jedynym źródłem kodu integracyjnego jest zdalny `main` repozytorium Androida. Snapshoty bez `.git`, detached checkouty i stare katalogi build nie są źródłem instalacji.
+- Każda zmiana funkcjonalna powstaje na `codex/<nazwa>` w osobnym worktree, przechodzi testy i PR do `main`. Nie łącz branchy agentów bezpośrednio ze sobą.
+- Tag `mobile-v<versionName>` wolno utworzyć dopiero na dokładnym commicie `main`; workflow produkcyjny odrzuca tag wskazujący inny commit.
+- Produkcyjny dowód to jeden zestaw: SHA commita, tag, workflow, `latest.json`, APK i SHA-256. Nie instaluj `app-debug.apk` bez jawnego manifestu i kontroli wersji.
+- Po każdej zmianie kodu Androida agent aktualizuje aktywny emulator developerski z bieżącego checkoutu przez `scripts/update-operator-emulator.ps1`, aby użytkownik od razu widział najnowszy build. Podaj jawny AVD/serial, jeśli działa więcej niż jeden kandydat.
+- Installer sprawdza nazwę, rozmiar, SHA-256, pakiet, versionCode/versionName i AVD, a następnie używa wyłącznie `adb install -r`.
+- Aktywny emulator developerski `DlaFlow_CallerId_API35` zachowuje sesję, uprawnienia i Keystore. Nie używaj na nim `adb uninstall`, `pm clear` ani testów instrumentation. Testy instrumentation uruchamiaj wyłącznie na `dlaflowQaApi35`.
+- Po instalacji wymagany jest odczyt `dumpsys package pl.dlaflow.mobile` i raport zgodności wersji. Publikacja na VPS i instalacja na emulatorze są osobnymi dowodami.
+
 ## Architektura
 
 - Panel/API jest źródłem prawdy dla produktów, zamówień, przesyłek, powiadomień, dokumentów i uprawnień.

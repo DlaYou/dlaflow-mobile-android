@@ -127,6 +127,18 @@ jobs:
             exit 1
           fi
 
+      - name: Require production tags to point at the exact remote main commit
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          if [ -z "$main_sha" ] || [ "$GITHUB_SHA" != "$main_sha" ]; then
+            echo "::error::Production tag $GITHUB_REF_NAME must point at the exact current origin/main commit."
+            echo "::error::tag=$GITHUB_SHA main=$main_sha"
+            exit 1
+          fi
+
       - name: Prepare release signing
         if: startsWith(github.ref, 'refs/tags/mobile-v') || github.event.inputs.publish == 'true'
         shell: bash
@@ -239,6 +251,17 @@ jobs:
           node -e "const fs=require('fs'); const m=JSON.parse(fs.readFileSync('mobile-release/latest.json','utf8')); for (const key of ['channel','fileName','minSupportedVersionCode','releaseNotes','releaseTitle','releasedAt','sha256','sizeBytes','updatePriority','versionCode','versionName']) { if (!(key in m)) throw new Error('missing '+key); } console.log(JSON.stringify(m, null, 2));"
           apk_file="$(node -e "console.log(require('./mobile-release/latest.json').fileName)")"
           test -s "mobile-release/$apk_file"
+
+      - name: Upload exact release artifact
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mobile-release-${{ github.sha }}
+          path: |
+            mobile-release/latest.json
+            mobile-release/*.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Publish to DlaFlow VPS
         if: startsWith(github.ref, 'refs/tags/mobile-v') || github.event.inputs.publish == 'true'

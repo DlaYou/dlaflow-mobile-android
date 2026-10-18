@@ -91,14 +91,27 @@ Production must use HTTPS.
 
 Local Android verification uses two isolated emulator roles:
 
-- `DlaFlow_Task6_Dashboard_API35_20260717` is the Operator emulator. It keeps the paired panel session, permissions and Android Keystore.
+- `DlaFlow_CallerId_API35` is the active developer Operator emulator. It keeps the paired panel session, permissions and Android Keystore.
 - `dlaflowQaApi35` is a Gradle Managed Virtual Device. Only this device runs instrumentation and visual tests.
 
-Update the Operator app without removing its local data:
+The Operator installer never chooses a default APK. Pass the exact APK and its matching `latest.json` manifest:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-operator-apk.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-operator-apk.ps1 `
+  -ApkPath .\mobile-release\dlaflow-mobile-assistant-0.8.1-test.apk `
+  -ManifestPath .\mobile-release\latest.json `
+  -OperatorAvdName DlaFlow_CallerId_API35
 ```
+
+The script verifies the filename, size, SHA-256, package, version and emulator identity before using `adb install -r`. It never removes the package or clears application data, so the paired session remains available.
+
+After Android changes, update the active developer emulator from the current checkout with this wrapper. It builds a fresh debug APK, creates a test manifest and calls the same verified installer:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/update-operator-emulator.ps1
+```
+
+The wrapper is for the active developer emulator only. It does not publish to the VPS, create a tag or change the production app.
 
 Run the complete instrumentation suite on QA:
 
@@ -134,8 +147,10 @@ The panel downloads the Android app from the private release directory used by `
 GitHub Actions behavior:
 
 - push to `main`: build-checks the Android APK and validates the panel `latest.json` manifest;
-- tag `mobile-v<versionName>`: builds the APK and publishes the APK plus `latest.json` to the VPS release directory;
+- tag `mobile-v<versionName>` created on the exact current `main` commit: builds the APK, uploads the exact workflow artifact and publishes the APK plus `latest.json` to the VPS release directory;
 - manual workflow dispatch with `publish=true`: publishes the current build to the configured channel.
+
+Release order is fixed: merge the PR into `main`, wait for the `main` checks, create the matching tag on that exact `main` SHA, wait for the tag workflow, verify the production manifest, then install the same manifest/APK pair on the Operator emulator. A VPS publication does not update an emulator automatically.
 
 Before creating a release tag, update `versionCode` and `versionName` in `app/build.gradle.kts`. The tag must match `versionName`, for example:
 
