@@ -82,6 +82,7 @@ class DlaFlowFirebaseMessagingService : FirebaseMessagingService() {
             mobileAction = MobileNotificationAction(
                 type = "orders",
                 label = "Otwórz zamówienia",
+                orderNumber = message.data["orderNumber"],
             ),
         )
     }

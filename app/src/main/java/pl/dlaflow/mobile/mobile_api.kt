@@ -355,6 +355,8 @@ data class MobileAssistantKpis(
 data class MobileNotificationAction(
     val type: String,
     val label: String,
+    val orderNumber: String? = null,
+    val filter: String? = null,
 )
 
 data class MobileAssistantNotification(
@@ -1804,6 +1806,8 @@ class MobileApiClient(
             mobileAction = MobileNotificationAction(
                 type = action.optString("type", "OPEN_LOGS_SUMMARY"),
                 label = action.optString("label", "Zobacz szczegóły"),
+                orderNumber = action.optString("orderNumber", "").trim().takeIf { it.isNotEmpty() },
+                filter = action.optString("filter", "").trim().takeIf { it.isNotEmpty() },
             ),
         )
     }

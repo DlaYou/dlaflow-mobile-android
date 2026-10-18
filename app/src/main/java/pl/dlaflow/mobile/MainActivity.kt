@@ -63,6 +63,7 @@ import pl.dlaflow.mobile.feature.orders.OrdersLoadOperation
 import pl.dlaflow.mobile.feature.orders.OrdersQuery
 import pl.dlaflow.mobile.feature.orders.OrdersRoute
 import pl.dlaflow.mobile.feature.orders.OrdersStateHolder
+import pl.dlaflow.mobile.feature.orders.OrdersFilter
 import pl.dlaflow.mobile.feature.orders.listContentOrNull
 import pl.dlaflow.mobile.feature.products.MobileApiPhotoTasksGateway
 import pl.dlaflow.mobile.feature.products.MobileApiProductsGateway
@@ -269,6 +270,8 @@ class MainActivity : ComponentActivity() {
     private var statusMessage by mutableStateOf("")
     private var selectedTab by mutableStateOf(MobileAssistantTab.DASHBOARD)
     private var pendingMessageThreadId: String? = null
+    private var pendingOrderNumber: String? = null
+    private var pendingOrdersFilter: OrdersFilter? = null
     private var mobileProducts by mutableStateOf<List<MobileProduct>>(emptyList())
     private var mobileProductsNextCursor by mutableStateOf<String?>(null)
     private var mobileProductsTotal by mutableStateOf(0)
@@ -386,6 +389,7 @@ class MainActivity : ComponentActivity() {
         if (sessionUiState != MobileSessionUiState.CONNECTED) {
             return
         }
+        openPendingOrderIfReady()
         session?.token?.let(photoTasksCoordinator::refresh)
         ensureSelectedTabLoaded()
         if (intent.getBooleanExtra(DlaFlowDeepLinks.extraOpenAppUpdate, false)) {
@@ -1095,6 +1099,7 @@ class MainActivity : ComponentActivity() {
             messagesCoordinator.refresh(verifiedSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(verifiedSession.token)
             refreshAppUpdate(showStatus = false)
+            openPendingOrderIfReady()
             ensureSelectedTabLoaded()
             openPendingMessageThreadIfReady()
         }
@@ -1157,6 +1162,7 @@ class MainActivity : ComponentActivity() {
             messagesCoordinator.refresh(nextSession.token, allowUnauthorizedRetry = false)
             photoTasksCoordinator.refresh(nextSession.token)
             refreshAppUpdate(showStatus = false)
+            openPendingOrderIfReady()
             ensureSelectedTabLoaded()
             openPendingMessageThreadIfReady()
         }
@@ -1574,6 +1580,17 @@ class MainActivity : ComponentActivity() {
                 selectedTab = MobileAssistantTab.ORDERS
                 ensureOrdersLoaded()
             }
+            is NotificationsEffect.OpenOrder -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.ORDERS
+                handleOrdersAction(OrdersAction.OpenOrder(effect.orderNumber))
+            }
+            NotificationsEffect.OpenOverdueOrders -> {
+                mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
+                selectedTab = MobileAssistantTab.ORDERS
+                handleOrdersAction(OrdersAction.FilterChanged(OrdersFilter.OVERDUE))
+                ensureOrdersLoaded()
+            }
             NotificationsEffect.OpenProducts,
             NotificationsEffect.OpenPhotoTasks -> {
                 mobileOverlayScreen = MobileAssistantOverlayScreen.NONE
@@ -1598,7 +1615,13 @@ class MainActivity : ComponentActivity() {
 
     private fun handleNotificationTap(notification: pl.dlaflow.mobile.feature.dashboard.DashboardNotification) {
         handleNotificationsEffect(
-            notificationEffectFor(notification.actionType, notification.title, notification.description),
+            notificationEffectFor(
+                actionType = notification.actionType,
+                title = notification.title,
+                description = notification.description,
+                orderNumber = notification.orderNumber,
+                filter = notification.filter,
+            ),
         )
     }
 
@@ -2029,6 +2052,14 @@ class MainActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenOrders, false) == true) {
             selectedTab = MobileAssistantTab.ORDERS
             statusMessage = "Otwieram zamówienia z powiadomienia."
+            pendingOrderNumber = intent.getStringExtra(DlaFlowDeepLinks.extraOpenOrderNumber)
+                ?.trim()?.take(200)?.takeIf { it.isNotBlank() }
+            pendingOrdersFilter = when (intent.getStringExtra(DlaFlowDeepLinks.extraOrdersFilter)?.trim()?.uppercase(Locale.ROOT)) {
+                "OVERDUE" -> OrdersFilter.OVERDUE
+                else -> null
+            }
+            intent.removeExtra(DlaFlowDeepLinks.extraOpenOrderNumber)
+            intent.removeExtra(DlaFlowDeepLinks.extraOrdersFilter)
         }
         if (intent?.getBooleanExtra(DlaFlowDeepLinks.extraOpenProducts, false) == true) {
             selectedTab = MobileAssistantTab.PRODUCTS
@@ -2090,6 +2121,25 @@ class MainActivity : ComponentActivity() {
         pendingMessageThreadId = null
         selectedTab = MobileAssistantTab.MESSAGES
         messagesCoordinator.openThread(currentSession.token, threadId)
+    }
+
+    private fun openPendingOrderIfReady() {
+        val currentSession = session ?: return
+        val orderNumber = pendingOrderNumber
+        val filter = pendingOrdersFilter
+        if (orderNumber == null && filter == null) return
+        pendingOrderNumber = null
+        pendingOrdersFilter = null
+        selectedTab = MobileAssistantTab.ORDERS
+        if (orderNumber != null) {
+            ordersCoordinator.loadDetail(currentSession.token, orderNumber, showFeedback = false)
+        } else {
+            ordersCoordinator.resetList(
+                token = currentSession.token,
+                query = ordersStateHolder.state.query.copy(filter = requireNotNull(filter)),
+                showFeedback = false,
+            )
+        }
     }
 
     private fun consumeSmokePairingIntent(): Boolean {
@@ -3423,6 +3473,8 @@ private fun NotificationItem.toMobileAssistantNotification() = MobileAssistantNo
     mobileAction = MobileNotificationAction(
         type = when (destination) {
             NotificationDestination.Orders -> "OPEN_ORDERS"
+            is NotificationDestination.Order -> "OPEN_ORDER"
+            NotificationDestination.OverdueOrders -> "OPEN_ORDERS"
             NotificationDestination.Products -> "OPEN_PRODUCTS"
             NotificationDestination.Messages -> "OPEN_MESSAGES"
             NotificationDestination.PhotoTasks -> "OPEN_PHOTO_TASKS"
@@ -3431,5 +3483,7 @@ private fun NotificationItem.toMobileAssistantNotification() = MobileAssistantNo
             NotificationDestination.Unsupported -> ""
         },
         label = actionLabel.orEmpty(),
+        orderNumber = (destination as? NotificationDestination.Order)?.orderNumber,
+        filter = if (destination == NotificationDestination.OverdueOrders) "OVERDUE" else null,
     ),
 )

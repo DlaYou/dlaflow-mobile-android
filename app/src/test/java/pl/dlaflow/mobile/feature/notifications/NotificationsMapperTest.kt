@@ -88,6 +88,22 @@ class NotificationsMapperTest {
     }
 
     @Test
+    fun `maps an order number to detail and overdue filter to filtered list`() {
+        val content = MobileNotificationsPage(
+            attentionCount = 0,
+            unreadAttentionCount = 0,
+            unreadCount = 2,
+            notifications = listOf(
+                notification(id = "single-overdue", action = "OPEN_ORDERS", orderNumber = "ORD-17"),
+                notification(id = "many-overdue", action = "OPEN_ORDERS", filter = "OVERDUE"),
+            ),
+        ).toNotificationsContent()
+
+        assertEquals(NotificationDestination.Order("ORD-17"), content.items[0].destination)
+        assertEquals(NotificationDestination.OverdueOrders, content.items[1].destination)
+    }
+
+    @Test
     fun `blank read timestamp remains unread`() {
         val item = notification(id = "unread", readAt = "  ").toNotificationItem()
 
@@ -99,6 +115,8 @@ class NotificationsMapperTest {
         tone: String = "info",
         action: String = "OPEN_LOGS_SUMMARY",
         readAt: String? = null,
+        orderNumber: String? = null,
+        filter: String? = null,
     ) = MobileAssistantNotification(
         id = id,
         title = "Nowe zdarzenie",
@@ -108,6 +126,11 @@ class NotificationsMapperTest {
         account = "Sklep",
         occurredAt = "2026-07-18T10:00:00.000Z",
         readAt = readAt,
-        mobileAction = MobileNotificationAction(type = action, label = "Otwórz"),
+        mobileAction = MobileNotificationAction(
+            type = action,
+            label = "Otwórz",
+            orderNumber = orderNumber,
+            filter = filter,
+        ),
     )
 }

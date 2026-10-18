@@ -2,6 +2,7 @@ package pl.dlaflow.mobile
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.BufferedReader
@@ -298,6 +299,25 @@ class MobileNotificationsTest {
         assertEquals("GET", capture.method)
         assertEquals("/api/mobile/notifications?limit=20", capture.path)
         assertEquals("Bearer mobile-token", capture.authorization)
+    }
+
+    @Test
+    fun `mobile notifications page parses structural order targets while old actions stay valid`() {
+        val payload = """
+            {"data":{"notifications":[
+              {"id":"single","mobileAction":{"type":"OPEN_ORDERS","label":"Otwórz","orderNumber":"ORD-17"}},
+              {"id":"many","mobileAction":{"type":"OPEN_ORDERS","label":"Otwórz","filter":"OVERDUE"}},
+              {"id":"legacy","mobileAction":{"type":"OPEN_ORDERS","label":"Otwórz"}}
+            ]}}
+        """.trimIndent()
+        serveJsonOnce(payload) { baseUrl ->
+            val notifications = MobileApiClient(baseUrl).listNotifications("mobile-token").notifications
+
+            assertEquals("ORD-17", notifications[0].mobileAction.orderNumber)
+            assertEquals("OVERDUE", notifications[1].mobileAction.filter)
+            assertNull(notifications[2].mobileAction.orderNumber)
+            assertNull(notifications[2].mobileAction.filter)
+        }
     }
 
     @Test
