@@ -20,6 +20,8 @@ import pl.dlaflow.mobile.feature.notifications.notificationDestinationFor
 object DlaFlowDeepLinks {
     const val extraFocusPhotoTaskId = "pl.dlaflow.mobile.FOCUS_PHOTO_TASK_ID"
     const val extraOpenOrders = "pl.dlaflow.mobile.OPEN_ORDERS"
+    const val extraOpenOrderNumber = "pl.dlaflow.mobile.OPEN_ORDER_NUMBER"
+    const val extraOrdersFilter = "pl.dlaflow.mobile.ORDERS_FILTER"
     const val extraOpenProducts = "pl.dlaflow.mobile.OPEN_PRODUCTS"
     const val extraOpenDashboard = "pl.dlaflow.mobile.OPEN_DASHBOARD"
     const val extraOpenSettings = "pl.dlaflow.mobile.OPEN_SETTINGS"
@@ -34,9 +36,17 @@ object DlaFlowDeepLinks {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 
-    fun ordersIntent(context: Context): Intent {
+    fun ordersIntent(context: Context, orderNumber: String? = null, filter: String? = null): Intent {
         return Intent(context, MainActivity::class.java)
             .putExtra(extraOpenOrders, true)
+            .apply {
+                orderNumber?.trim()?.takeIf { it.isNotEmpty() }?.take(200)?.let {
+                    putExtra(extraOpenOrderNumber, it)
+                }
+                filter?.trim()?.uppercase(Locale.ROOT)?.takeIf { it == "OVERDUE" }?.let {
+                    putExtra(extraOrdersFilter, it)
+                }
+            }
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
     }
 
@@ -207,12 +217,17 @@ object DlaFlowNotifications {
             return false
         }
 
-        val appIntent = when (notificationDestinationFor(
+        val destination = notificationDestinationFor(
             actionType = notification.mobileAction.type,
             title = notification.title,
             description = notification.description,
-        )) {
+            orderNumber = notification.mobileAction.orderNumber,
+            filter = notification.mobileAction.filter,
+        )
+        val appIntent = when (destination) {
             NotificationDestination.Orders -> DlaFlowDeepLinks.ordersIntent(context)
+            is NotificationDestination.Order -> DlaFlowDeepLinks.ordersIntent(context, orderNumber = destination.orderNumber)
+            NotificationDestination.OverdueOrders -> DlaFlowDeepLinks.ordersIntent(context, filter = "OVERDUE")
             NotificationDestination.Products,
             NotificationDestination.PhotoTasks,
             -> DlaFlowDeepLinks.productsIntent(context)

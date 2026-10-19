@@ -18,12 +18,12 @@ class PhotoTasksCoordinatorTest {
     fun `failure releases source before notifying batch consumer`() {
         val source = TestPhotoUploadSource()
         val harness = PhotoTasksHarness(upload = { _, _ -> throw UnknownHostException("offline") }, effectObserver = {
-            if (it == PhotoTasksEffect.OperationFailed) assertEquals(1, source.disposeCount)
+            if (it is PhotoTasksEffect.UploadFailed) assertEquals(1, source.disposeCount)
         })
         assertTrue(harness.coordinator.submitUpload("session-a", "task-1", source))
         harness.executor.runNext()
         harness.mainQueue.runNext()
-        assertEquals(listOf(PhotoTasksEffect.OperationFailed), harness.effects)
+        assertEquals(listOf(PhotoTasksEffect.UploadFailed(retryable = true)), harness.effects)
     }
 
     @Test
@@ -58,6 +58,54 @@ class PhotoTasksCoordinatorTest {
         assertFalse(harness.effects.contains(PhotoTasksEffect.UploadSucceeded))
         assertEquals("task-1", harness.holder.state.uploadingTaskId)
         assertEquals(1, harness.pollScheduler.pendingCount)
+    }
+
+    @Test
+    fun `gallery upload reports accepted staged media without waiting for processing`() {
+        val harness = PhotoTasksHarness(upload = { taskId, _ ->
+            photoTask(
+                taskId,
+                status = PhotoTaskStatus.IN_PROGRESS,
+                mediaCount = 1,
+                media = listOf(photoMedia(status = PhotoTaskMediaStatus.STAGED, progress = 0)),
+            )
+        })
+        val source = TestPhotoUploadSource()
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", source, waitForProcessing = false))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(listOf(PhotoTasksEffect.UploadSucceeded), harness.effects)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertNullUpload(harness)
+        assertEquals(PhotoTaskMediaStatus.STAGED, harness.holder.state.orderedTasks().single().media.single().status)
+    }
+
+    @Test
+    fun `gallery accepts newly staged media when an earlier photo in the task failed`() {
+        val failedPhoto = photoMedia(status = PhotoTaskMediaStatus.FAILED, progress = 100).copy(id = "media-old-failed")
+        val stagedPhoto = photoMedia(status = PhotoTaskMediaStatus.STAGED, progress = 0).copy(id = "media-new-staged")
+        val harness = PhotoTasksHarness(upload = { taskId, _ ->
+            photoTask(
+                taskId,
+                status = PhotoTaskStatus.IN_PROGRESS,
+                mediaCount = 2,
+                media = listOf(failedPhoto, stagedPhoto),
+            )
+        })
+        val refresh = harness.holder.beginRefresh("session-a")!!
+        harness.holder.acceptRefreshSuccess(refresh, listOf(photoTask("task-1", mediaCount = 1, media = listOf(failedPhoto))))
+        val source = TestPhotoUploadSource()
+
+        assertTrue(harness.coordinator.submitUpload("session-a", "task-1", source, waitForProcessing = false))
+        harness.executor.runNext()
+        harness.mainQueue.runNext()
+
+        assertEquals(listOf(PhotoTasksEffect.UploadSucceeded), harness.effects)
+        assertEquals(0, harness.pollScheduler.pendingCount)
+        assertNullUpload(harness)
+        assertEquals(2, harness.holder.state.orderedTasks().single().media.size)
     }
 
     @Test

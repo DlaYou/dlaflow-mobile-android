@@ -152,6 +152,7 @@ internal data class OrderDetailContent(
     val documentsCount: Int,
     val internalNotesCount: Int,
     val statusHistoryCount: Int,
+    val internalNotes: List<OrderMessage> = emptyList(),
 )
 
 internal fun ordersProductLines(

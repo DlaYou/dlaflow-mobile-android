@@ -20,6 +20,8 @@ internal enum class NotificationTone {
 
 internal sealed interface NotificationDestination {
     data object Orders : NotificationDestination
+    data class Order(val orderNumber: String) : NotificationDestination
+    data object OverdueOrders : NotificationDestination
     data object Products : NotificationDestination
     data object Messages : NotificationDestination
     data object PhotoTasks : NotificationDestination
@@ -107,6 +109,8 @@ internal sealed interface NotificationsAction {
 internal sealed interface NotificationsEffect {
     data class OpenDashboard(val explainFallback: Boolean = false) : NotificationsEffect
     data object OpenOrders : NotificationsEffect
+    data class OpenOrder(val orderNumber: String) : NotificationsEffect
+    data object OpenOverdueOrders : NotificationsEffect
     data object OpenProducts : NotificationsEffect
     data object OpenMessages : NotificationsEffect
     data object OpenPhotoTasks : NotificationsEffect

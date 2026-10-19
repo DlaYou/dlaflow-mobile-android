@@ -430,6 +430,36 @@ class OrdersFeatureScreenTest {
     }
 
     @Test
+    fun detailShowsInternalOrderNoteAboveProducts() {
+        setOrders(
+            state = contentState().copy(
+                route = OrdersRoute.Detail("ORD-1001"),
+                detailState = DlaFlowUiState.Content(
+                    orderDetail(status = "Nowe").copy(
+                        internalNotes = listOf(
+                            OrderMessage("note-1", "Magazyn", "Przygotować do wysyłki", "2026-07-18T10:05:00Z"),
+                        ),
+                    ),
+                ),
+            ),
+            actions = mutableListOf(),
+        )
+
+        composeRule.onNodeWithText("Notatka wewnętrzna").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithText("Przygotować do wysyłki", substring = true).performScrollTo().assertIsDisplayed()
+
+        val noteTop = composeRule.onNodeWithText("Notatka wewnętrzna")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        val productTop = composeRule.onNodeWithTag("orders_detail_product_card")
+            .fetchSemanticsNode()
+            .boundsInRoot
+            .top
+        assertTrue(noteTop < productTop)
+    }
+
+    @Test
     fun variantBKeepsOrderFactsOutsideTheProductCardAndShowsDeliveryTracking() {
         val trackingNumber = "INPOST-PL-123456789012345678901234"
         setOrders(
@@ -591,6 +621,7 @@ class OrdersFeatureScreenTest {
         shippingDeadlineAt = "",
         status = status,
         statusTone = "info",
+        statusColor = "",
         productSummary = "Produkt testowy",
         itemCount = 1,
         customer = OrderCustomer("Klient testowy", "", "", "+48 100 200 300"),
@@ -602,6 +633,7 @@ class OrdersFeatureScreenTest {
         items = emptyList(),
         shipments = emptyList(),
         messages = emptyList(),
+        internalNotes = emptyList(),
         documentsCount = 0,
         internalNotesCount = 0,
         statusHistoryCount = 0,
