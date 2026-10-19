@@ -22,6 +22,8 @@ internal data class DashboardNotification(
     val readAt: String?,
     val actionType: String,
     val actionLabel: String,
+    val orderNumber: String? = null,
+    val filter: String? = null,
 )
 
 internal data class DashboardNotificationSummary(

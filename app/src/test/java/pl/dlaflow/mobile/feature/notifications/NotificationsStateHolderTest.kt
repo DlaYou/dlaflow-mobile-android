@@ -178,6 +178,19 @@ class NotificationsStateHolderTest {
         assertEquals(NotificationsEffect.OpenTeamSettings, holder.effectFor("admin"))
     }
 
+    @Test
+    fun `notification targets open one order or overdue orders`() {
+        val holder = loadedHolder(
+            listOf(
+                item("single", destination = NotificationDestination.Order("ORD-17")),
+                item("many", destination = NotificationDestination.OverdueOrders),
+            ),
+        )
+
+        assertEquals(NotificationsEffect.OpenOrder("ORD-17"), holder.effectFor("single"))
+        assertEquals(NotificationsEffect.OpenOverdueOrders, holder.effectFor("many"))
+    }
+
     private fun loadedHolder(items: List<NotificationItem>): NotificationsStateHolder =
         NotificationsStateHolder().also { holder ->
             val request = requireNotNull(holder.beginLoad("session"))

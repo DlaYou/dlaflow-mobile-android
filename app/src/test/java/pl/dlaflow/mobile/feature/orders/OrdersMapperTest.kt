@@ -197,6 +197,7 @@ class OrdersMapperTest {
         )
         assertEquals(OrderShipment("shipment-1", "InPost", true, "Nadana", "TRACK-1", "2026-07-18T14:00:00Z", "", "sent"), detail.shipments.single())
         assertEquals(OrderMessage("message-1", "Klient", "Dziękuję", "2026-07-18T09:00:00Z"), detail.messages.single())
+        assertEquals(OrderMessage("note-1", "Klient", "Dziękuję", "2026-07-18T09:00:00Z"), detail.internalNotes.single())
         assertEquals(1, detail.documentsCount)
         assertEquals(1, detail.internalNotesCount)
         assertEquals(1, detail.statusHistoryCount)

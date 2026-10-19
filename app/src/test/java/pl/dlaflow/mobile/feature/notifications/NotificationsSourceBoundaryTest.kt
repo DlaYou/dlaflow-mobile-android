@@ -23,9 +23,11 @@ class NotificationsSourceBoundaryTest {
     @Test
     fun `notification tap is resolved by the shared destination resolver`() {
         val host = File("src/main/java/pl/dlaflow/mobile/MainActivity.kt").readText()
-        val resolverIndex = host.indexOf("notificationEffectFor(notification.actionType, notification.title, notification.description)")
+        val resolverIndex = host.indexOf("notificationEffectFor(")
 
         assertTrue(resolverIndex >= 0)
+        assertTrue(host.contains("orderNumber = notification.orderNumber"))
+        assertTrue(host.contains("filter = notification.filter"))
         assertTrue(host.contains("private fun handleNotificationTap"))
     }
 

@@ -35,6 +35,7 @@ class DashboardMapperTest {
                 readAt = null,
                 actionType = "OPEN_ORDER",
                 actionLabel = "Otwórz",
+                orderNumber = "ORD-17",
             ),
             content.notifications.single(),
         )
@@ -138,6 +139,7 @@ private fun dashboardNotificationDto() = MobileAssistantNotification(
     mobileAction = MobileNotificationAction(
         type = "OPEN_ORDER",
         label = "Otwórz",
+            orderNumber = "ORD-17",
     ),
 )
 

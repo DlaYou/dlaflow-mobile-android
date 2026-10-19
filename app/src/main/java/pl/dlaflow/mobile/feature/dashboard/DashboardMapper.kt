@@ -29,6 +29,8 @@ internal fun MobileAssistantDashboard.toDashboardContent() = DashboardContent(
             readAt = notification.readAt,
             actionType = notification.mobileAction.type,
             actionLabel = notification.mobileAction.label,
+            orderNumber = notification.mobileAction.orderNumber,
+            filter = notification.mobileAction.filter,
         )
     },
     activePhotoTask = activePhotoTask?.let { task ->

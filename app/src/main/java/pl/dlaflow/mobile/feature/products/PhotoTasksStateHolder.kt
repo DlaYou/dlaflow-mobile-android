@@ -153,29 +153,37 @@ internal class PhotoTasksStateHolder {
         return true
     }
 
-    fun beginUpload(sessionKey: String, taskId: String, sourceId: String): PhotoTaskUploadRequest? {
+    fun beginUpload(sessionKey: String, taskId: String, sourceId: String, waitForProcessing: Boolean = true): PhotoTaskUploadRequest? {
         if (state.hasMutationInFlight) return null
         invalidateRefreshForMutation()
         invalidateDispatchForOperation()
-        return startUpload(sessionKey, taskId, sourceId)
+        return startUpload(sessionKey, taskId, sourceId, waitForProcessing)
     }
 
-    fun beginPreparedUpload(sessionKey: String, taskId: String, sourceId: String): PhotoTaskUploadRequest? {
+    fun beginPreparedUpload(sessionKey: String, taskId: String, sourceId: String, waitForProcessing: Boolean = true): PhotoTaskUploadRequest? {
         if (state.preparingMediaTaskId != taskId || state.uploadingTaskId != null || state.completingTaskIds.isNotEmpty()) {
             return null
         }
         invalidateRefreshForMutation()
         invalidateDispatchForOperation()
         state = state.copy(preparingMediaTaskId = null)
-        return startUpload(sessionKey, taskId, sourceId)
+        return startUpload(sessionKey, taskId, sourceId, waitForProcessing)
     }
 
-    private fun startUpload(sessionKey: String, taskId: String, sourceId: String): PhotoTaskUploadRequest {
+    private fun startUpload(
+        sessionKey: String,
+        taskId: String,
+        sourceId: String,
+        waitForProcessing: Boolean,
+        existingMediaIds: Set<String> = state.mediaIdsForTask(taskId),
+    ): PhotoTaskUploadRequest {
         val request = PhotoTaskUploadRequest(
             requestId = ++nextUploadRequestId,
             sessionKey = sessionKey,
             taskId = taskId,
             sourceId = sourceId,
+            existingMediaIds = existingMediaIds,
+            waitForProcessing = waitForProcessing,
         )
         activeUploadSessionKey = sessionKey
         pendingUploadUnauthorizedRequestId = null
@@ -229,7 +237,13 @@ internal class PhotoTasksStateHolder {
         if (pendingUploadUnauthorizedRequestId != request.requestId) return null
         pendingUploadUnauthorizedRequestId = null
         if (state.uploadingTaskId != request.taskId || state.completingTaskIds.isNotEmpty()) return null
-        return startUpload(request.sessionKey, request.taskId, request.sourceId)
+        return startUpload(
+            request.sessionKey,
+            request.taskId,
+            request.sourceId,
+            request.waitForProcessing,
+            request.existingMediaIds,
+        )
     }
 
     fun acceptUploadSessionUnconfirmed(
@@ -516,4 +530,11 @@ internal class PhotoTasksStateHolder {
             focusedTaskId = focusedTaskId?.takeUnless { it == taskId },
         )
     }
+
+    private fun PhotoTasksUiState.mediaIdsForTask(taskId: String): Set<String> =
+        orderedTasks()
+            .firstOrNull { it.id == taskId }
+            ?.media
+            .orEmpty()
+            .mapNotNullTo(mutableSetOf(), ProductPhotoTaskMedia::id)
 }

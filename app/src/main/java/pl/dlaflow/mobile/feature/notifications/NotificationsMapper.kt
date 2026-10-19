@@ -21,19 +21,29 @@ internal fun MobileAssistantNotification.toNotificationItem() = NotificationItem
     occurredAt = occurredAt,
     readAt = readAt?.trim()?.takeIf(String::isNotEmpty),
     actionLabel = mobileAction.label.trim().takeIf(String::isNotEmpty),
-    destination = notificationDestinationFor(mobileAction.type, title, description),
+    destination = notificationDestinationFor(
+        actionType = mobileAction.type,
+        title = title,
+        description = description,
+        orderNumber = mobileAction.orderNumber,
+        filter = mobileAction.filter,
+    ),
 )
 
 internal fun notificationEffectFor(
     actionType: String,
     title: String,
     description: String,
+    orderNumber: String? = null,
+    filter: String? = null,
 ): NotificationsEffect = notificationEffectFor(
-    notificationDestinationFor(actionType, title, description),
+    notificationDestinationFor(actionType, title, description, orderNumber, filter),
 )
 
 internal fun notificationEffectFor(destination: NotificationDestination): NotificationsEffect = when (destination) {
     NotificationDestination.Orders -> NotificationsEffect.OpenOrders
+    is NotificationDestination.Order -> NotificationsEffect.OpenOrder(destination.orderNumber)
+    NotificationDestination.OverdueOrders -> NotificationsEffect.OpenOverdueOrders
     NotificationDestination.Products -> NotificationsEffect.OpenProducts
     NotificationDestination.Messages -> NotificationsEffect.OpenMessages
     NotificationDestination.PhotoTasks -> NotificationsEffect.OpenPhotoTasks
@@ -46,8 +56,17 @@ internal fun notificationDestinationFor(
     actionType: String,
     title: String = "",
     description: String = "",
+    orderNumber: String? = null,
+    filter: String? = null,
 ): NotificationDestination {
     val normalizedAction = actionType.trim().uppercase(Locale.ROOT)
+    val isOrdersAction = normalizedAction in setOf("OPEN_ORDERS", "OPEN_ORDER", "ORDERS")
+    if (isOrdersAction) {
+        orderNumber.normalizedNotificationOrderNumber()?.let { return NotificationDestination.Order(it) }
+        if (filter?.trim()?.uppercase(Locale.ROOT) == "OVERDUE") {
+            return NotificationDestination.OverdueOrders
+        }
+    }
     if (normalizedAction.isEmpty() || normalizedAction == "OPEN_LOGS_SUMMARY") {
         if ("wiadomo" in "$title $description".lowercase(Locale.ROOT)) {
             return NotificationDestination.Messages
@@ -56,6 +75,9 @@ internal fun notificationDestinationFor(
 
     return normalizedAction.toNotificationDestination()
 }
+
+private fun String?.normalizedNotificationOrderNumber(): String? =
+    this?.trim()?.takeIf { it.isNotEmpty() }?.take(200)
 
 private fun String.toNotificationTone(): NotificationTone = when (trim().lowercase()) {
     "info" -> NotificationTone.Info
