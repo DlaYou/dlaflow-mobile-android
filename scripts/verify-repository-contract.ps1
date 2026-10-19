@@ -48,6 +48,7 @@ Require-File "scripts/verify-notifications-feature-boundary.ps1"
 Require-File "scripts/verify-settings-feature-boundary.ps1"
 Require-File "scripts/run-qa-emulator-tests.ps1"
 Require-File "scripts/install-operator-apk.ps1"
+Require-File "scripts/update-operator-emulator.ps1"
 Require-Text "gradle/wrapper/gradle-wrapper.properties" "distributionUrl=https\://services.gradle.org/distributions/gradle-8.13-bin.zip"
 Require-Text "gradle/wrapper/gradle-wrapper.properties" "distributionSha256Sum=20f1b1176237254a6fc204d8434196fa11a4cfb387567519c61556e8710aed78"
 Require-Text ".github/workflows/mobile-release.yml" "./gradlew :app:testDebugUnitTest"
@@ -65,16 +66,32 @@ Require-Text ".github/workflows/mobile-release.yml" "Materialize Firebase Google
 Require-Text ".github/workflows/mobile-release.yml" 'GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}'
 Require-Text ".github/workflows/mobile-release.yml" "base64 --decode > app/google-services.json"
 Require-Text ".github/workflows/mobile-release.yml" "Remove Firebase Google Services configuration"
+Require-Text ".github/workflows/mobile-release.yml" "Require production tags to point at the exact remote main commit"
+Require-Text ".github/workflows/mobile-release.yml" "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
 Require-Text "app/build.gradle.kts" '"dlaflowQaApi35"'
 Require-Text "app/build.gradle.kts" "ManagedVirtualDevice"
 Require-Text "app/build.gradle.kts" 'testedAbi = "x86_64"'
 Require-Text "app/build.gradle.kts" "allDevices {"
 Require-Text "scripts/run-qa-emulator-tests.ps1" ":app:dlaflowQaApi35DebugAndroidTest"
-Require-Text "scripts/install-operator-apk.ps1" "DlaFlow_Task6_Dashboard_API35_20260717"
-Require-Text "scripts/install-operator-apk.ps1" '"install", "-r"'
+Require-Text "scripts/install-operator-apk.ps1" "DlaFlow_CallerId_API35"
+Require-Text "scripts/install-operator-apk.ps1" 'Parameter(Mandatory = $true)'
+Require-Text "scripts/install-operator-apk.ps1" "Get-FileHash -Algorithm SHA256"
+Require-Text "scripts/install-operator-apk.ps1" "apkanalyzer.bat"
+Require-Text "scripts/install-operator-apk.ps1" '& $adb "-s" $operator.Serial "install" "-r"'
+Require-Text "scripts/update-operator-emulator.ps1" ":app:assembleDebug"
+Require-Text "scripts/update-operator-emulator.ps1" "generate-mobile-release-manifest.ps1"
+Require-Text "scripts/update-operator-emulator.ps1" "install-operator-apk.ps1"
+Require-Text "scripts/update-operator-emulator.ps1" "DlaFlow_CallerId_API35"
+Require-Text "AGENTS.md" "scripts/update-operator-emulator.ps1"
+Require-Text "AGENTS.md" "Kanoniczny przepływ branch -> main -> artefakt -> emulator"
+Require-Text "AGENTS.md" "DlaFlow_CallerId_API35"
+Require-Text "README.md" "A VPS publication does not update an emulator automatically."
+Require-Text "README.md" '-ManifestPath .\mobile-release\latest.json'
+Reject-Pattern "scripts/install-operator-apk.ps1" '(?m)^\s*\[string\]\s+\$ApkPath\s*='
 Reject-Text "scripts/run-qa-emulator-tests.ps1" ":app:connectedDebugAndroidTest"
 Reject-Pattern "app/build.gradle.kts" '(?m)^\s*devices\s*\{'
 Reject-Pattern "scripts/install-operator-apk.ps1" '(?i)\b(?:uninstall|pm\s+clear|clear\s+data)\b'
+Reject-Pattern "scripts/update-operator-emulator.ps1" '(?i)\b(?:uninstall|pm\s+clear|clear\s+data)\b'
 Reject-Text "README.md" '.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon'
 
 Write-Host "Mobile repository contract: OK"
